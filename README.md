@@ -2,10 +2,6 @@
 
 This mod gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a name and a *Talk* option. Talk to them and they answer in character, in their own voice, about their own work and neighborhood, and sometimes they have something for you to do.
 
-Thank you for trying this. It is an early build: it will do weird things, and I very much appreciate all the bug reports you can share. 
-
-The AI-generated speech also sounds terrible, especially for a game that's known for its voice acting. I am in the process of hiring professional actors for dialog that's known ahead of time, and licensing their voices for better clones for freeform speech.
-
 Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted to explore more of the world's stories. It uses AI heavily, but it's intended as a tribute to the amazing work by the whole Warhorse team, not a template for replacing human creativity. The code is open source under an MIT license, available at https://github.com/moonshine-ai/moonshine-kcd.
 
 Two pieces, built here:
