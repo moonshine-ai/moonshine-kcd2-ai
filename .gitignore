@@ -1,0 +1,28 @@
+.DS_Store
+*.log
+*.pyc
+__pycache__/
+
+# Build trees.
+/app/build*/
+/mod/build*/
+/build/
+
+# What a data drop brings (scripts/fetch_drop.*, tools/assemble_db.py): the assembled
+# database, the cloned voices, the baked lines, the game-derived files. Generated in
+# moonshine-voice-characters, fetched here, never committed here.
+/drop/
+/data/kcd2/npcs.sqlite*
+/data/kcd2/voices/clones/
+/data/kcd2/voices/phrases/
+/data/kcd2/voices/facials.txt
+/data/kcd2/voices/lexicon.tsv
+
+# Model weights (scripts/fetch_models.*). Gigabytes, and not ours to redistribute.
+/models/
+
+# Moonshine Voice's prebuilt library (scripts/fetch_moonshine.*).
+/third_party/moonshine/
+
+# The installer's staging tree and output (installer/Stage.ps1).
+/release/

@@ -1,0 +1,28 @@
+Qwen3-TTS code predictor: keep the in-graph sampler's draw inside the candidates.
+
+do_sampling finds the drawn token by counting how many entries of the probabilities'
+cumulative sum lie above the uniform draw, and takes n minus that count as the index.
+The sum ends at 1 only up to float rounding, so a draw above its last value counts
+nothing and the index comes out as n, one past the end of the candidate list. The
+get_rows that follows then reads an index from outside the list and the next get_rows
+uses that garbage against the code embedding table. On the CPU backend that is
+GGML_ASSERT(i01 >= 0 && i01 < ne01) in get_rows; on CUDA it is an illegal memory
+access, which took moonshine_app down three times on 12 Oct 2026 (ucrtbase abort,
+0xc0000409, stack through mtmd_gen_audio_process -> clip_encode -> get_rows_cuda_float).
+The same happens for any NaN in the logits (step(NaN) is 0 everywhere). Clamp the count
+to [1, n] so such a draw lands on the last candidate.
+
+diff --git a/tools/mtmd/models/qwen3tts-gen.cpp b/tools/mtmd/models/qwen3tts-gen.cpp
+--- a/tools/mtmd/models/qwen3tts-gen.cpp
++++ b/tools/mtmd/models/qwen3tts-gen.cpp
+@@ -56,6 +56,10 @@ ggml_tensor * clip_graph_qwen3tts_gen::code_gen::do_sampling(ggml_tensor * logit
+     ggml_tensor * diff       = ggml_sub(ctx0, cumsum, inp_rand);
+     ggml_tensor * cross_mask = ggml_step(ctx0, diff);
+     ggml_tensor * idxf       = ggml_sum(ctx0, cross_mask);
++    // the cdf ends at 1 only up to rounding (and not at all if the logits hold a NaN): a draw
++    // above its last value crosses nothing, which would select index n, one past the end, and
++    // the get_rows below would read outside the table. Keep the draw on the last candidate.
++    idxf = ggml_clamp(ctx0, idxf, 1.0f, (float) cross_mask->ne[0]);
+     ggml_tensor * idx        = ggml_cast(ctx0, ggml_scale_bias(ctx0, idxf, -1.0f, (float) cross_mask->ne[0]), GGML_TYPE_I32);
+ 
+     if (candidates) {

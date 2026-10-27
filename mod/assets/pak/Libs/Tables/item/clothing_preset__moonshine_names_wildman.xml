@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="../database.xsd">
+	<clothing_presets version="2">
+		<clothing_preset clothing_preset_id="d6d4086a-9fd1-5741-8cbc-d134d62e5d5a" clothing_preset_name="moonshine_names_wildman_w" gender="Male" prefers_hood_on="true">
+			<Items>
+				<Guid>0bcf739d-0475-5077-8f66-d635acd495e9</Guid>
+				<Guid>1449f19a-16df-5079-ab8b-2d2c489238d1</Guid>
+				<Guid>66803909-cd38-54ef-a155-4af2135232f6</Guid>
+				<Guid>68fe40b1-5939-5c6f-a50c-abbb2aca78db</Guid>
+				<Guid>6225d87a-406c-5b35-bb3e-f191b5c3558d</Guid>
+			</Items>
+		</clothing_preset>
+		<clothing_preset clothing_preset_id="e302ed0f-9084-523f-8fd6-0b4971730f68" clothing_preset_name="moonshine_names_wildman_x" gender="Male" prefers_hood_on="true">
+			<Items>
+				<Guid>b457f9e2-7867-5036-b329-c9ec03a3282c</Guid>
+				<Guid>e6cdf199-c9fb-5d7c-852e-eea8610c34ef</Guid>
+				<Guid>24072841-d5e9-57a6-8809-97fbf52c4684</Guid>
+				<Guid>f9c94f12-5338-5115-82d0-ab21359f1397</Guid>
+			</Items>
+		</clothing_preset>
+		<clothing_preset clothing_preset_id="b456c767-6b17-55a6-a6df-1fd06885ca63" clothing_preset_name="moonshine_names_wildman_z" gender="Male" prefers_hood_on="true">
+			<Items>
+				<Guid>b3a20c42-84a5-503c-aac0-969ffd3e4fd8</Guid>
+				<Guid>3a7788c5-cc4c-5a5a-b723-beb5aaea4a65</Guid>
+				<Guid>1fc07d0e-437c-59bd-878b-2faeffb382ea</Guid>
+				<Guid>b76c6970-47a2-5709-93bc-5a83399718a1</Guid>
+				<Guid>7b303a0e-4025-52c2-b849-1e559ab3cdac</Guid>
+			</Items>
+		</clothing_preset>
+	</clothing_presets>
+</database>

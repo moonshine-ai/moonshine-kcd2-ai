@@ -1,0 +1,34 @@
+# The model weights the app runs, pinned: where each file lands under models/, where it
+# comes from, how many bytes, and its sha256. scripts/fetch_models.sh and .ps1 read this;
+# moving a pin is an edit here and nowhere else. Columns are tab-separated.
+#
+# Licences (the text of each is under installer/LICENSES/):
+#   embeddinggemma  Gemma Terms of Use, https://ai.google.dev/gemma/terms -- the knowledge
+#                   base's embedder; the drop's vectors were made by the same model
+#   qwen3-tts-0.6b  Apache-2.0 (Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice) -- the cloned voices
+#   llm             Apache-2.0 (Qwen3-4B-Instruct-2507, unsloth's Q4_K_M GGUF) -- the talker
+#   stt             MIT (Moonshine tiny-streaming-en, 2026-08-21 export) -- the ear
+#
+# dest	url	bytes	sha256
+embeddinggemma-300m-q8_0.gguf	https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf	333590944	b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
+qwen3-tts-0.6b/config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/config.json	4908	81aca2b6fac304944d8acf345272d8a9a727d5fc2e2e66b222ab4729340c7455
+qwen3-tts-0.6b/generation_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/generation_config.json	245	f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa
+qwen3-tts-0.6b/merges.txt	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/merges.txt	1671839	599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3
+qwen3-tts-0.6b/model.safetensors	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/model.safetensors	1811626576	bc3c7e785eb961179c25450d1acff03f839e0002f2f3a5aeb67b5735c0fa2adb
+qwen3-tts-0.6b/preprocessor_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/preprocessor_config.json	127	efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119
+qwen3-tts-0.6b/speech_tokenizer/config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/config.json	2336	ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167
+qwen3-tts-0.6b/speech_tokenizer/configuration.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/configuration.json	76	6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd
+qwen3-tts-0.6b/speech_tokenizer/model.safetensors	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/model.safetensors	682293092	836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258
+qwen3-tts-0.6b/speech_tokenizer/preprocessor_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/speech_tokenizer/preprocessor_config.json	234	fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb
+qwen3-tts-0.6b/tokenizer_config.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/tokenizer_config.json	7344	dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670
+qwen3-tts-0.6b/vocab.json	https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice/resolve/85e237c12c027371202489a0ec509ded67b5e4b5/vocab.json	2776833	ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910
+llm/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	2497281120	3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597
+stt/tiny-streaming-en/adapter.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/adapter.ort	1319664	22ecc949e146c49667fda28d102d4e30749a107dc88a396292aa8f277ef1347c
+stt/tiny-streaming-en/cross_kv.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/cross_kv.ort	1287544	143a36667b8d05fd9d04e8c337b7ee121f37ef299aea6b3d82bdb3d3401950b4
+stt/tiny-streaming-en/decoder_kv.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/decoder_kv.ort	32583720	8852553f312adb6c9aa4d17418015049b30f412209ee569d336548c0044627de
+stt/tiny-streaming-en/decoder_kv_with_attention.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/decoder_kv_with_attention.ort	32515016	c1b41adca4ef75ad8dfdfc71875b5d0ae9be959865a14498da01cbddab8c02b8
+stt/tiny-streaming-en/encoder.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/encoder.ort	7675440	a8414e1a5dedf9f2093d7680601dd8a9b0433e7020260eafe0e370ead91134ca
+stt/tiny-streaming-en/frontend.model.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/frontend.model.ort	23344	5121b561417b638afce0c6c31b760e37c93cf97f80d9b0031aad1fe7b6f25d61
+stt/tiny-streaming-en/frontend.weights.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/frontend.weights.ort	2093464	217da24ac6f522ebf02da8ef288e77d1ac68d50d4a6821433182e4fbf4204bbd
+stt/tiny-streaming-en/streaming_config.json	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/streaming_config.json	509	74fe5ddebd63b17caf59e8a3b18c17547ff7bce1642050edbb1c3962674f8950
+stt/tiny-streaming-en/tokenizer.bin	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/tokenizer.bin	249974	6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d

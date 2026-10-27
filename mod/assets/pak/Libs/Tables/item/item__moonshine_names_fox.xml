@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="item.xsd">
+	<ItemClasses version="8">
+		<Armor DefenseStab="2" DefenseSlash="2" DefenseSmash="5" StrReq="0" Noise="0.06" MaxStatus="13" Visibility="-0.4" Conspicuousness="-0.615" Charisma="12" SocialClassId="60" WealthLevel="10" MaxQuality="4" UiSound="ui_inv_item_cap" IconId="Cap26_m01_B" Weight="0.5" Price="320" FadeCoef="1" VisibilityCoef="1.92353845" Clothing="Cap26Fox" UIInfo="ui_in_moonshine_names_fox_hat" UIName="ui_nm_moonshine_names_fox_hat" Id="9a18ace8-60bd-5aa5-b31d-fe27c1473cce" Name="Cap26Fox" />
+		<Armor DefenseStab="3" DefenseSlash="7" DefenseSmash="9" StrReq="0" Noise="0.36" MaxStatus="11" Visibility="0.8" Conspicuousness="-0.837" Charisma="25" RPGBuffWeight="1" SocialClassId="3" WealthLevel="0" MaxQuality="4" UiSound="ui_inv_item_armor_leather" IconId="Gloves01_m01_B1" Weight="0.8" Price="900" FadeCoef="1" VisibilityCoef="1.30766964" Clothing="Gloves01Fox" UIInfo="ui_in_moonshine_names_fox_gloves" UIName="ui_nm_moonshine_names_fox_gloves" Id="6c777d1f-026f-5ae4-a9bb-ff273c65b5fe" Name="Gloves01Fox" />
+	</ItemClasses>
+</database>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="../database.xsd">
+	<ClothingMaterials version="1">
+		<Material Name="Fur">
+			<Material Name="Fur_wolf">
+				<Material Name="Fur_tow_w" Hue="343" Saturation="0.2" Brightness="1.25" Specular="#8A8070" Smoothness="100" GrimeDiffuse="#2A2520" GrimeGloss="0.3" />
+				<Material Name="Fur_tow_pitched_w" Hue="343" Saturation="0.5" Brightness="0.5" Specular="#403830" Smoothness="150" GrimeDiffuse="#1A1612" />
+				<Material Name="Fur_tow_x" Hue="343" Saturation="0.2" Brightness="1.25" Specular="#8A8070" Smoothness="100" GrimeDiffuse="#2A2520" GrimeGloss="0.3" />
+				<Material Name="Fur_tow_pitched_x" Hue="343" Saturation="0.5" Brightness="0.5" Specular="#403830" Smoothness="150" GrimeDiffuse="#1A1612" />
+				<Material Name="Fur_tow_z" Hue="343" Saturation="0.2" Brightness="1.25" Specular="#8A8070" Smoothness="100" GrimeDiffuse="#2A2520" GrimeGloss="0.3" />
+				<Material Name="Fur_tow_pitched_z" Hue="343" Saturation="0.5" Brightness="0.5" Specular="#403830" Smoothness="150" GrimeDiffuse="#1A1612" />
+			</Material>
+		</Material>
+		<Material Name="Textile">
+			<Material Name="Felt_Thread">
+				<Material Name="Fur_fox_fox" Saturation="0" Brightness="2.4" Specular="#9E8F8F" Smoothness="230" GrimeDiffuse="#3A2E28" GrimeGloss="0.5" />
+				<Material Name="Fur_fox_pale_fox" Saturation="0" Brightness="2.4" Specular="#A09890" Smoothness="200" GrimeDiffuse="#3A2E28" GrimeGloss="0.5" />
+			</Material>
+		</Material>
+		<Material Name="Leather">
+			<Material Name="Full_Grain">
+				<Material Name="Full_Grain_03">
+					<Material Name="Full_Grain_03_brown">
+						<Material Name="Fur_fox_fox_g" Hue="5" Saturation="1.0" Brightness="1.0" Specular="#9E8F8F" Smoothness="230" GrimeDiffuse="#3A2E28" GrimeGloss="0.5" />
+						<Material Name="Fur_fox_pale_fox_g" Saturation="0" Brightness="2.4" Specular="#A09890" Smoothness="200" GrimeDiffuse="#3A2E28" GrimeGloss="0.5" />
+					</Material>
+				</Material>
+			</Material>
+		</Material>
+	</ClothingMaterials>
+</database>

@@ -1,0 +1,94 @@
+# voice_id, abbreviation, actor. The abbreviation is the clone the app speaks.
+# app/src/actor_voices.inc is this table for the binary; keep the two together.
+# The clones are spoken by the Qwen3-TTS engine built into the app, from
+# data/kcd2/voices/clones/<abbreviation>.qvoice with the weights in models/qwen3-tts-0.6b.
+# QWEN_OFF sends them to Kokoro instead; QWEN_MODEL_DIR, QWEN_THREADS, QWEN_BITS (8; 16 for
+# the bf16 weights as stored), QWEN_SEED (42) and QWEN_VERBOSE adjust the engine. A line
+# plays as it is made: from at least QWEN_LEAD_MS (400) of it, and from as much more as
+# the engine's pace says it needs to finish the line without a gap.
+67	mwol	Matthew Wolf
+68	aric	Mia Allis
+78	bcas	Brian Caspe
+81	dbro	Dan Brown
+83	gand	Gabriel Andrews
+85	ggud	Gregory Gudgeon
+86	ccla	Chris Clarke
+87	cduk	Christopher Dukes
+91	jpres	Jennifer Preston
+92	jhig1	Jim High
+95	lhil	Logan Hillier
+97	ldal	Luke Dale
+98	mcra	Marc Cram
+99	mpit	Michael Pitthan
+100	pdea	Paul Dean
+102	phos1	Peter Hosking (Hanuš)
+106	sbar	Sam Barlien
+107	sphe	Sinead Phelps
+108	tmck	Tom McKay
+132	phos2	Peter Hosking (Generic)
+140	dcol	Dan Collins
+144	jbea	James Beaumont
+145	abou	Adrian Bouchet
+146	amon	Alex Montyro
+147	aals	Teresa Polk
+148	bmcf	Sandra Osgerby
+149	dosg	Daniel Osgerby
+150	dzap	Daniel Zappi
+152	drus	Douglas Russell
+153	emac	Euan Macnaughton
+154	icha	Ian Champion
+155	jmar	Jamie Marshall
+156	jand	Janina Anderson
+157	jric	Jean-Philippe Ricci
+158	jmil	Jonathan Milshaw
+160	mhju	Mads Hjulmand
+161	mbis	Martin Bishop
+162	mgla	Michael Glantschnig
+163	mwel	Milton Welsh
+164	pcol	Paul Coltofeanu
+165	rkie	Richard Kiess
+166	syou	Scott Young
+169	jstra	Juergen Straub
+170	mvas	Marek Vašut
+171	kchr	Kenneth Christensen
+172	kgri	Katie Griffiths
+173	hben	Hainsley Bennet
+174	glen	George Lenz
+175	agol	Arnošt Goldflam
+200	M29	Barnabas Reti (Cuman 2)
+201	M30	Ivan Kamaras (Cuman 3)
+202	M31	Christian Bako (Cuman 4)
+216	rand	Rozalie Andělová (German)
+217	mryc	Martina Klier (German)
+219	F48	Veronika Kokyová (Marika Roma)
+220	F49	Sandra Lasoková (Aranka Roma)
+222	M24	Nikolas Ferenc (Tibor Roma 1)
+223	M25	Gregory Gudgeon (Vajda Roma 2)
+224	M26	Michal Žolták (Mikolaj Roma 3)
+226	llat	Lukáš Latinák
+227	kele	Konrad Eleryk
+234	bbor	Bob Bordeaux
+235	rris	Rebecca Risness
+236	smoo	Stewart Moore
+237	rmmc	Roy McCrerey
+238	tzie	Tomas Zielinski
+239	jcom	John Comer
+240	lcar	Lily Carr
+241	jelm	Joncie Elmore
+242	jnun	James Nunn
+243	rlaz	Rupert Lazurus
+247	jpar	Jack Parr
+248	sagr	Steen Agro
+253	bros	Bethan Rose Young
+254	tsho	Tegen Short
+255	jber	Jade Becker
+256	tgra	Tina Gray
+257	amil	Andrea Miltnerová
+259	tonya	Tonya Graves
+260	mcos	Marcel Costea (Vajda2 Roma)
+261	F50	Žena Roma Mladá (Marika2)
+262	ssch	Sandra Schneider
+263	vpai	Matthew Brenher
+264	jcli	John Comer (lisp)
+266	nric	Nicholas Richardson
+269	gmas	Grant Masters

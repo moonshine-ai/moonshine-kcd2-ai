@@ -1,0 +1,12 @@
+# Voice styles from the Kokoro accent fine-tune, for Moonshine Voice.
+# moonshine-ai/kokoro-accent-ft  runs/phase2/samples/epoch_2nd_00012
+# id is the file name. Moonshine wants the bf_ / bm_ prefix for British English.
+# id	who
+bm_p286	Newcastle man, VCTK p286, the miner voice
+bf_p269	Newcastle woman, VCTK p269
+bf_p282	Newcastle woman, VCTK p282
+bf_p277	north-east England woman, VCTK p277
+bf_p230	Stockton-on-Tees woman, VCTK p230
+bm_nom_00610	northern English man, SLR83 nom_00610
+bm_nom_08784	northern English man, SLR83 nom_08784
+bf_nof_04310	northern English woman, SLR83 nof_04310

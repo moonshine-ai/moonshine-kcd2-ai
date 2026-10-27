@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<!-- Flaming arrows and bolts (data/kcd2/quest-design/flaming-arrows.md; the probe is
+     scripts/autopilot/fire_arrow_probe.lua). Two shapes of the same thing:
+       - moonshine_pitch is a Poison: applied to a stack of arrows from the inventory the
+         way the bane and sleeping poisons are (PoisonAmmoCombiner), and whoever a coated
+         arrow hits gets BuffDefinitionId, our burning buff (buff__moonshine_names.xml).
+         The engine does the hit and the damage; the mod only draws the fire.
+       - moonshine_arrow_fire / moonshine_bolt_fire are Ammo rows of arrow_normal's and
+         battle_bolt's shape with an EntityScript, which item.xsd does not list for Ammo
+         but WHGame.dll reads at the PickableItem level every row shares. If the scan takes
+         it, the arrow lying on the ground after the shot is a MoonshineFireArrow entity
+         and burns out like a dropped torch (Scripts/Entities/WH/Ammo/MoonshineFireArrow.lua).
+     GUIDs are uuid5("moonshine:item:<name>") as fox_fur_set.py makes them. -->
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="item.xsd">
+	<ItemClasses version="8">
+		<!-- banePoison_high's row with our buffs: twelve arrows a flask, twenty hits on a blade. -->
+		<Poison WeaponBuffDefinitionId="1fa751f3-8f9d-562d-aa9b-21a7d49c03ef" WeaponChargeCount="20" AmmoApplyCount="12" BuffDefinitionId="faac04fb-c9cb-53d1-b1c9-004b3ddb63b9" IsDivisible="true" IconId="bane_poison" UIInfo="ui_in_moonshine_names_pitch" UIName="ui_nm_moonshine_names_pitch" Model="manmade/task_specific_props/alchemy/ceramics/potion_flask_ceramic_c" Material="manmade/task_specific_props/alchemy/ceramics/potion_flask_bane" Weight="0.3" Price="180" FadeCoef="1" VisibilityCoef="1" Id="9ee46464-a681-5879-9e4e-590c420d50f8" Name="moonshine_pitch" />
+		<!-- arrow_normal with arrow_expensive_b's model, our glowing copy of its black material (moonshine_arrow_fire.mtl) and the script. -->
+		<Ammo AttackStab="100" AttackSlash="0" AttackSmash="0" PowerMod="1" RpgWeight="50" InquiverModel="manmade/weapons/arrows/arrows_bundle.cgf" BrokenItemClassId="3b5be706-3cac-4223-a780-039867c65c4d" Type="1" Visibility="1" Conspicuousness="1" Charisma="1" SocialClassId="0" WealthLevel="0" MaxQuality="1" UiSound="ui_inv_item_weapon_arrows" IconId="arrow_normal" UIInfo="ui_in_moonshine_names_arrow_fire" UIName="ui_nm_moonshine_names_arrow_fire" DisplayInShop="false" Model="manmade/weapons/arrows/arrow_expensive_b.cgf" Material="manmade/weapons/arrows/moonshine_arrow_fire.mtl" EntityScript="MoonshineFireArrow" Weight="0.1" Price="40" FadeCoef="4" VisibilityCoef="0.1" Id="d28f118f-0629-5476-96c0-b285961a1cb3" Name="moonshine_arrow_fire" />
+		<!-- battle_bolt with our glowing copy of its material (moonshine_bolt_fire.mtl) and the script. -->
+		<Ammo AttackStab="50" AttackSlash="0" AttackSmash="0" PowerMod="1" RpgWeight="30" InquiverModel="manmade/weapons/arrows/bolts_bundle.cgf" ShortModel="manmade/weapons/crossbows/bolt_light_b.cgf" LongModel="manmade/weapons/crossbows/bolt_heavy_b.cgf" BrokenItemClassId="a1bbf4df-3242-498e-9595-7879665c4ee8" Type="2" Visibility="1" Conspicuousness="1" Charisma="1" SocialClassId="0" WealthLevel="0" MaxQuality="1" UiSound="ui_inv_item_weapon_crossbowbolt" IconId="bolt_normal" UIInfo="ui_in_moonshine_names_bolt_fire" UIName="ui_nm_moonshine_names_bolt_fire" DisplayInShop="false" Model="manmade/weapons/crossbows/bolt_medium_b.cgf" Material="manmade/weapons/crossbows/moonshine_bolt_fire.mtl" EntityScript="MoonshineFireArrow" Weight="0.1" Price="20" FadeCoef="4" VisibilityCoef="0.1" Id="5072f98b-a70b-54c2-9c39-7cef3059723d" Name="moonshine_bolt_fire" />
+	</ItemClasses>
+</database>

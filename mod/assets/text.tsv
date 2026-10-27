@@ -1,0 +1,47 @@
+# inventory names for the wildman costume, read by kcd2modgen --assets-text
+ui_nm_moonshine_names_wildman_habit	Wildman's coat
+ui_in_moonshine_names_wildman_habit	A close coat of linen soaked in pitch and covered head to foot in frazzled flax tow, as worn by the hommes sauvages of a masque.
+ui_nm_moonshine_names_wildman_hosejoined	Wildman's hose
+ui_in_moonshine_names_wildman_hosejoined	Hose matted with tow and pitch, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_gloves	Wildman's gloves
+ui_in_moonshine_names_wildman_gloves	Gloves covered in tow so that no skin shows, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_hood	Wildman's hood
+ui_in_moonshine_names_wildman_hood	A hood of tow and pitch, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_coif	Wildman's coif
+ui_in_moonshine_names_wildman_coif	A padded coif covered in tow, worn under the wildman's mask.
+ui_nm_moonshine_names_wildman_mask	Wildman's mask
+ui_in_moonshine_names_wildman_mask	A beast's mask covered in tow that hides the face entirely, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_habit_burnt	Burnt wildman's coat
+ui_in_moonshine_names_wildman_habit_burnt	Scorched and sooted, the tow burnt back to stubs. A close coat of linen soaked in pitch and covered head to foot in frazzled flax tow, as worn by the hommes sauvages of a masque.
+ui_nm_moonshine_names_wildman_hosejoined_burnt	Burnt wildman's hose
+ui_in_moonshine_names_wildman_hosejoined_burnt	Scorched and sooted, the tow burnt back to stubs. Hose matted with tow and pitch, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_gloves_burnt	Burnt wildman's gloves
+ui_in_moonshine_names_wildman_gloves_burnt	Scorched and sooted, the tow burnt back to stubs. Gloves covered in tow so that no skin shows, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_hood_burnt	Burnt wildman's hood
+ui_in_moonshine_names_wildman_hood_burnt	Scorched and sooted, the tow burnt back to stubs. A hood of tow and pitch, part of a wildman's costume.
+ui_nm_moonshine_names_wildman_coif_burnt	Burnt wildman's coif
+ui_in_moonshine_names_wildman_coif_burnt	Scorched and sooted, the tow burnt back to stubs. A padded coif covered in tow, worn under the wildman's mask.
+ui_nm_moonshine_names_wildman_mask_burnt	Burnt wildman's mask
+ui_in_moonshine_names_wildman_mask_burnt	Scorched and sooted, the tow burnt back to stubs. A beast's mask covered in tow that hides the face entirely, part of a wildman's costume.
+# inventory names for the fox-fur set (scripts/fox_fur_set.py)
+ui_nm_moonshine_names_fox_hat	Fox-fur hat
+ui_in_moonshine_names_fox_hat	A round cap of red fox fur with ties to knot under the chin. Not every fox the huntsman brings to Kuttenberg goes into the pot.
+ui_nm_moonshine_names_fox_gloves	Fox-fur gloves
+ui_in_moonshine_names_fox_gloves	Gloves of fox fur, the red of the back and the pale of the belly sewn together. Warm, and a butcher's price for a word unsaid.
+# the Smelly debuff (Libs/Tables/rpg/buff__moonshine_names.xml): a bucket of guts for a bribe refused
+buff_moonshine_names_smelly	Smelly
+buff_moonshine_names_smelly_desc	Somebody emptied a bucket of offal over you, and a day of airing will not take the stink out. People keep their distance and think the less of you until it wears off; a wash will at least get the worst of it off your clothes.
+# lights Henry can carry (Libs/Tables/item/item__moonshine_names_light.xml)
+ui_nm_moonshine_names_torch_bright	Pitch torch
+ui_in_moonshine_names_torch_bright	A torch with its head wound thick in tow and soaked in pitch. It throws its light twice as far as a common torch, and burns the faster for it.
+ui_nm_moonshine_names_lantern	Lantern
+ui_in_moonshine_names_lantern	A horn-paned lantern of the kind the night watch carries. The flame is shielded from the wind and the light goes where it is pointed.
+# fire arrows (Libs/Tables/item/item__moonshine_names_fire.xml, buff__moonshine_names.xml; data/kcd2/quest-design/flaming-arrows.md)
+ui_nm_moonshine_names_pitch	Pot of pitch
+ui_in_moonshine_names_pitch	A flask of pitch thinned with tallow and spirits. Painted on a dozen arrowheads it catches from any flame and burns where it lands, and so does whoever is standing there.
+ui_nm_moonshine_names_arrow_fire	Fire arrow
+ui_in_moonshine_names_arrow_fire	An arrow with its head wrapped in tow and soaked in pitch. Lit, it burns in the air and burns where it sticks.
+ui_nm_moonshine_names_bolt_fire	Fire bolt
+ui_in_moonshine_names_bolt_fire	A crossbow bolt with its head wrapped in tow and soaked in pitch. Lit, it burns in the air and burns where it sticks.
+buff_moonshine_names_burning	Burning
+buff_moonshine_names_burning_desc	Pitch is burning on you. Roll, or find water.

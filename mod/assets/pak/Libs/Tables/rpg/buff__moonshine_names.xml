@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="../database.xsd">
+	<buffs version="1">
+		<!-- Smelly: what Henry wears for a day after refusing a bribe and getting a bucket of
+		     guts for it (Fox for Mutton; Moonshine.QuestGift 'refused'). The pillory row's shape
+		     with the smell icon: charisma down, world-clock timed (a game day), kept over a save.
+		     The guid is uuid5 of "moonshine:buff:smelly" in the fox items' scheme. -->
+		<buff buff_class_id="20" buff_desc="buff_moonshine_names_smelly_desc" buff_exclusivity_id="1" buff_id="a1c3be55-84fc-5eba-a1a2-2a57e539463f" buff_lifetime_id="0" buff_name="moonshine_names_smelly" buff_params="charisma-4" buff_ui_name="buff_moonshine_names_smelly" buff_ui_type_id="2" buff_ui_visibility_id="3" duration="86400" icon_id="smell" implementation="Cpp:WorldTimeTimed" is_persistent="true" slot_buff_ui_name="buff_moonshine_names_smelly" />
+		<!-- Burning: what a pitch-coated arrow leaves in whoever it hits (flaming-arrows.md).
+		     The bane poison rows (potion_bane_3 / weapon_bane_3) with a plain timed loss of
+		     health, no alp/poi flags, eight seconds: one on the man (BuffDefinitionId of the
+		     moonshine_pitch Poison, applied by the coated ammo), one on the blade
+		     (WeaponBuffDefinitionId). A different exclusivity so a second arrow stacks.
+		     GUIDs are uuid5("moonshine:buff:burning" / "moonshine:buff:burning_weapon"). -->
+		<buff buff_ai_tag_id="3" buff_class_id="7" buff_desc="buff_moonshine_names_burning_desc" buff_exclusivity_id="1" buff_family_id="5" buff_id="faac04fb-c9cb-53d1-b1c9-004b3ddb63b9" buff_lifetime_id="0" buff_name="moonshine_names_burning" buff_params="health-12/t" buff_ui_name="buff_moonshine_names_burning" buff_ui_type_id="2" buff_ui_visibility_id="3" duration="8" icon_id="bane_poison" implementation="Cpp:BasicTimed" is_persistent="true" slot_buff_ui_name="buff_moonshine_names_burning" />
+		<buff buff_ai_tag_id="3" buff_class_id="7" buff_desc="buff_moonshine_names_burning_desc" buff_exclusivity_id="3" buff_family_id="5" buff_id="1fa751f3-8f9d-562d-aa9b-21a7d49c03ef" buff_lifetime_id="0" buff_name="moonshine_names_burning_weapon" buff_params="health-12/t" buff_ui_name="buff_moonshine_names_burning" buff_ui_type_id="2" buff_ui_visibility_id="3" duration="8" icon_id="bane_poison" implementation="Cpp:BasicTimed" is_persistent="true" slot_buff_ui_name="buff_moonshine_names_burning" />
+	</buffs>
+</database>

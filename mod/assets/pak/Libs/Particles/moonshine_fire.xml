@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<ParticleLibrary Name="moonshine_fire" ParticleVersion="28">
+	<!-- A person on fire. Flames fill a box the size of a torso (RandomOffset) and ride the
+	     emitter (MoveRelativeEmitter), so the cloud follows whoever it is loaded on. Flame
+	     frames, colours and lighting are the game's own torch and burning-arrow values
+	     (WH_Particels fires.*); only the volume and counts differ. The light is one child
+	     particle, not a LightSource on every flame: forty lights at once blew the burning
+	     man out to a white column. Half the flames (20) was tried and read thin and gappy. -->
+	<Particles Name="body.fire">
+		<Params Count="48" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.9,Random=0.5" PositionOffset="z=0.0" RandomOffset="x=0.22,y=0.16,z=0.45" OffsetRoundness="0.6" FocusGravityDir="true" FocusAngle="30,Random=0.5" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=30,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" SoftParticle="true,Softness=0.4" Alpha="ParticleAge=(v=0.3,flags=32;t=0.15,v=1;t=0.6,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.6,y=0.6,z=0.6);t=0.6,v=(x=1,y=0.573,z=0.17);t=0.97,v=(x=1,y=0.23,z=0.1))" DiffuseLighting="0" DiffuseBacklighting="0.5" EmissiveLighting="5" Size="0.28,Random=0.4,ParticleAge=(v=0.5;t=0.4,v=1;t=1,v=0.6)" Stretch="0.5" TailLength="1.5" Speed="0.9,Random=0.5" GravityScale="-0.15" AirResistance="0.5" MoveRelativeEmitter="true" RandomAngles="y=15" RotationRate="y=10" CameraMaxDistance="60" />
+		<Childs>
+			<Particles Name="light">
+				<Params Count="1" Continuous="true" ParticleLifeTime="0.35" PositionOffset="z=0.2" RandomOffset="x=0.05,y=0.05,z=0.1" Texture="textures/particles/glow_diff.tif" BlendType="Additive" Alpha="0.02" Color="(x=1,y=0.5,z=0.15)" DiffuseLighting="0" EmissiveLighting="1" LightSource="Radius=6,Intensity=(3,Random=0.4)" Size="0.3" Speed="0" MoveRelativeEmitter="true" CameraMaxDistance="100" />
+			</Particles>
+			<Particles Name="smoke">
+				<Params Count="10" MaintainDensity="1" Continuous="true" ParticleLifeTime="3,Random=0.4" PositionOffset="z=0.5" RandomOffset="x=0.2,y=0.15,z=0.3" FocusAngle="20" Curvature="0.36" Texture="textures/particles/smoke_b_diff.tif" TextureTiling="TilesX=5,TilesY=5,AnimFramesCount=25,AnimFramerate=8,AnimCycle=Loop" OctagonalShape="true" SoftParticle="true" Alpha="0.6,ParticleAge=(flags=32;t=0.2,v=1;t=1)" Color="(x=0.15,y=0.15,z=0.15)" DiffuseLighting="0.65" DiffuseBacklighting="0.25" Size="0.5,Random=0.5,ParticleAge=(v=0.4;t=1,v=1,flags=4)" Speed="1.2,Random=0.3" InheritVelocity="0.3" AirResistance="0.3" GravityScale="-0.05" RandomAngles="y=180" RotationRate="y=20" RandomRotationRate="y=20" CameraMaxDistance="80" />
+			</Particles>
+			<Particles Name="pieces">
+				<Params Count="12,Random=0.4" Continuous="true" ParticleLifeTime="0.8,Random=0.5" RandomOffset="x=0.25,y=0.2,z=0.5" EmitAngle="Random=1" OrientToVelocity="true" BlendType="Additive" Texture="textures/particles/flame_01_piece_diff.tif" TextureTiling="TilesX=6,AnimFramesCount=6,AnimFramerate=25,AnimCycle=Mirror" DiffuseLighting="5" DiffuseBacklighting="0.5" EmissiveLighting="10" Size="0.08,ParticleAge=(v=0.5;t=1,flags=4)" Aspect="2" Stretch="0.02" MinPixels="4" Speed="0.5,Random=0.5" GravityScale="-0.3" Turbulence3DSpeed="0.8,Random=0.25" TurbulenceSize="0.6,Random=0.4" RandomAngles="y=180" CameraMaxDistance="70" />
+			</Particles>
+			<Particles Name="sparks">
+				<Params Count="40" Continuous="true" ParticleLifeTime="2,Random=0.8" RandomOffset="x=0.2,y=0.2,z=0.5" EmitAngle="56,Random=0.5" Facing="Free" OrientToVelocity="true" Texture="textures/particles/spark_single_b_diff.tif" TextureTiling="TilesX=2,TilesY=2,VariantCount=4" Alpha="1.6" Color="ParticleAge=(t=0.447,v=(x=0.847,y=0.776,z=0.576);t=0.682,v=(x=0.776,y=0.114,z=0.06))" DiffuseLighting="10" DiffuseBacklighting="0.5" EmissiveLighting="10" Size="0.004,ParticleAge=(v=1;t=1)" Stretch="0.02,ParticleAge=(v=1;t=1)" TailLength="1" MinPixels="1" Speed="1.0,Random=0.5" Acceleration="z=0.5" Turbulence3DSpeed="0.5" TurbulenceSize="0.1,Random=0.1" CameraMaxDistance="40" />
+			</Particles>
+			<Particles Name="refraction">
+				<Params Count="8" Continuous="true" ParticleLifeTime="1.5" PositionOffset="z=0.6" RandomOffset="x=0.2,y=0.2,z=0.3" FocusAngle="30" Material="Materials/particles/refraction_fire" OctagonalShape="true" Alpha="ParticleAge=(;t=0.275,v=1;t=1)" DiffuseLighting="0" Size="0.4,Random=0.3,ParticleAge=(v=0.455,flags=32;t=1,v=1)" InheritVelocity="0.2" AirResistance="0.1,WindScale=0" GravityScale="-0.04" MoveRelativeEmitter="true" RotationRate="y=50" CameraMaxDistance="8" ConfigMin="High" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- Smaller cloud for a limb or the head: loaded on a bone attachment. -->
+	<Particles Name="body.fire_small">
+		<Params Count="14" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.7,Random=0.5" RandomOffset="x=0.08,y=0.08,z=0.12" OffsetRoundness="1" FocusAngle="30,Random=0.5" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=30,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" SoftParticle="true,Softness=0.4" Alpha="ParticleAge=(v=0.3,flags=32;t=0.15,v=1;t=0.6,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.6,y=0.6,z=0.6);t=0.6,v=(x=1,y=0.573,z=0.17);t=0.97,v=(x=1,y=0.23,z=0.1))" DiffuseLighting="0" DiffuseBacklighting="0.5" EmissiveLighting="5" Size="0.16,Random=0.4,ParticleAge=(v=0.5;t=0.4,v=1;t=1,v=0.6)" Stretch="0.5" TailLength="1.5" Speed="0.6,Random=0.5" GravityScale="-0.15" AirResistance="0.5" MoveRelativeEmitter="true" RandomAngles="y=15" CameraMaxDistance="60" />
+		<Childs>
+			<Particles Name="smoke">
+				<Params Count="4" MaintainDensity="1" Continuous="true" ParticleLifeTime="2.5,Random=0.4" RandomOffset="x=0.08,y=0.08,z=0.1" FocusAngle="20" Texture="textures/particles/smoke_b_diff.tif" TextureTiling="TilesX=5,TilesY=5,AnimFramesCount=25,AnimFramerate=8,AnimCycle=Loop" OctagonalShape="true" SoftParticle="true" Alpha="0.5,ParticleAge=(flags=32;t=0.2,v=1;t=1)" Color="(x=0.15,y=0.15,z=0.15)" DiffuseLighting="0.65" Size="0.3,Random=0.5,ParticleAge=(v=0.4;t=1,v=1,flags=4)" Speed="1.0,Random=0.3" AirResistance="0.3" GravityScale="-0.05" RandomAngles="y=180" RotationRate="y=20" CameraMaxDistance="80" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- A hand alight: a fist-sized cloud on a hand bone attachment. FocusGravityDir points the
+	     flames up whatever way the bone turns (an attachment's emitter axis is the bone's). -->
+	<Particles Name="body.fire_hand">
+		<Params Count="12" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.6,Random=0.5" RandomOffset="x=0.05,y=0.05,z=0.05" OffsetRoundness="1" FocusGravityDir="true" FocusAngle="25,Random=0.5" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=30,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" SoftParticle="true,Softness=0.4" Alpha="ParticleAge=(v=0.3,flags=32;t=0.15,v=1;t=0.6,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.6,y=0.6,z=0.6);t=0.6,v=(x=1,y=0.573,z=0.17);t=0.97,v=(x=1,y=0.23,z=0.1))" DiffuseLighting="0" DiffuseBacklighting="0.5" EmissiveLighting="5" Size="0.11,Random=0.4,ParticleAge=(v=0.5;t=0.4,v=1;t=1,v=0.6)" Stretch="0.5" TailLength="1.5" Speed="0.5,Random=0.5" GravityScale="-0.15" AirResistance="0.5" MoveRelativeEmitter="true" RandomAngles="y=15" CameraMaxDistance="60" />
+		<Childs>
+			<Particles Name="sparks">
+				<Params Count="8" Continuous="true" ParticleLifeTime="1.5,Random=0.8" RandomOffset="x=0.05,y=0.05,z=0.05" FocusGravityDir="true" EmitAngle="56,Random=0.5" Facing="Free" OrientToVelocity="true" Texture="textures/particles/spark_single_b_diff.tif" TextureTiling="TilesX=2,TilesY=2,VariantCount=4" Alpha="1.6" Color="ParticleAge=(t=0.447,v=(x=0.847,y=0.776,z=0.576);t=0.682,v=(x=0.776,y=0.114,z=0.06))" DiffuseLighting="10" DiffuseBacklighting="0.5" EmissiveLighting="10" Size="0.004,ParticleAge=(v=1;t=1)" Stretch="0.02,ParticleAge=(v=1;t=1)" TailLength="1" MinPixels="1" Speed="0.8,Random=0.5" Acceleration="z=0.5" Turbulence3DSpeed="0.5" TurbulenceSize="0.1,Random=0.1" CameraMaxDistance="40" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- The head alight: a head-sized cloud on the Head bone attachment (the bone sits at the
+	     base of the skull, so the cloud is lifted 10 cm), smoke off the top. -->
+	<Particles Name="body.fire_head">
+		<Params Count="18" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.7,Random=0.5" PositionOffset="z=0.1" RandomOffset="x=0.09,y=0.09,z=0.11" OffsetRoundness="1" FocusGravityDir="true" FocusAngle="30,Random=0.5" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=30,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" SoftParticle="true,Softness=0.4" Alpha="ParticleAge=(v=0.3,flags=32;t=0.15,v=1;t=0.6,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.6,y=0.6,z=0.6);t=0.6,v=(x=1,y=0.573,z=0.17);t=0.97,v=(x=1,y=0.23,z=0.1))" DiffuseLighting="0" DiffuseBacklighting="0.5" EmissiveLighting="5" Size="0.16,Random=0.4,ParticleAge=(v=0.5;t=0.4,v=1;t=1,v=0.6)" Stretch="0.5" TailLength="1.5" Speed="0.7,Random=0.5" GravityScale="-0.15" AirResistance="0.5" MoveRelativeEmitter="true" RandomAngles="y=15" CameraMaxDistance="60" />
+		<Childs>
+			<Particles Name="smoke">
+				<Params Count="4" MaintainDensity="1" Continuous="true" ParticleLifeTime="2.5,Random=0.4" PositionOffset="z=0.2" RandomOffset="x=0.08,y=0.08,z=0.08" FocusGravityDir="true" FocusAngle="20" Texture="textures/particles/smoke_b_diff.tif" TextureTiling="TilesX=5,TilesY=5,AnimFramesCount=25,AnimFramerate=8,AnimCycle=Loop" OctagonalShape="true" SoftParticle="true" Alpha="0.5,ParticleAge=(flags=32;t=0.2,v=1;t=1)" Color="(x=0.15,y=0.15,z=0.15)" DiffuseLighting="0.65" Size="0.3,Random=0.5,ParticleAge=(v=0.4;t=1,v=1,flags=4)" Speed="1.0,Random=0.3" AirResistance="0.3" GravityScale="-0.05" RandomAngles="y=180" RotationRate="y=20" CameraMaxDistance="80" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- A flaming arrow in flight (flaming-arrows.md). The "fire" child of the game's own
+	     other.arrow_fire_vranik (the volley in the Vranik cutscene) made a top-level effect:
+	     a fist of flame that rides the emitter and is loaded into a slot on the Arrow entity,
+	     so it follows the shaft wherever the engine takes it. Smoke from the same effect,
+	     thinned; one light child as always. PositionOffset puts it a hand behind the head. -->
+	<Particles Name="arrow.flame">
+		<Params Count="14" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.25,Random=0.6" PositionOffset="y=-0.12" RandomOffset="x=0.02,y=0.08,z=0.02" EmitAngle="45" OrientToVelocity="true" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=28,AnimCycle=Loop,AnimBlend=true" Alpha="0.6,ParticleAge=(flags=32;t=0.24,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.49,y=0.49,z=0.49);t=0.553,v=(x=1,y=0.573,z=0.17);t=0.973,v=(x=1,y=0.23,z=0.165))" DiffuseLighting="0" EmissiveLighting="5" Size="0.14,Random=0.3" Aspect="1.5" Stretch="0.15,Random=0.25" Speed="0.4,Random=0.7" InheritVelocity="0.9" AirResistance="1" GravityScale="-0.1" MoveRelativeEmitter="true" RandomAngles="y=180" CameraMaxDistance="120" />
+		<Childs>
+			<Particles Name="light">
+				<Params Count="1" Continuous="true" ParticleLifeTime="0.3" Texture="textures/particles/glow_diff.tif" BlendType="Additive" Alpha="0.03" Color="(x=1,y=0.5,z=0.15)" DiffuseLighting="0" EmissiveLighting="1" LightSource="Radius=4,Intensity=(2,Random=0.4)" Size="0.2" Speed="0" MoveRelativeEmitter="true" CameraMaxDistance="120" />
+			</Particles>
+			<Particles Name="smoke">
+				<Params Count="6" Continuous="true" ParticleLifeTime="1.2,Random=0.4" Texture="textures/particles/smoke_b_diff.tif" TextureTiling="TilesX=5,TilesY=5,AnimFramesCount=25,AnimFramerate=25,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" OctagonalShape="true" SoftParticle="true" Alpha="0.3,ParticleAge=(flags=32;t=0.1,v=1;t=1)" Color="(x=0.12,y=0.12,z=0.12)" DiffuseLighting="0.6" DiffuseBacklighting="0.25" Size="0.12,Random=0.3,ParticleAge=(v=0.4;t=1,v=1,flags=4)" Speed="0.3" InheritVelocity="0.2" AirResistance="0.5" GravityScale="-0.05" RandomAngles="y=180" RotationRate="y=30" CameraMaxDistance="80" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- The same arrow stuck in the ground or a wall: the flame stands up (no OrientToVelocity,
+	     FocusGravityDir) and the light is a touch wider. Loaded by MoonshineFireArrow.lua on the
+	     dropped-arrow entity, freed when it burns out. -->
+	<Particles Name="arrow.ground">
+		<Params Count="12" MaintainDensity="1" Continuous="true" ParticleLifeTime="0.5,Random=0.5" RandomOffset="x=0.03,y=0.03,z=0.06" FocusGravityDir="true" FocusAngle="20,Random=0.5" BlendType="Additive" Texture="textures/particles/flame_a_diff.tif" TextureTiling="TilesX=4,TilesY=4,AnimFramesCount=16,AnimFramerate=30,AnimCycle=Loop,AnimBlend=true,FlipChance=0.5" SoftParticle="true,Softness=0.4" Alpha="ParticleAge=(v=0.3,flags=32;t=0.15,v=1;t=0.6,v=1;t=1,flags=4)" Color="ParticleAge=(t=0.01,v=(x=0.6,y=0.6,z=0.6);t=0.6,v=(x=1,y=0.573,z=0.17);t=0.97,v=(x=1,y=0.23,z=0.1))" DiffuseLighting="0" DiffuseBacklighting="0.5" EmissiveLighting="5" Size="0.12,Random=0.4,ParticleAge=(v=0.5;t=0.4,v=1;t=1,v=0.6)" Stretch="0.4" TailLength="1" Speed="0.5,Random=0.5" GravityScale="-0.15" AirResistance="0.5" MoveRelativeEmitter="true" RandomAngles="y=15" RotationRate="y=10" CameraMaxDistance="80" />
+		<Childs>
+			<Particles Name="light">
+				<Params Count="1" Continuous="true" ParticleLifeTime="0.35" PositionOffset="z=0.1" Texture="textures/particles/glow_diff.tif" BlendType="Additive" Alpha="0.03" Color="(x=1,y=0.5,z=0.15)" DiffuseLighting="0" EmissiveLighting="1" LightSource="Radius=5,Intensity=(2.5,Random=0.4)" Size="0.25" Speed="0" MoveRelativeEmitter="true" CameraMaxDistance="120" />
+			</Particles>
+			<Particles Name="smoke">
+				<Params Count="5" Continuous="true" ParticleLifeTime="2,Random=0.4" PositionOffset="z=0.15" FocusAngle="20" Texture="textures/particles/smoke_b_diff.tif" TextureTiling="TilesX=5,TilesY=5,AnimFramesCount=25,AnimFramerate=8,AnimCycle=Loop" OctagonalShape="true" SoftParticle="true" Alpha="0.4,ParticleAge=(flags=32;t=0.2,v=1;t=1)" Color="(x=0.15,y=0.15,z=0.15)" DiffuseLighting="0.65" DiffuseBacklighting="0.25" Size="0.15,Random=0.5,ParticleAge=(v=0.4;t=1,v=1,flags=4)" Speed="0.8,Random=0.3" AirResistance="0.3" GravityScale="-0.05" RandomAngles="y=180" RotationRate="y=20" CameraMaxDistance="80" />
+			</Particles>
+		</Childs>
+	</Particles>
+	<!-- Only the glow: a flickering light source, for the half-second tests of LightSource on its own. -->
+	<Particles Name="body.glow">
+		<Params Count="2" Continuous="true" ParticleLifeTime="1.5" PositionOffset="z=1.0" BlendType="Additive" Texture="textures/particles/glow_diff.tif" SoftParticle="true" Alpha="0.05" Color="(x=0.6,y=0.12,z=0.03)" DiffuseLighting="0" EmissiveLighting="1" LightSource="Radius=6,Intensity=(2,Random=0.5)" Size="1.5" Speed="0.01" MoveRelativeEmitter="true" CameraMaxDistance="100" />
+	</Particles>
+</ParticleLibrary>

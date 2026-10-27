@@ -1,0 +1,819 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="../database.xsd">
+	<CharacterComponents version="6">
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Torso">
+							<DerivedComponents>
+								<Clothing Name="Decor">
+									<DerivedComponents>
+										<Clothing Name="Habit">
+											<DerivedComponents>
+												<Clothing Name="Habit01_m01">
+													<DerivedComponents>
+														<Clothing Name="HabitWildman_mw">
+															<Elements>
+															<SkinElement EquipmentPart="torso" Model="torso/decor/habit/habit01_torso/habit01_torso.skin" Material="torso/decor/habit/habit01_torso/wildman_habit01_m01_torso.mtl" />
+															<SkinElement EquipmentPart="arms" Model="torso/decor/habit/habitwildman/wildman_tailarms.skin" Material="arms/arms_splited/habit01_arms/wildman_habit01_m01_arms.mtl" />
+															<JointElement Name="Belt01" Joint="habit01_torso_mainbelt_01" Position="-0.02,0,0" Rotation="0.99619466,-2.4973167e-08,0.08715573,2.1848694e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.7971,0" Gravity="9.8" Damping="4" Stiffness="6" PivotOffset="0.02,0,0" SimulationAxis="0.40000001,0,-0.0051763742" StiffnessTarget="0.13317023,-0.80534989,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt02" Joint="habit01_torso_mainbelt_02" Position="0,0,0" Rotation="0.99144483,0,0.13052619,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="160,0" Damping="4" Stiffness="8" SimulationAxis="0.5,0.046975691,-0.002052278" StiffnessTarget="0.1253597,-0.76649594,0" Capsule="0.2,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt03" Joint="habit01_torso_mainbelt_03_end" Rotation="0.99904817,1.7448054e-10,0.043619383,-7.6179844e-12">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.50505,0" Damping="4" Stiffness="8" SimulationAxis="0.30000001,0.0038985668,-0.0042575635" StiffnessTarget="0.18411988,-0.83385676,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel" Joint="habit01_torso_satchel_01" Rotation="0.98480773,0,0.17364818,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="180,0" Gravity="22" Damping="4" Stiffness="6" SimulationAxis="0.40000001,0,-0.070426933" StiffnessTarget="0.12533352,-0.7823326,0" Capsule="0.070489369,0.015" ProjectionType="1" ProxyNames="hips_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="pouch" Joint="pouch" Position="-0.030999999,0,0.0078306058" Rotation="0.99619466,-4.6866488e-09,-0.08715573,-4.1002859e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="194.72482,0" Damping="2" Stiffness="6" PivotOffset="0.030999999,0,0" SimulationAxis="0.30000001,-0.011746101,-0.066571467" StiffnessTarget="-0.21156281,0.80304974,0" Capsule="0.090000004,0.015" ProjectionType="1" ProxyNames="leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel02" Joint="habit01_torso_satchel_02_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Gravity="22" Damping="2" Stiffness="5" SimulationAxis="0.40000001,0,-0.031325087" StiffnessTarget="0.18411988,-0.82195872,0" Capsule="0.058738191,0.029999999" ProjectionType="1" ProxyNames="hips_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<VClothElement SimBinding="torso/decor/habit/habit01_waist/habit01_waist_sim.skin" StretchStiffness="0.1" ShearStiffness="0.05" BendStiffness="0.12" BendStiffnessByTrianglesAngle="0" Friction="0.01" CollisionDampingTangential="0" NndcMaximumShiftFactor="0" NndcShiftCollisionFactor="1" MaxAnimDistance="100" BlendControlJointName="blend_physics_01" BlendControlAxis="BlendControlJointAxisToUse_Z" EquipmentPart="waist" Model="torso/decor/habit/habit01_waist/habit01_waist.skin" Material="torso/decor/habit/habit01_torso/wildman_habit01_m01_torso.mtl" />
+															<JointElement Name="rosary_01" Joint="rosary_habit01_torso_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99144483,-3.707525e-09,0.13052619,4.8810483e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="167.08176,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.01957725,-0.011729102" StiffnessTarget="-0.14490935,0.77045441,0" Capsule="0.07,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_02" Joint="rosary_habit01_torso_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99619466,-2.4973135e-08,0.08715573,2.1848658e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="178.97275,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.0078306515,0.0039162836" StiffnessTarget="0.14099215,-0.7564646,0" Capsule="0.1216385,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_03" Joint="rosary_habit01_torso_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,0,0.043619383,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="181.79938,0" Damping="2" Stiffness="8" SimulationAxis="0.2,0,-0.011745939" StiffnessTarget="0.13317023,-0.84529549,0" Capsule="0.066571467,0.02" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail01" Joint="wm_tail_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="2.0" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail02" Joint="wm_tail_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail03" Joint="wm_tail_03" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail04" Joint="wm_tail_04" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail05" Joint="wm_tail_05" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail06" Joint="wm_tail_06" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibLU" Joint="wm_rib_lu" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibLF" Joint="wm_rib_lf" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibRU" Joint="wm_rib_ru" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibRF" Joint="wm_rib_rf" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															</Elements>
+															<Features>
+																<Feature Name="CoatBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArms" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsLeft" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFold" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFoldLeft" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodTorso" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodWaist" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodArms" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="GarmentRope" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="BeltBase" Material="NoDraw" />
+																<Feature Name="BagLaces" Material="NoDraw" />
+																<Feature Name="BagBase" Material="NoDraw" />
+																<Feature Name="BagBuckle" Material="NoDraw" />
+																<Feature Name="BagStrap" Material="NoDraw" />
+																<Feature Name="PouchLaces" Material="NoDraw" />
+																<Feature Name="PouchBags" Material="NoDraw" />
+																<Feature Name="UberlodBags" Material="NoDraw" />
+																<Feature Name="RosaryBeads" Material="NoDraw" />
+																<Feature Name="RosaryCross" Material="NoDraw" />
+																<Feature Name="ArmArmorBuckle" Material="NoDraw" />
+															</Features>
+														</Clothing>
+														<Clothing Name="HabitWildman_mx">
+															<Elements>
+															<SkinElement EquipmentPart="torso" Model="torso/decor/habit/habit01_torso/habit01_torso.skin" Material="torso/decor/habit/habit01_torso/wildman_habit01_m01_torso.mtl" />
+															<SkinElement EquipmentPart="arms" Model="arms/arms_splited/habit01_arms/habit01_arms.skin" Material="arms/arms_splited/habit01_arms/wildman_habit01_m01_arms.mtl" />
+															<JointElement Name="Belt01" Joint="habit01_torso_mainbelt_01" Position="-0.02,0,0" Rotation="0.99619466,-2.4973167e-08,0.08715573,2.1848694e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.7971,0" Gravity="9.8" Damping="4" Stiffness="6" PivotOffset="0.02,0,0" SimulationAxis="0.40000001,0,-0.0051763742" StiffnessTarget="0.13317023,-0.80534989,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt02" Joint="habit01_torso_mainbelt_02" Position="0,0,0" Rotation="0.99144483,0,0.13052619,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="160,0" Damping="4" Stiffness="8" SimulationAxis="0.5,0.046975691,-0.002052278" StiffnessTarget="0.1253597,-0.76649594,0" Capsule="0.2,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt03" Joint="habit01_torso_mainbelt_03_end" Rotation="0.99904817,1.7448054e-10,0.043619383,-7.6179844e-12">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.50505,0" Damping="4" Stiffness="8" SimulationAxis="0.30000001,0.0038985668,-0.0042575635" StiffnessTarget="0.18411988,-0.83385676,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel" Joint="habit01_torso_satchel_01" Rotation="0.98480773,0,0.17364818,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="180,0" Gravity="22" Damping="4" Stiffness="6" SimulationAxis="0.40000001,0,-0.070426933" StiffnessTarget="0.12533352,-0.7823326,0" Capsule="0.070489369,0.015" ProjectionType="1" ProxyNames="hips_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="pouch" Joint="pouch" Position="-0.030999999,0,0.0078306058" Rotation="0.99619466,-4.6866488e-09,-0.08715573,-4.1002859e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="194.72482,0" Damping="2" Stiffness="6" PivotOffset="0.030999999,0,0" SimulationAxis="0.30000001,-0.011746101,-0.066571467" StiffnessTarget="-0.21156281,0.80304974,0" Capsule="0.090000004,0.015" ProjectionType="1" ProxyNames="leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel02" Joint="habit01_torso_satchel_02_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Gravity="22" Damping="2" Stiffness="5" SimulationAxis="0.40000001,0,-0.031325087" StiffnessTarget="0.18411988,-0.82195872,0" Capsule="0.058738191,0.029999999" ProjectionType="1" ProxyNames="hips_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<VClothElement SimBinding="torso/decor/habit/habit01_waist/habit01_waist_sim.skin" StretchStiffness="0.1" ShearStiffness="0.05" BendStiffness="0.12" BendStiffnessByTrianglesAngle="0" Friction="0.01" CollisionDampingTangential="0" NndcMaximumShiftFactor="0" NndcShiftCollisionFactor="1" MaxAnimDistance="100" BlendControlJointName="blend_physics_01" BlendControlAxis="BlendControlJointAxisToUse_Z" EquipmentPart="waist" Model="torso/decor/habit/habit01_waist/habit01_waist.skin" Material="torso/decor/habit/habit01_torso/wildman_habit01_m01_torso.mtl" />
+															<JointElement Name="rosary_01" Joint="rosary_habit01_torso_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99144483,-3.707525e-09,0.13052619,4.8810483e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="167.08176,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.01957725,-0.011729102" StiffnessTarget="-0.14490935,0.77045441,0" Capsule="0.07,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_02" Joint="rosary_habit01_torso_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99619466,-2.4973135e-08,0.08715573,2.1848658e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="178.97275,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.0078306515,0.0039162836" StiffnessTarget="0.14099215,-0.7564646,0" Capsule="0.1216385,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_03" Joint="rosary_habit01_torso_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,0,0.043619383,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="181.79938,0" Damping="2" Stiffness="8" SimulationAxis="0.2,0,-0.011745939" StiffnessTarget="0.13317023,-0.84529549,0" Capsule="0.066571467,0.02" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															</Elements>
+															<Features>
+																<Feature Name="CoatBase" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArms" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsLeft" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFold" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFoldLeft" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodTorso" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodWaist" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodArms" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="GarmentRope" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="BeltBase" Material="NoDraw" />
+																<Feature Name="BagLaces" Material="NoDraw" />
+																<Feature Name="BagBase" Material="NoDraw" />
+																<Feature Name="BagBuckle" Material="NoDraw" />
+																<Feature Name="BagStrap" Material="NoDraw" />
+																<Feature Name="PouchLaces" Material="NoDraw" />
+																<Feature Name="PouchBags" Material="NoDraw" />
+																<Feature Name="UberlodBags" Material="NoDraw" />
+																<Feature Name="RosaryBeads" Material="NoDraw" />
+																<Feature Name="RosaryCross" Material="NoDraw" />
+																<Feature Name="ArmArmorBuckle" Material="NoDraw" />
+															</Features>
+														</Clothing>
+														<Clothing Name="HabitWildman_mz">
+															<Elements>
+															<SkinElement EquipmentPart="torso" Model="torso/decor/habit/habit01_torso/habit01_torso.skin" Material="torso/decor/habit/habit01_torso/wildman_burnt_habit01_m01_torso.mtl" />
+															<SkinElement EquipmentPart="arms" Model="torso/decor/habit/habitwildman/wildman_tailarms_burnt.skin" Material="arms/arms_splited/habit01_arms/wildman_burnt_habit01_m01_arms.mtl" />
+															<JointElement Name="Belt01" Joint="habit01_torso_mainbelt_01" Position="-0.02,0,0" Rotation="0.99619466,-2.4973167e-08,0.08715573,2.1848694e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.7971,0" Gravity="9.8" Damping="4" Stiffness="6" PivotOffset="0.02,0,0" SimulationAxis="0.40000001,0,-0.0051763742" StiffnessTarget="0.13317023,-0.80534989,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt02" Joint="habit01_torso_mainbelt_02" Position="0,0,0" Rotation="0.99144483,0,0.13052619,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="160,0" Damping="4" Stiffness="8" SimulationAxis="0.5,0.046975691,-0.002052278" StiffnessTarget="0.1253597,-0.76649594,0" Capsule="0.2,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="Belt03" Joint="habit01_torso_mainbelt_03_end" Rotation="0.99904817,1.7448054e-10,0.043619383,-7.6179844e-12">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="154.50505,0" Damping="4" Stiffness="8" SimulationAxis="0.30000001,0.0038985668,-0.0042575635" StiffnessTarget="0.18411988,-0.83385676,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel" Joint="habit01_torso_satchel_01" Rotation="0.98480773,0,0.17364818,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="180,0" Gravity="22" Damping="4" Stiffness="6" SimulationAxis="0.40000001,0,-0.070426933" StiffnessTarget="0.12533352,-0.7823326,0" Capsule="0.070489369,0.015" ProjectionType="1" ProxyNames="hips_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="pouch" Joint="pouch" Position="-0.030999999,0,0.0078306058" Rotation="0.99619466,-4.6866488e-09,-0.08715573,-4.1002859e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="40" DiskRotation="194.72482,0" Damping="2" Stiffness="6" PivotOffset="0.030999999,0,0" SimulationAxis="0.30000001,-0.011746101,-0.066571467" StiffnessTarget="-0.21156281,0.80304974,0" Capsule="0.090000004,0.015" ProjectionType="1" ProxyNames="leftUpLeg_PAux" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<JointElement Name="satchel02" Joint="habit01_torso_satchel_02_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Gravity="22" Damping="2" Stiffness="5" SimulationAxis="0.40000001,0,-0.031325087" StiffnessTarget="0.18411988,-0.82195872,0" Capsule="0.058738191,0.029999999" ProjectionType="1" ProxyNames="hips_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_Y" />
+															</JointElement>
+															<VClothElement SimBinding="torso/decor/habit/habit01_waist/habit01_waist_sim.skin" StretchStiffness="0.1" ShearStiffness="0.05" BendStiffness="0.12" BendStiffnessByTrianglesAngle="0" Friction="0.01" CollisionDampingTangential="0" NndcMaximumShiftFactor="0" NndcShiftCollisionFactor="1" MaxAnimDistance="100" BlendControlJointName="blend_physics_01" BlendControlAxis="BlendControlJointAxisToUse_Z" EquipmentPart="waist" Model="torso/decor/habit/habit01_waist/habit01_waist.skin" Material="torso/decor/habit/habit01_torso/wildman_burnt_habit01_m01_torso.mtl" />
+															<JointElement Name="rosary_01" Joint="rosary_habit01_torso_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99144483,-3.707525e-09,0.13052619,4.8810483e-10">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="167.08176,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.01957725,-0.011729102" StiffnessTarget="-0.14490935,0.77045441,0" Capsule="0.07,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_02" Joint="rosary_habit01_torso_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99619466,-2.4973135e-08,0.08715573,2.1848658e-09">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="178.97275,0" Damping="5" Stiffness="10" SimulationAxis="0.30000001,0.0078306515,0.0039162836" StiffnessTarget="0.14099215,-0.7564646,0" Capsule="0.1216385,0.025" ProjectionType="1" ProxyNames="leftUpLeg_PAux rightUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="rosary_03" Joint="rosary_habit01_torso_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,0,0.043619383,0">
+															<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="181.79938,0" Damping="2" Stiffness="8" SimulationAxis="0.2,0,-0.011745939" StiffnessTarget="0.13317023,-0.84529549,0" Capsule="0.066571467,0.02" ProjectionType="1" ProxyNames="rightUpLeg_PAux leftUpLeg_PAux" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail01" Joint="wm_tail_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="2.0" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail02" Joint="wm_tail_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail03" Joint="wm_tail_03" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail04" Joint="wm_tail_04" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail05" Joint="wm_tail_05" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmTail06" Joint="wm_tail_06" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" Mass="3.5" Damping="1.5" Stiffness="1" SimulationAxis="0.12,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibLU" Joint="wm_rib_lu" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibLF" Joint="wm_rib_lf" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibRU" Joint="wm_rib_ru" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															<JointElement Name="WmRibRF" Joint="wm_rib_rf" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+															<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="45" Mass="1.2" Damping="2.0" Stiffness="1" SimulationAxis="0.1,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+															</JointElement>
+															</Elements>
+															<Features>
+																<Feature Name="CoatBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArms" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsLeft" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFold" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="CoatArmsFoldLeft" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodTorso" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodWaist" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodArms" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="GarmentRope" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="BeltBase" Material="NoDraw" />
+																<Feature Name="BagLaces" Material="NoDraw" />
+																<Feature Name="BagBase" Material="NoDraw" />
+																<Feature Name="BagBuckle" Material="NoDraw" />
+																<Feature Name="BagStrap" Material="NoDraw" />
+																<Feature Name="PouchLaces" Material="NoDraw" />
+																<Feature Name="PouchBags" Material="NoDraw" />
+																<Feature Name="UberlodBags" Material="NoDraw" />
+																<Feature Name="RosaryBeads" Material="NoDraw" />
+																<Feature Name="RosaryCross" Material="NoDraw" />
+																<Feature Name="ArmArmorBuckle" Material="NoDraw" />
+															</Features>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Legs">
+							<DerivedComponents>
+								<Clothing Name="Hose">
+									<DerivedComponents>
+										<Clothing Name="HoseJoined">
+											<DerivedComponents>
+												<Clothing Name="HoseJoined01_m01">
+													<DerivedComponents>
+														<Clothing Name="HoseJoinedWildman_mw">
+															<Elements>
+															<SkinElement EquipmentPart="legs" Model="legs/hose/hose_joined/hosejoined01/hosejoined01.skin" Material="legs/hose/hose_joined/hosejoined01/wildman_hosejoined01_m01.mtl" />
+															</Elements>
+															<Features>
+																<Feature Name="HoseBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseSeam" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseLaces" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseBelt" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs2" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs3" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+															</Features>
+														</Clothing>
+														<Clothing Name="HoseJoinedWildman_mx">
+															<Elements>
+															<SkinElement EquipmentPart="legs" Model="legs/hose/hose_joined/hosejoined01/hosejoined01.skin" Material="legs/hose/hose_joined/hosejoined01/wildman_hosejoined01_m01.mtl" />
+															</Elements>
+															<Features>
+																<Feature Name="HoseBase" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseSeam" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseLaces" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseBelt" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs2" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs3" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+															</Features>
+														</Clothing>
+														<Clothing Name="HoseJoinedWildman_mz">
+															<Elements>
+															<SkinElement EquipmentPart="legs" Model="legs/hose/hose_joined/hosejoined01/hosejoined01.skin" Material="legs/hose/hose_joined/hosejoined01/wildman_burnt_hosejoined01_m01.mtl" />
+															</Elements>
+															<Features>
+																<Feature Name="HoseBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseSeam" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseLaces" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoseBelt" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs2" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																<Feature Name="UberlodLegs3" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+															</Features>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Hands">
+							<DerivedComponents>
+								<Clothing Name="Gloves">
+									<DerivedComponents>
+										<Clothing Name="Gloves01_m01">
+											<DerivedComponents>
+												<Clothing Name="GlovesWildman_mw">
+													<Elements>
+													<SkinElement EquipmentPart="hands" Model="hands/gloves/gloves_01/gloves_01.skin" Material="hands/gloves/gloves_01/wildman_gloves01_m01.mtl" />
+													</Elements>
+													<Features>
+														<Feature Name="GloveBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+														<Feature Name="GloveFingers" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands2" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+													</Features>
+												</Clothing>
+												<Clothing Name="GlovesWildman_mx">
+													<Elements>
+													<SkinElement EquipmentPart="hands" Model="hands/gloves/gloves_01/gloves_01.skin" Material="hands/gloves/gloves_01/wildman_gloves01_m01.mtl" />
+													</Elements>
+													<Features>
+														<Feature Name="GloveBase" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="GloveFingers" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands2" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+													</Features>
+												</Clothing>
+												<Clothing Name="GlovesWildman_mz">
+													<Elements>
+													<SkinElement EquipmentPart="hands" Model="hands/gloves/gloves_01/gloves_01.skin" Material="hands/gloves/gloves_01/wildman_burnt_gloves01_m01.mtl" />
+													</Elements>
+													<Features>
+														<Feature Name="GloveBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+														<Feature Name="GloveFingers" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+														<Feature Name="UberlodHands2" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+													</Features>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Hood">
+									<DerivedComponents>
+										<Clothing Name="Hood01_m01">
+											<DerivedComponents>
+												<Clothing Name="HoodWildman_mx">
+													<Elements>
+													<SkinElement EquipmentPart="neck" Model="head/hood/hood01/hood01.skin" Material="head/hood/hood01/wildman_hood01_m01.mtl" />
+													<JointElement Name="liripipe01" Joint="liripipe_hood01_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,0,-0,-0.043619383">
+													<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="20" DiskRotation="100,0" Mass="0.5" Damping="3" Stiffness="15" SimulationAxis="0.5,0,0" Capsule="0.059999999,0.0152" ProjectionType="1" ProxyNames="Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="liripipe02" Joint="liripipe_hood01_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="87.755554,0" Damping="5" Stiffness="10" SimulationAxis="0.5,0,0" Capsule="0.1,0.025" ProjectionType="1" ProxyNames="belly_PCloth Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="liripipe03" Joint="liripipe_hood01_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="90,0" Damping="2" Stiffness="10" SimulationAxis="0.5,0,0" Capsule="0.050000001,0.02" ProjectionType="1" ProxyNames="Ribcage_PCloth belly_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="liripipe03_up" Joint="liripipe_hood01_up_end" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" DiskRotation="90,0" Damping="4" Stiffness="12" SimulationAxis="0.5,0.062654786,0" Capsule="0.073098324,0.0099999998" ProxyNames="Ribcage_PCloth" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="liripipe01_up" Joint="liripipe_hood01_up_01" Rotation="0.99904817,0,-0,-0.043619383">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="30" DiskRotation="95,0" Damping="4" Stiffness="13" SimulationAxis="0.40000001,0.12080441,0" Capsule="0.14,0.02" ProjectionType="1" ProxyNames="Ribcage_PCloth rightUpArm_PCloth leftUpArm_PCloth" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="liripipe02_up" Joint="liripipe_hood01_up_02">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="92,0" Damping="4" Stiffness="12" SimulationAxis="0.40000001,0.10312732,0" Capsule="0.085000001,0.02" ProjectionType="1" ProxyNames="Ribcage_PCloth leftUpArm_PCloth rightUpArm_PCloth" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													</Elements>
+													<Features>
+														<Feature Name="HoodBase" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="HoodBase2" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="HoodInside" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+														<Feature Name="ArmArmorBuckle" Material="NoDraw" />
+													</Features>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Hood">
+									<DerivedComponents>
+										<Clothing Name="Hood01_m01">
+											<DerivedComponents>
+												<Clothing Name="Hood01_m01_up">
+													<DerivedComponents>
+														<Clothing Name="HoodWildman_mx_up">
+															<Elements>
+															<SkinElement EquipmentPart="neck" Model="head/hood/hood01_up/hood01_up.skin" Material="head/hood/hood01_up/wildman_hood01_m01_up.mtl" />
+															<SkinElement EquipmentPart="head" BodyLayerId="9" Model="dummy" Material="" />
+															<JointElement Name="liripipe01" Joint="" Rotation="0.99999994,0,0,0" />
+															<JointElement Name="liripipe02" Joint="" />
+															<JointElement Name="liripipe03" Joint="" />
+															<JointElement Name="liripipe03_up" Joint="liripipe_hood01_up_end" Rotation="0.99999994,0,0,0" />
+															<JointElement Name="liripipe01_up" Joint="liripipe_hood01_up_01" Rotation="0.99904817,0,-0,-0.043619383" />
+															<JointElement Name="liripipe02_up" Joint="liripipe_hood01_up_02" />
+															</Elements>
+															<Features>
+																<Feature Name="HoodBase" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoodBase2" Material="Fur_tow_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="HoodInside" Material="Fur_tow_pitched_x" TileU="0.1" TileV="0.1" />
+																<Feature Name="ArmArmorBuckle" Material="NoDraw" />
+															</Features>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Helmet">
+									<DerivedComponents>
+										<Clothing Name="Bascinet">
+											<DerivedComponents>
+												<Clothing Name="BascinetVisor">
+													<DerivedComponents>
+														<Clothing Name="BascinetVisorScaring_m01">
+															<DerivedComponents>
+																<Clothing Name="MaskWildman_mw">
+																	<Elements>
+																	<SkinElement EquipmentPart="head" Model="torso/decor/habit/habitwildman/wildman_mask.skin" Material="head/helmet/bascinet/bascinet_visor/bascinetvisorscaring/wildman_bascinetvisorscaring_m01.mtl" />
+																	<JointElement Name="Visor" Joint="bascinetvisorscaring_helmetVisor" Position="0,0,0" Rotation="0.97629595,0,-0,-0.2164396">
+																	<SimulationParams ClampType="PendulumHingePlane" Redirect="true" MaxAngle="27" Mass="4" Damping="10" Stiffness="400" SimulationAxis="0.5,0,0" StiffnessTarget="0.30000001,0,0" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="pointy_ear_left" Joint="bascinetvisorscaring_ear_left" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.96592581,0,-0.25881904,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="120,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,-0.011749754,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="pointy_ear_right" Joint="bascinetvisorscaring_ear_right" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.96592581,-3.4254384e-24,-0.25881904,-1.278391e-23">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="60,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,0.015659999,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskL" Joint="wm_whisk_l" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskR" Joint="wm_whisk_r" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskC" Joint="wm_whisk_c" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	</Elements>
+																	<Features>
+																		<Feature Name="HelmetBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetVisor" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetRivet" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetTrim" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFabric" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFeather" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFeather02" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetStitches" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead2" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetInside" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetEdges" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetRope" Material="NoDraw" />
+																	</Features>
+																</Clothing>
+																<Clothing Name="MaskWildman_mz">
+																	<Elements>
+																	<SkinElement EquipmentPart="head" Model="torso/decor/habit/habitwildman/wildman_mask_burnt.skin" Material="head/helmet/bascinet/bascinet_visor/bascinetvisorscaring/wildman_burnt_bascinetvisorscaring_m01.mtl" />
+																	<JointElement Name="Visor" Joint="bascinetvisorscaring_helmetVisor" Position="0,0,0" Rotation="0.97629595,0,-0,-0.2164396">
+																	<SimulationParams ClampType="PendulumHingePlane" Redirect="true" MaxAngle="27" Mass="4" Damping="10" Stiffness="400" SimulationAxis="0.5,0,0" StiffnessTarget="0.30000001,0,0" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="pointy_ear_left" Joint="bascinetvisorscaring_ear_left" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.96592581,0,-0.25881904,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="120,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,-0.011749754,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="pointy_ear_right" Joint="bascinetvisorscaring_ear_right" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.96592581,-3.4254384e-24,-0.25881904,-1.278391e-23">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="60,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,0.015659999,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskL" Joint="wm_whisk_l" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskR" Joint="wm_whisk_r" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	<JointElement Name="WmWhiskC" Joint="wm_whisk_c" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																	<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																	</JointElement>
+																	</Elements>
+																	<Features>
+																		<Feature Name="HelmetBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetVisor" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetRivet" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetTrim" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFabric" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFeather" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetFeather02" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetStitches" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead2" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetInside" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetEdges" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="HelmetRope" Material="NoDraw" />
+																	</Features>
+																</Clothing>
+															</DerivedComponents>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Helmet">
+									<DerivedComponents>
+										<Clothing Name="Bascinet">
+											<DerivedComponents>
+												<Clothing Name="BascinetVisor">
+													<DerivedComponents>
+														<Clothing Name="BascinetVisorScaring_m01">
+															<DerivedComponents>
+																<Clothing Name="BascinetVisorScaring_m01_closed">
+																	<DerivedComponents>
+																		<Clothing Name="MaskWildman_mw_closed">
+																			<Elements>
+																			<SkinElement EquipmentPart="head" Model="torso/decor/habit/habitwildman/wildman_mask.skin" Material="head/helmet/bascinet/bascinet_visor/bascinetvisorscaring/wildman_bascinetvisorscaring_m01.mtl" />
+																			<JointElement Name="Visor" Rotation="0.97629595,0,-0,-0.2164396">
+																			<SimulationParams ClampType="PendulumHingePlane" Redirect="true" MaxAngle="27" Mass="4" Damping="10" Stiffness="400" SimulationAxis="0.5,0,0" StiffnessTarget="0.30000001,0,0" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="pointy_ear_left">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="120,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,-0.011749754,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="pointy_ear_right">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="60,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,0.015659999,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskL" Joint="wm_whisk_l" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskR" Joint="wm_whisk_r" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskC" Joint="wm_whisk_c" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			</Elements>
+																			<Features>
+																				<Feature Name="HelmetBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetVisor" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetRivet" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetTrim" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFabric" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFeather" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFeather02" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetStitches" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="UberlodHead" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="UberlodHead2" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetInside" Material="Fur_tow_pitched_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetEdges" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetRope" Material="NoDraw" />
+																			</Features>
+																		</Clothing>
+																		<Clothing Name="MaskWildman_mz_closed">
+																			<Elements>
+																			<SkinElement EquipmentPart="head" Model="torso/decor/habit/habitwildman/wildman_mask_burnt.skin" Material="head/helmet/bascinet/bascinet_visor/bascinetvisorscaring/wildman_burnt_bascinetvisorscaring_m01.mtl" />
+																			<JointElement Name="Visor" Rotation="0.97629595,0,-0,-0.2164396">
+																			<SimulationParams ClampType="PendulumHingePlane" Redirect="true" MaxAngle="27" Mass="4" Damping="10" Stiffness="400" SimulationAxis="0.5,0,0" StiffnessTarget="0.30000001,0,0" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="pointy_ear_left">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="120,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,-0.011749754,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="pointy_ear_right">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="20" DiskRotation="60,0" Damping="4" Stiffness="6" SimulationAxis="-0.1,0.015659999,0.070519999" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskL" Joint="wm_whisk_l" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskR" Joint="wm_whisk_r" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			<JointElement Name="WmWhiskC" Joint="wm_whisk_c" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+																			<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="0.6" Damping="2.5" Stiffness="4" SimulationAxis="0.06,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+																			</JointElement>
+																			</Elements>
+																			<Features>
+																				<Feature Name="HelmetBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetVisor" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetRivet" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetTrim" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFabric" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFeather" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetFeather02" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetStitches" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="UberlodHead" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="UberlodHead2" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetInside" Material="Fur_tow_pitched_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetEdges" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																				<Feature Name="HelmetRope" Material="NoDraw" />
+																			</Features>
+																		</Clothing>
+																	</DerivedComponents>
+																</Clothing>
+															</DerivedComponents>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Coif">
+									<DerivedComponents>
+										<Clothing Name="PaddedCoif">
+											<DerivedComponents>
+												<Clothing Name="CoifLarge">
+													<DerivedComponents>
+														<Clothing Name="CoifLarge01_m01">
+															<DerivedComponents>
+																<Clothing Name="CoifWildman_mw">
+																	<Elements>
+																	<SkinElement EquipmentPart="head" Model="head/coif/padded_coif/coif_large/coiflarge01/coiflarge01.skin" Material="head/coif/padded_coif/coif_large/coiflarge01/wildman_coiflarge01_m01.mtl" />
+																	</Elements>
+																	<Features>
+																		<Feature Name="LargeCoifBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifSeam" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead2" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="CoifBase" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="CoifSeam" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifEnding" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifFaceEnding" Material="Fur_tow_w" TileU="0.1" TileV="0.1" />
+																		<Feature Name="MailEndingLine" Material="NoDraw" />
+																	</Features>
+																</Clothing>
+																<Clothing Name="CoifWildman_mz">
+																	<Elements>
+																	<SkinElement EquipmentPart="head" Model="head/coif/padded_coif/coif_large/coiflarge01/coiflarge01.skin" Material="head/coif/padded_coif/coif_large/coiflarge01/wildman_burnt_coiflarge01_m01.mtl" />
+																	</Elements>
+																	<Features>
+																		<Feature Name="LargeCoifBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifSeam" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="UberlodHead2" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="CoifBase" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="CoifSeam" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifEnding" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="LargeCoifFaceEnding" Material="Fur_tow_z" TileU="0.1" TileV="0.1" />
+																		<Feature Name="MailEndingLine" Material="NoDraw" />
+																	</Features>
+																</Clothing>
+															</DerivedComponents>
+														</Clothing>
+													</DerivedComponents>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Head">
+							<DerivedComponents>
+								<Clothing Name="Cap">
+									<DerivedComponents>
+										<Clothing Name="Cap26_m01">
+											<DerivedComponents>
+												<Clothing Name="Cap26Fox">
+													<Elements>
+													<SkinElement EquipmentPart="head" Model="head/cap/cap26/fox_cap26.skin" Material="head/cap/cap26/fox_cap26_m01.mtl" />
+													<JointElement Name="coifStrap_l_01" Joint="cap26_coifstraps_l_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,0,-0.043619383,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Damping="2" Stiffness="6" SimulationAxis="0.30000001,0.04307,0.018291024" StiffnessTarget="0.11749,-0.65978003,0" Capsule="0.048747115,0.003" ProjectionType="1" ProxyNames="Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="coifStrap_l_02" Joint="cap26_coifstraps_l_02_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99144483,-9.2384378e-10,0.13052619,1.2162638e-10">
+													<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="30" DiskRotation="180,0" Damping="2" Stiffness="8" SimulationAxis="0.2,0.052209999,0.050931763" StiffnessTarget="0.10574,-0.91728997,0" Capsule="0.039156612,0.001" ProxyNames="Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="coifStrap_r_01" Joint="cap26_coifstraps_r_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99904817,-1.8741158e-09,-0.043619383,-8.1825664e-11">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Damping="2" Stiffness="6" SimulationAxis="0.30000001,0.023492951,0.066592008" StiffnessTarget="0.11749,-0.65978003,0" Capsule="0.037,0.003" ProjectionType="1" ProxyNames="Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="coifStrap_r_02" Joint="cap26_coifstraps_r_02_end" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99144483,-3.7197063e-09,0.13052619,4.8970855e-10">
+													<SimulationParams ClampType="PendulumHalfCone" Redirect="true" MaxAngle="35" DiskRotation="180,0" Damping="2" Stiffness="8" SimulationAxis="0.2,0,0.058736362" StiffnessTarget="0.10574,-0.91728997,0" Capsule="0.02348098,0.001" ProxyNames="Ribcage_PCloth" BlendControlJointName="blend_physics_02" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="FxTail01" Joint="fx_tail_01" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="25" Mass="1.2" Damping="1.8" Stiffness="3.0" SimulationAxis="0.063,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="FxTail02" Joint="fx_tail_02" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="40" Mass="1.2" Damping="1.4" Stiffness="1.5" SimulationAxis="0.063,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="FxTail03" Joint="fx_tail_03" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="50" Mass="1.2" Damping="1.2" Stiffness="1.0" SimulationAxis="0.063,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													<JointElement Name="FxTail04" Joint="fx_tail_04" UsesRelativePosition="true" UsesRelativeRotation="true" Position="0,0,0" Rotation="0.99999994,0,0,0">
+													<SimulationParams ClampType="PendulumCone" Redirect="true" MaxAngle="60" Mass="1.2" Damping="1.0" Stiffness="0.8" SimulationAxis="0.063,0,0" BlendControlAxis="BlendControlJointAxisToUse_X" />
+													</JointElement>
+													</Elements>
+													<Features>
+														<Feature Name="HelmetBase" Material="Fur_fox_fox" />
+														<Feature Name="GarmentDecoration" Material="Fur_fox_pale_fox" />
+														<Feature Name="UberlodHead" Material="Fur_fox_fox" />
+													</Features>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+		<Component Name="Male">
+			<DerivedComponents>
+				<Component Name="Clothing">
+					<DerivedComponents>
+						<Component Name="Hands">
+							<DerivedComponents>
+								<Clothing Name="Gloves">
+									<DerivedComponents>
+										<Clothing Name="Gloves01_m01">
+											<DerivedComponents>
+												<Clothing Name="Gloves01Fox">
+													<Features>
+														<Feature Name="GloveBase" Material="Fur_fox_fox_g" />
+														<Feature Name="GloveFingers" Material="Fur_fox_fox_g" />
+														<Feature Name="UberlodHands" Material="Fur_fox_fox_g" />
+														<Feature Name="UberlodHands2" Material="Fur_fox_fox_g" />
+													</Features>
+												</Clothing>
+											</DerivedComponents>
+										</Clothing>
+									</DerivedComponents>
+								</Clothing>
+							</DerivedComponents>
+						</Component>
+					</DerivedComponents>
+				</Component>
+			</DerivedComponents>
+		</Component>
+	</CharacterComponents>
+</database>

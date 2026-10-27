@@ -1,0 +1,6 @@
+# The data drop this checkout assembles: the one scripts/fetch_drop.* brings into drop/ and
+# tools/assemble_db.py turns into data/kcd2/npcs.sqlite. A drop is made by export_drop.py in
+# moonshine-voice-characters and named for its date and that repository's commit; the
+# manifest's sha256 pins the exact files. Moving to a new drop is an edit here.
+drop=2026-10-26-4316967
+manifest_sha256=2fc25dcdac4f20f26cdc49226fb8d16c06db89157742d1810d5df34f728c65db

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<!-- Lights Henry can carry (scripts/autopilot/light_probe.lua). Both are class 11 (the
+     torch class: the Torch equip slot, the left hand, the torch draw and holster, and
+     everything the AI reads off a torch, crime_ignorePlayerWithoutTorch among it), so the
+     game treats them as torches; what differs is the entity script, which is where the
+     light is. torch_weapon itself only loads the flame particle; the 8 m light on a held
+     torch is the engine's, from human:GetTorchLightArchetype(). These add their own.
+     GUIDs are uuid5("moonshine:item:<name>") as fox_fur_set.py makes them. -->
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="item.xsd">
+	<ItemClasses version="8">
+		<!-- torch_weapon with MoonshineTorch for its script: a second, shadowless light twice the radius. -->
+		<MeleeWeapon Attack="30" AttackModStab="0" AttackModSlash="0" AttackModSmash="1" Class="11" SubClass="4" Defense="8" MaxStatus="50" StrReq="1" AgiReq="0" IsBreakable="false" Visibility="0" Conspicuousness="0" Charisma="6" SocialClassId="0" WealthLevel="0" MaxQuality="1" UiSound="ui_inv_item_weapon_torch" IconId="torch" UIInfo="ui_in_moonshine_names_torch_bright" UIName="ui_nm_moonshine_names_torch_bright" Model="manmade/common_illumination/torch_player" EntityScript="MoonshineTorch" Weight="1.5" Price="120" FadeCoef="2.222222" VisibilityCoef="1.183216" LightSourcePriority="2" Id="77a2be22-9139-56da-a45c-ced3eaed406a" Name="moonshine_torch_bright">
+			<Phase Order="1" Model="manmade/common_illumination/torch_player" Material="manmade/common_illumination/torch_short_a_burned" />
+		</MeleeWeapon>
+		<!-- The night watch's lantern (lamp_tool's model and lit material) in the torch slot, with a
+		     beam: MoonshineLantern loads a projector light and turns it where Henry looks. -->
+		<MeleeWeapon Attack="10" AttackModStab="0" AttackModSlash="0" AttackModSmash="1" Class="11" SubClass="4" Defense="4" MaxStatus="50" StrReq="1" AgiReq="0" IsBreakable="false" Visibility="0" Conspicuousness="0" Charisma="6" SocialClassId="0" WealthLevel="0" MaxQuality="1" UiSound="ui_inv_item_weapon_torch" IconId="loot_lamp" UIInfo="ui_in_moonshine_names_lantern" UIName="ui_nm_moonshine_names_lantern" Model="manmade/common_illumination/lamp_leather_wearable.cgf" Material="manmade/common_illumination/lamp_new_wearable_b_lit.mtl" EntityScript="MoonshineLantern" Weight="1.2" Price="250" FadeCoef="2.222222" VisibilityCoef="1.183216" LightSourcePriority="2" Id="ee1e2f71-c798-5e52-813e-56dd48e6f200" Name="moonshine_lantern" />
+	</ItemClasses>
+</database>

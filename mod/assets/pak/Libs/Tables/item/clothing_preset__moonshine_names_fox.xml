@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<database xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="barbora" xsi:noNamespaceSchemaLocation="../database.xsd">
+	<clothing_presets version="2">
+		<clothing_preset clothing_preset_id="6eb6b07a-87a5-507b-b29a-b3d73a06c363" clothing_preset_name="moonshine_names_fox_fox" gender="Male">
+			<Items>
+				<Guid>9a18ace8-60bd-5aa5-b31d-fe27c1473cce</Guid>
+				<Guid>6c777d1f-026f-5ae4-a9bb-ff273c65b5fe</Guid>
+			</Items>
+		</clothing_preset>
+	</clothing_presets>
+</database>
