@@ -54,13 +54,21 @@ done < <(needed)
 if (( ${#missing[@]} )); then
     echo "=== pulling ${#missing[@]} LFS objects ==="
     if [[ -n "${MOONSHINE_LFS_FROM:-}" ]]; then
+        # From that checkout's object store, or, when git lfs prune has emptied it, from its
+        # working tree where the file is the same object (the sha256 is the oid).
         from="$MOONSHINE_LFS_FROM/.git/lfs/objects"
-        [[ -d "$from" ]] || { echo "no LFS store at $from" >&2; exit 1; }
         mkdir -p "$root/.git/lfs/objects"
         for f in "${missing[@]}"; do
             oid=$(git -C "$root" lfs ls-files -l -I "$f" | awk '{print $1}')
             src="$from/${oid:0:2}/${oid:2:2}/$oid"
-            [[ -f "$src" ]] || { echo "$MOONSHINE_LFS_FROM has no object for $f" >&2; exit 1; }
+            if [[ ! -f "$src" ]]; then
+                tree="$MOONSHINE_LFS_FROM/$f"
+                if [[ -f "$tree" && "$(shasum -a 256 "$tree" | awk '{print $1}')" == "$oid" ]]; then
+                    src="$tree"
+                else
+                    echo "$MOONSHINE_LFS_FROM has no object for $f" >&2; exit 1
+                fi
+            fi
             mkdir -p "$root/.git/lfs/objects/${oid:0:2}/${oid:2:2}"
             cp "$src" "$root/.git/lfs/objects/${oid:0:2}/${oid:2:2}/$oid"
         done

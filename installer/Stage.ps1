@@ -26,11 +26,13 @@
 # checkout unless told otherwise; -Python is the first python.exe on the PATH unless told.
 param(
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [string]$Repo = '',
     [string]$Python = $env:PYTHON,
     [switch]$SkipInstaller
 )
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 has $PSScriptRoot empty while the parameter defaults are evaluated.
+if (-not $Repo) { $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path }
 if (-not $Python) {
     $cmd = Get-Command python.exe, python3.exe -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'WindowsApps' } | Select-Object -First 1
     if (-not $cmd) { Write-Error 'no python on the PATH; -Python C:\path\to\python.exe'; exit 1 }

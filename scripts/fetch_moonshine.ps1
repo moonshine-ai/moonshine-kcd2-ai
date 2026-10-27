@@ -40,12 +40,20 @@ $missing = @($needed | Where-Object { $p = Join-Path $root $_; -not (Test-Path -
 if ($missing.Count -gt 0) {
     Write-Output "=== pulling $($missing.Count) LFS objects ==="
     if ($env:MOONSHINE_LFS_FROM) {
+        # From that checkout's object store, or, when git lfs prune has emptied it, from its
+        # working tree where the file is the same object (the sha256 is the oid).
         $from = Join-Path $env:MOONSHINE_LFS_FROM '.git\lfs\objects'
-        if (-not (Test-Path -LiteralPath $from)) { throw "no LFS store at $from" }
         foreach ($f in $missing) {
             $oid = ((& git -C $root lfs ls-files -l -I $f) -split '\s+')[0]
             $src = Join-Path $from (Join-Path $oid.Substring(0, 2) (Join-Path $oid.Substring(2, 2) $oid))
-            if (-not (Test-Path -LiteralPath $src)) { throw "$($env:MOONSHINE_LFS_FROM) has no object for $f" }
+            if (-not (Test-Path -LiteralPath $src)) {
+                $tree = Join-Path $env:MOONSHINE_LFS_FROM ($f -replace '/', '\')
+                if ((Test-Path -LiteralPath $tree) -and (Get-FileHash -Algorithm SHA256 -LiteralPath $tree).Hash.ToLower() -eq $oid) {
+                    $src = $tree
+                } else {
+                    throw "$($env:MOONSHINE_LFS_FROM) has no object for $f"
+                }
+            }
             $dst = Join-Path $root (Join-Path '.git\lfs\objects' (Join-Path $oid.Substring(0, 2) $oid.Substring(2, 2)))
             New-Item -ItemType Directory -Force -Path $dst | Out-Null
             Copy-Item -LiteralPath $src -Destination (Join-Path $dst $oid) -Force
