@@ -1,10 +1,12 @@
-# Moonshine AI for Kingdom Come: Deliverance 2
+# Moonshine AI for Kingdom Come: Deliverance II
 
-A mod and a companion app that give every unnamed villager, beggar, miner and varlet in
-Kuttenberg and Trosky a name and a **Talk** option. Talk to them and they answer in
-character, in their own voice, about their own work and neighbourhood, and sometimes they
-have something for you to do. Everything runs on the player's own PC: the language model,
-the voices and the ear are local, and the game keeps the GPU to itself.
+This mod gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a name and a *Talk* option. Talk to them and they answer in character, in their own voice, about their own work and neighborhood, and sometimes they have something for you to do.
+
+Thank you for trying this. It is an early build: it will do weird things, and I very much appreciate all the bug reports you can share. 
+
+The AI-generated speech also sounds terrible, especially for a game that's known for its voice acting. I am in the process of hiring professional actors for dialog that's known ahead of time, and licensing their voices for better clones for freeform speech.
+
+Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted to explore more of the world's stories. It uses AI heavily, but it's intended as a tribute to the amazing work by the whole Warhorse team, not a template for replacing human creativity. The code is open source under an MIT license, available at https://github.com/moonshine-ai/moonshine-kcd.
 
 Two pieces, built here:
 
@@ -19,8 +21,8 @@ Two pieces, built here:
 And the installer (`installer/`) that packs the app, the models and the data for testers.
 `TESTERS.md` is what a tester is sent.
 
-The *data* -- the names, biographies, relationships, knowledge, quests and routines of
-some 5,800 souls, and the voice clones -- is not made here. It is generated in a separate
+The *data*, the names, biographies, relationships, knowledge, quests and routines of
+some 5,800 souls, and the voice clones, is not made here. It is generated in a separate
 repository and arrives as a **drop**: a folder of TSV and JSONL tables, one float32 matrix
 of knowledge vectors, the voices, and the game-derived assets, under a manifest of hashes.
 `data/DROP` pins the drop this checkout builds from; `tools/assemble_db.py` turns it into
@@ -171,5 +173,5 @@ in the data repository. Comments in the code that cite `mods/kcd2/README.md`,
 ## Licence
 
 MIT (`LICENSE`). Third-party software and model weights come under their own licences,
-listed in `installer/LICENSES/README.txt`. Nothing of Kingdom Come: Deliverance 2 is in
+listed in `installer/LICENSES/README.txt`. Nothing of Kingdom Come: Deliverance II is in
 this repository; the mod reads the game's own files on the player's machine.
