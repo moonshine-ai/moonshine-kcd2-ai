@@ -2,13 +2,17 @@
 """Bring the pinned data drop into drop/ and assemble it into data/kcd2/.
 
 data/DROP names the drop and the sha256 of its manifest. This fetches that drop from
-wherever drops are kept -- a directory on this machine or a mounted share, a gs:// bucket
-(through gcloud), or an https:// prefix -- checks every file against the manifest, and
+wherever drops are kept -- a directory on this machine or a mounted share, an s3:// bucket
+(any S3-compatible store, signed here with the standard library), a gs:// bucket (through
+gcloud), or an https:// prefix -- checks every file against the manifest, and
 then runs tools/assemble_db.py so that data/kcd2/npcs.sqlite and data/kcd2/voices/ are what
 the app, the mod generator and the installer read. Files already present at the right size
 and hash are not fetched again, so a new drop that changes one table moves one file.
 
     tools/fetch_drop.py --from /Volumes/drops            a directory holding <drop>/
+    tools/fetch_drop.py --from s3://my-bucket/drops      S3-compatible (R2, S3, B2, MinIO): the
+                                                          endpoint and keys from S3_ENDPOINT,
+                                                          AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
     tools/fetch_drop.py --from gs://my-bucket/drops      gcloud storage, for a private bucket
     tools/fetch_drop.py --from https://host/drops        plain https
     tools/fetch_drop.py --assemble                        drop/ is in place; only assemble
@@ -26,12 +30,14 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "tools"))
 import assemble_db  # noqa: E402
+import s3_sign  # noqa: E402
 
 
 def read_pin(path: Path) -> tuple[str, str]:
@@ -47,12 +53,16 @@ def read_pin(path: Path) -> tuple[str, str]:
 
 
 class Source:
-    """One drop at one base, reachable by copy, gcloud or https."""
+    """One drop at one base, reachable by copy, S3 signature, gcloud or https."""
 
     def __init__(self, base: str, drop: str):
         self.base = base.rstrip("/")
         self.drop = drop
-        if base.startswith("gs://"):
+        if base.startswith("s3://"):
+            self.kind = "s3"
+            self.endpoint, self.access_key, self.secret_key = s3_sign.from_env()
+            self.bucket, self.prefix = s3_sign.split_s3(self.base)
+        elif base.startswith("gs://"):
             self.kind = "gs"
         elif base.startswith(("http://", "https://")):
             self.kind = "http"
@@ -71,22 +81,47 @@ class Source:
         part = to.with_name(to.name + ".part")
         if self.kind == "dir":
             shutil.copyfile(Path(self.base) / self.drop / rel, part)
+        elif self.kind == "s3":
+            key = "/".join(x for x in (self.prefix, self.drop, rel) if x)
+            url = s3_sign.presign("GET", self.endpoint, self.bucket, key, self.access_key, self.secret_key, 600)
+            self._http(url, part)
         elif self.kind == "gs":
             url = f"{self.base}/{self.drop}/{rel}"
             rc = subprocess.run(["gcloud", "storage", "cp", "--no-user-output-enabled", url, str(part)]).returncode
             if rc:
                 sys.exit(f"gcloud storage cp {url} failed ({rc})")
         else:
-            url = f"{self.base}/{self.drop}/{urllib.request.quote(rel)}"
-            with urllib.request.urlopen(url) as r, part.open("wb") as f:
-                shutil.copyfileobj(r, f, 1 << 20)
+            self._http(f"{self.base}/{self.drop}/{urllib.request.quote(rel)}", part)
         os.replace(part, to)
+
+    @staticmethod
+    def _http(url: str, part: Path) -> None:
+        # Resumed rather than restarted on a dropped connection: a 1.6 GB file over a
+        # laptop's wifi does not always arrive in one go.
+        for attempt in range(5):
+            have = part.stat().st_size if part.exists() else 0
+            req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r, part.open("ab" if have else "wb") as f:
+                    shutil.copyfileobj(r, f, 1 << 20)
+                return
+            except urllib.error.HTTPError as e:
+                if e.code == 416 and have:  # already whole
+                    return
+                if e.code == 403 and attempt == 0:
+                    sys.exit(f"{e.code} from {url.split('?')[0]}: the key cannot read it, or the clock here is off")
+                if e.code < 500:
+                    raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                if attempt == 4:
+                    raise
+                print(f"    retrying after: {e}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--from", dest="base", default=os.environ.get("MOONSHINE_DROP_BASE"),
-                    help="directory, gs:// or https:// prefix holding <drop>/ (default $MOONSHINE_DROP_BASE)")
+                    help="directory, s3://, gs:// or https:// prefix holding <drop>/ (default $MOONSHINE_DROP_BASE)")
     ap.add_argument("--pin", default=str(HERE / "data" / "DROP"), help="the data/DROP file")
     ap.add_argument("--out", default=str(HERE / "drop"), help="where drops are kept locally")
     ap.add_argument("--db", default=str(HERE / "data" / "kcd2" / "npcs.sqlite"))
@@ -102,7 +137,7 @@ def main() -> int:
     source = None
     if not (args.assemble or args.check):
         if not args.base:
-            sys.exit("where are the drops? --from DIR|gs://...|https://..., or MOONSHINE_DROP_BASE")
+            sys.exit("where are the drops? --from DIR|s3://...|gs://...|https://..., or MOONSHINE_DROP_BASE")
         source = Source(args.base, drop)
 
     # The manifest first, and it must be the pinned one: everything after trusts it.

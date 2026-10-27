@@ -3,6 +3,7 @@
 # first python.exe on the PATH (not the Microsoft Store stub).
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\fetch_drop.ps1 -From D:\drops
+#   powershell -ExecutionPolicy Bypass -File scripts\fetch_drop.ps1 -From s3://bucket/drops   (S3_ENDPOINT, AWS_* set)
 #   powershell -ExecutionPolicy Bypass -File scripts\fetch_drop.ps1 -Check
 param(
     [string]$From = $env:MOONSHINE_DROP_BASE,

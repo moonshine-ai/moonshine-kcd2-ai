@@ -49,7 +49,9 @@ scripts/fetch_models.sh                                 # models/, about 5.4 GB
 scripts/fetch_moonshine.sh                              # third_party/moonshine, built
 ```
 
-`fetch_drop` takes a directory, a `gs://` prefix (through `gcloud`) or an `https://`
+`fetch_drop` takes a directory, an `s3://` prefix on any S3-compatible store (R2, S3, B2,
+MinIO; `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` say which, signed
+by `tools/s3_sign.py` with no SDK), a `gs://` prefix (through `gcloud`) or an `https://`
 prefix holding `<drop name>/`; `MOONSHINE_DROP_BASE` sets the default. It fetches only
 files whose hash differs, verifies every one against the manifest, and assembles the
 database. `fetch_models` reads `scripts/models.tsv`, which pins each weight file to a
@@ -156,7 +158,7 @@ app/            the companion app: src/, tests/, vendor/ (llama.cpp submodule, q
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
 installer/      Stage.ps1, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
 scripts/        fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
-tools/          assemble_db.py, fetch_drop.py
+tools/          assemble_db.py, fetch_drop.py, s3_sign.py
 data/           schema.sql (the shipped database's schema), DROP (the pin), kcd2/voices/ (catalogues)
 third_party/    sqlite3 (shared by app and mod); moonshine/ when fetched
 setting.txt     the world setting every conversation's prompt opens with
