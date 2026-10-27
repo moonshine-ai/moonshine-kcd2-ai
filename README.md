@@ -40,7 +40,7 @@ patches in `app/vendor/patches/` are applied at configure time):
 
 ```sh
 git clone --recurse-submodules <this repository>
-cd moonshine-ai-kcd2
+cd moonshine-kcd2-ai
 ```
 
 ### The data and the models
