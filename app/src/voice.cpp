@@ -31,19 +31,28 @@
 #include "moonshine-cpp.h"
 #endif
 
+// The engines the souls' lines can be spoken by. Phonon (phonon.h) is the one this build
+// ships; the Qwen3-TTS pair (clone.h, clone_llama.h) is kept buildable and off. Any of them
+// is "clones" below, the name from when every voice was a cloned recording.
+#ifdef MOONSHINE_HAS_PHONON
+#include "phonon.h"
+#endif
 #ifdef MOONSHINE_HAS_CLONE
 #include "clone.h"
 #endif
 #ifdef MOONSHINE_HAS_GPU_CLONE
 #include "clone_llama.h"
 #endif
+#if defined(MOONSHINE_HAS_PHONON) || defined(MOONSHINE_HAS_CLONE)
+#define MOONSHINE_HAS_CLONES 1
+#endif
 
-#if (defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONE)) && defined(__APPLE__)
+#if (defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONES)) && defined(__APPLE__)
 #include <AudioToolbox/AudioQueue.h>
 #include <cstring>
 #endif
 
-#if (defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONE)) && defined(_WIN32)
+#if (defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONES)) && defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -54,7 +63,7 @@
 namespace moonshine {
 
 bool tts_built() {
-#if defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONE)
+#if defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONES)
     return true;
 #else
     return false;
@@ -62,7 +71,7 @@ bool tts_built() {
 }
 
 bool clones_built() {
-#ifdef MOONSHINE_HAS_CLONE
+#ifdef MOONSHINE_HAS_CLONES
     return true;
 #else
     return false;
@@ -70,10 +79,22 @@ bool clones_built() {
 }
 
 std::filesystem::path find_clone_model() {
-#ifdef MOONSHINE_HAS_CLONE
+#if defined(MOONSHINE_HAS_PHONON)
+    return PhononEngine::find_model();
+#elif defined(MOONSHINE_HAS_CLONE)
     return CloneEngine::find_model();
 #else
     return {};
+#endif
+}
+
+std::string_view clone_engine_name() {
+#if defined(MOONSHINE_HAS_PHONON)
+    return "Phonon";
+#elif defined(MOONSHINE_HAS_CLONE)
+    return "Qwen3-TTS";
+#else
+    return "none";
 #endif
 }
 
@@ -102,11 +123,71 @@ std::string actor_abbr(int voice_id) {
 }
 
 std::string stand_in_voice(std::string_view gender) {
-    // The per-actor clones exist, and stay unused: those voices are the actors', and
-    // they are not cleared to be copied. Until they are, every soul is one of the
-    // three recordings made for the purpose.
-    if (gender == "female") return "pete-female";
-    return "pete-male";
+    // The two the catalogue describes the same way, "sparky, attentive British English
+    // adult": the plainest of each.
+    if (gender == "female") return "maeve";
+    return "toby";
+}
+
+namespace {
+
+// The catalogue's twelve British voices, by the age the game gives a soul. Henry's
+// (kHenryVoice, teddy) is in no pool. Within a pool the choice is a hash of the soul, so
+// the biggest group, adult men, is spread across four voices rather than one.
+//
+// The ages are voice.xml's: a young man is alfie (the catalogue's young adult) or toby;
+// a middle-aged or elderly one is hugh, edwin or spencer (its middle-aged men; spencer's
+// slow, patient delivery suits the old). The women the same way: freya and elodie-rose
+// are the catalogue's young voices, lottie its young adult, maeve, pippa and imogen its
+// adults. A soul with no age is any of their gender's.
+//
+// A fixed array rather than an initializer_list member: the list's backing store has no
+// promised lifetime inside a constexpr aggregate, and MSVC's is gone by the time it is read.
+struct VoicePool {
+    std::string_view age;
+    std::size_t count;
+    std::string_view voices[6];
+};
+
+constexpr VoicePool kMen[] = {
+    {"young", 2, {"alfie", "toby"}},
+    {"adult", 4, {"toby", "edwin", "hugh", "spencer"}},
+    {"middle-aged", 3, {"hugh", "edwin", "spencer"}},
+    {"elderly", 2, {"spencer", "hugh"}},
+    {"", 5, {"toby", "alfie", "edwin", "hugh", "spencer"}},
+};
+
+constexpr VoicePool kWomen[] = {
+    {"young", 3, {"freya", "elodie-rose", "lottie"}},
+    {"adult", 4, {"maeve", "pippa", "imogen", "lottie"}},
+    {"middle-aged", 3, {"maeve", "imogen", "pippa"}},
+    {"elderly", 2, {"imogen", "maeve"}},
+    {"", 6, {"maeve", "freya", "pippa", "elodie-rose", "imogen", "lottie"}},
+};
+
+// FNV-1a, so the pick is the same on every machine and every run.
+std::uint32_t soul_hash(std::string_view soul) {
+    std::uint32_t hash = 2166136261u;
+    for (unsigned char c : soul) {
+        hash ^= c;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+}  // namespace
+
+std::string voice_for(std::string_view gender, std::string_view age, std::string_view soul) {
+    const bool woman = gender == "female";
+    const VoicePool* pools = woman ? kWomen : kMen;
+    const std::size_t count = woman ? std::size(kWomen) : std::size(kMen);
+    const VoicePool* pool = nullptr;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (pools[i].age == age) pool = &pools[i];
+    }
+    if (!pool) pool = &pools[count - 1];  // the ageless pool, for a label the table lacks
+    if (soul.empty()) return stand_in_voice(gender);
+    return std::string(pool->voices[soul_hash(soul) % pool->count]);
 }
 
 std::string clone_for(std::string_view who, std::string_view actor) {
@@ -199,7 +280,7 @@ std::vector<ImportedVoice> imported_voices(const std::filesystem::path& dir) {
     return voices;
 }
 
-#if defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONE)
+#if defined(MOONSHINE_HAS_TTS) || defined(MOONSHINE_HAS_CLONES)
 
 namespace {
 
@@ -667,11 +748,13 @@ private:
     Silences silences_;  // the pauses of the line, for the mouth
 };
 
-// The floor on what is held before a streamed line starts. The engine's chunks after the
-// first are 0.8 s of audio each, so the default waits for the second one, which is also
-// the first the pace can be read from.
+// The floor on what is held before a streamed line starts. Phonon hands over 80 ms frames
+// at about a tenth of real time, the first under 100 ms in, so 100 ms is the second frame:
+// enough for the pace to be read from, and the line begins almost as it is asked for. It
+// was 400 ms for the Qwen3-TTS engine, whose chunks after the first were 0.8 s of audio
+// each and which ran at real time, so the start had to be held for the second one.
 std::size_t lead_samples(int sample_rate) {
-    int ms = 400;
+    int ms = 100;
     if (const char* env = std::getenv("QWEN_LEAD_MS"); env && *env) ms = std::atoi(env);
     if (ms < 0) ms = 0;
     return static_cast<std::size_t>(sample_rate) * static_cast<std::size_t>(ms) / 1000;
@@ -853,14 +936,20 @@ std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
                                      std::istreambuf_iterator<char>());
 }
 
-// One spoken line from a cloned actor. The engine is in this process and its model is
-// resident (clone.h); without it, or with QWEN_OFF set, the line goes to Kokoro where
-// that is linked and is otherwise not spoken.
+// One spoken line in a soul's voice. The engine is in this process and its model is
+// resident (phonon.h, or clone.h); without it, or with QWEN_OFF set, the line goes to
+// Kokoro where that is linked and is otherwise not spoken.
 struct CloneAudio {
     std::vector<std::int16_t> samples;
     int rate = 0;
     std::vector<WordSpan> words;  // when the engine places them; empty otherwise
 };
+
+// What every engine's streaming speak() takes: each chunk of PCM16 at its rate, and
+// whether to stop. The same std::function types as PhononEngine::OnAudio and
+// CloneEngine::OnAudio, spelt here so the interface below needs neither header.
+using CloneOnAudio = std::function<bool(const std::int16_t* samples, std::size_t count, int rate)>;
+using CloneCancelled = std::function<bool()>;
 
 bool actor_token(std::string_view abbr) {
     if (abbr.empty() || abbr.size() > 64) return false;
@@ -871,10 +960,11 @@ bool actor_token(std::string_view abbr) {
     return true;
 }
 
-#ifdef MOONSHINE_HAS_CLONE
-// The engine the clones are spoken by. Two implement it: the vendored C engine on the CPU
-// (clone.h) and llama.cpp on the GPU (clone_llama.h). Both read the same .qvoice files and
-// say the same words; open_clones() picks one when the Speaker starts.
+#ifdef MOONSHINE_HAS_CLONES
+// The engine the voices are spoken by. Three implement it: Phonon on the CPU (phonon.h),
+// and the Qwen3-TTS pair, the vendored C engine on the CPU (clone.h) and llama.cpp on the
+// GPU (clone_llama.h), which read the same .qvoice files. open_clones() picks one when the
+// Speaker starts: Phonon when it is built in.
 using OnWords = std::function<void(const std::vector<WordSpan>& words, bool final)>;
 
 struct Clones {
@@ -882,8 +972,8 @@ struct Clones {
     virtual CloneAudio speak(std::string_view voice, std::string_view text) = 0;
     // on_words may be empty; an engine that cannot place the words never calls it.
     virtual std::size_t speak(std::string_view voice, std::string_view text,
-                              const CloneEngine::OnAudio& on_audio,
-                              const CloneEngine::Cancelled& cancelled, const OnWords& on_words) = 0;
+                              const CloneOnAudio& on_audio,
+                              const CloneCancelled& cancelled, const OnWords& on_words) = 0;
 };
 
 // Which engines place the words (clone_llama.h's Audio::words and OnWords).
@@ -906,8 +996,8 @@ struct ClonesOf final : Clones {
         return audio;
     }
     std::size_t speak(std::string_view voice, std::string_view text,
-                      const CloneEngine::OnAudio& on_audio,
-                      const CloneEngine::Cancelled& cancelled, const OnWords& on_words) override {
+                      const CloneOnAudio& on_audio,
+                      const CloneCancelled& cancelled, const OnWords& on_words) override {
         if constexpr (places_words<Engine>) {
             return engine.speak(voice, text, on_audio, cancelled, on_words);
         } else {
@@ -930,9 +1020,28 @@ struct ClonesOf final : Clones {
 // beside the game is memory bandwidth, which the game's streaming shares whatever the
 // threads' priority or cores; it stays near its idle speed while the game is quiet. The
 // GPU gets its 2.3 GB back.
+//
+// Phonon, since 28 Oct 2026, wherever it is built in: 68 MB of weights against 2.5 GB, a
+// tenth of real time against all of it, and 300 MB resident against 3.6. In a build with
+// both, MOONSHINE_TTS_BACKEND=cpu or gpu still asks for a Qwen3-TTS engine.
 std::unique_ptr<Clones> open_clones(const std::filesystem::path& voices_dir) {
     const char* wanted_env = std::getenv("MOONSHINE_TTS_BACKEND");
     const std::string wanted = wanted_env ? wanted_env : "";
+#ifdef MOONSHINE_HAS_PHONON
+#ifdef MOONSHINE_HAS_CLONE
+    const bool phonon = wanted.empty() || wanted == "phonon";
+#else
+    const bool phonon = true;
+#endif
+    if (phonon) {
+        if (!wanted.empty() && wanted != "phonon") {
+            std::cerr << "voice: MOONSHINE_TTS_BACKEND=" << wanted << " asks for an engine this build has not; using Phonon\n";
+        }
+        std::cerr << "voice: spoken by Phonon on the CPU\n";
+        return std::make_unique<ClonesOf<PhononEngine>>(PhononEngine::find_model(), voices_dir);
+    }
+#endif
+#ifdef MOONSHINE_HAS_CLONE
     if (!wanted.empty() && wanted != "cpu" && wanted != "gpu") {
         std::cerr << "voice: MOONSHINE_TTS_BACKEND=" << wanted << " is not cpu or gpu\n";
     }
@@ -951,6 +1060,7 @@ std::unique_ptr<Clones> open_clones(const std::filesystem::path& voices_dir) {
 #endif
     std::cerr << "voice: clones spoken by the Qwen3-TTS engine on the CPU\n";
     return std::make_unique<ClonesOf<CloneEngine>>(CloneEngine::find_model(), voices_dir);
+#endif
 }
 
 CloneAudio qwen_clone(Clones* engine, std::string_view actor, const std::string& text) {
@@ -1049,9 +1159,9 @@ struct Speaker::Impl {
     ::moonshine::TextToSpeech tts;
     ::moonshine::GraphemeToPhonemizer g2p;
 #endif
-#ifdef MOONSHINE_HAS_CLONE
-    // The resident Qwen3-TTS engine, CPU or GPU. Loading starts here and finishes in the
-    // background.
+#ifdef MOONSHINE_HAS_CLONES
+    // The resident engine the souls speak through: Phonon, or in a build that carries it
+    // and asks, Qwen3-TTS on the CPU or GPU.
     std::unique_ptr<Clones> clones;
 #else
     struct NoClones {
@@ -1299,7 +1409,7 @@ struct Speaker::Impl {
 #ifndef MOONSHINE_HAS_TTS
         (void)tts_root;
 #endif
-#ifdef MOONSHINE_HAS_CLONE
+#ifdef MOONSHINE_HAS_CLONES
         if (!std::getenv("QWEN_OFF")) {
             clones = open_clones(voices_dir / "clones");
         }
@@ -1461,7 +1571,7 @@ struct Speaker::Impl {
         std::thread player;
         const auto began = std::chrono::steady_clock::now();
         try {
-#ifdef MOONSHINE_HAS_CLONE
+#ifdef MOONSHINE_HAS_CLONES
             if (!job.actor.empty() && clones && actor_token(job.actor) && !std::getenv("QWEN_OFF")) {
                 const std::size_t delivered = clones->speak(
                     job.actor, job.text,

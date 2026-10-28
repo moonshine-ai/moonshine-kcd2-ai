@@ -70,9 +70,14 @@ struct Soul {
     std::string region;
     std::string gender;
     // voice.xml voice_id, from skald_character. 0 when the database has no such table
-    // (the test fixtures) or the soul was never given one. Held for when the actors'
-    // own clones may be used; the speaker uses the gender stand-in until then.
+    // (the test fixtures) or the soul was never given one. Names the actor whose facial
+    // clips are borrowed for the mouth (voice.h, actor_abbr); the voice itself is not
+    // theirs.
     int voice_id = 0;
+    // skald_character's age label -- young, adult, middle-aged, elderly, unspecified --
+    // or empty. With the gender, it picks which of the catalogue's voices the soul has
+    // (voice.h, voice_for).
+    std::string age;
 
     // A written background, when one has been generated for this soul. Only some
     // have: there are thousands of named souls and writing a bio costs a model call

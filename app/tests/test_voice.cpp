@@ -1,6 +1,10 @@
 #include "doctest.h"
 
+#include <algorithm>
 #include <fstream>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "voice.h"
 
@@ -13,15 +17,53 @@ TEST_CASE("a kokoro_ prefix is not part of the voice id") {
     CHECK(plain_voice_id("").empty());
 }
 
-TEST_CASE("a soul is spoken with the stand-in until the actors are cleared") {
-    CHECK(stand_in_voice("female") == "pete-female");
-    CHECK(stand_in_voice("male") == "pete-male");
-    CHECK(stand_in_voice("not-defined") == "pete-male");
-    CHECK(stand_in_voice("") == "pete-male");
-    CHECK(clone_for("henry", "pete-female") == "pete-henry");
-    CHECK(clone_for("female", "") == "pete-female");
-    CHECK(clone_for("npc", "pete-female") == "pete-female");
-    CHECK(clone_for("npc", "") == "pete-male");
+TEST_CASE("a line that is nobody's in particular is spoken by the stand-in") {
+    CHECK(stand_in_voice("female") == "maeve");
+    CHECK(stand_in_voice("male") == "toby");
+    CHECK(stand_in_voice("not-defined") == "toby");
+    CHECK(stand_in_voice("") == "toby");
+    CHECK(clone_for("henry", "maeve") == "teddy");
+    CHECK(clone_for("female", "") == "maeve");
+    CHECK(clone_for("npc", "maeve") == "maeve");
+    CHECK(clone_for("npc", "") == "toby");
+}
+
+TEST_CASE("a soul's voice is picked from their gender and age, and is theirs for good") {
+    const std::vector<std::string> men = {"toby", "alfie", "edwin", "hugh", "spencer"};
+    const std::vector<std::string> women = {"maeve", "freya", "pippa", "elodie-rose", "imogen", "lottie"};
+    auto one_of = [](const std::vector<std::string>& pool, const std::string& voice) {
+        return std::find(pool.begin(), pool.end(), voice) != pool.end();
+    };
+    // The same soul, the same voice; a different soul of the same kind, often another.
+    // The values are the hash's, pinned so a change to it is noticed: it moves every
+    // soul's voice, which a player would hear.
+    CHECK(voice_for("male", "adult", "miller_bartel") == "spencer");
+    CHECK(voice_for("male", "middle-aged", "kkut_additive_man_47") == "edwin");
+    CHECK(voice_for("female", "adult", "w7") == "lottie");
+    std::set<std::string> seen;
+    for (int i = 0; i < 40; ++i) seen.insert(voice_for("male", "adult", "soul_" + std::to_string(i)));
+    CHECK(seen.size() >= 3);
+    // Henry's voice is nobody else's.
+    for (int i = 0; i < 200; ++i) {
+        for (const char* age : {"young", "adult", "middle-aged", "elderly", "unspecified", ""}) {
+            const std::string man = voice_for("male", age, "m" + std::to_string(i));
+            CHECK(man != kHenryVoice);
+            CHECK(one_of(men, man));
+            CHECK(one_of(women, voice_for("female", age, "w" + std::to_string(i))));
+        }
+    }
+    // Age narrows the pool: a boy is never spoken by the slow middle-aged men, nor an old
+    // man by the catalogue's young one.
+    for (int i = 0; i < 100; ++i) {
+        const std::string young = voice_for("male", "young", "y" + std::to_string(i));
+        CHECK((young == "alfie" || young == "toby"));
+        CHECK(voice_for("male", "elderly", "e" + std::to_string(i)) != "alfie");
+        CHECK(voice_for("female", "elderly", "e" + std::to_string(i)) != "freya");
+    }
+    // No gender is a man; no soul is the stand-in.
+    CHECK(one_of(men, voice_for("not-defined", "adult", "nobody_knows")));
+    CHECK(voice_for("male", "adult", "") == "toby");
+    CHECK(voice_for("female", "young", "") == "maeve");
 }
 
 TEST_CASE("a voice id is the actor's abbreviation") {

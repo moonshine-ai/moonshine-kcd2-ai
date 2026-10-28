@@ -122,8 +122,8 @@ $skipped = Select-String -LiteralPath $installLog -Pattern 'VC\+\+ runtime alrea
 $ran = Select-String -LiteralPath $installLog -Pattern 'Running the command.*vc_redist' -Quiet
 Write-Output ("  installer log: vc_redist " + $(if ($ran) { 'was run' } elseif ($skipped) { 'skipped, runtime already present' } else { 'neither run nor skipped?' }))
 foreach ($need in @('moonshine_app.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
-                    'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\qwen3-tts-0.6b\model.safetensors',
-                    'libopenblas.dll', 'moonshine.dll', 'onnxruntime.dll', 'unins000.exe')) {
+                    'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
+                    'ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll', 'unins000.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
 }
 $llm = @(Get-ChildItem -LiteralPath (Join-Path $app 'models\llm') -Filter '*.gguf' -ErrorAction SilentlyContinue)
@@ -165,7 +165,6 @@ if ($FakeGame -and (Test-Path -LiteralPath $FakeGame)) {
     Step 'conversation (fake game)'
     Push-Location $app
     try {
-        $env:MOONSHINE_TTS_BACKEND = 'cpu'
         $convLog = Join-Path $work 'conversation.log'
         & $Python $FakeGame --app (Join-Path $app 'moonshine_app.exe') --world setting.txt --gguf ('models\llm\' + $llm[0].Name) `
             --personas 'data/kcd2/npcs.sqlite' --warmup 300 --timeout 180 2>&1 | Tee-Object -FilePath $convLog |

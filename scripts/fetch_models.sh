@@ -3,12 +3,12 @@
 # its pinned size and sha256, and skipped when it is already there and right. macOS and
 # Linux; scripts/fetch_models.ps1 is the Windows half and reads the same table.
 #
-#   scripts/fetch_models.sh              everything (about 5.4 GB)
+#   scripts/fetch_models.sh              everything (about 2.9 GB)
 #   scripts/fetch_models.sh --only stt   only the rows whose dest starts with "stt"
 #   scripts/fetch_models.sh --check      verify what is there; download nothing
 #
 # The app finds these beside its working directory: models/embeddinggemma-300m-q8_0.gguf
-# (LlamaEmbedder::find_weights), models/qwen3-tts-0.6b (CloneEngine::find_model), and the
+# (LlamaEmbedder::find_weights), models/phonon-31m-en (PhononEngine::find_model), and the
 # installer's launcher passes the one .gguf under models/llm and the one folder under
 # models/stt by name (installer/Moonshine.ps1).
 set -euo pipefail

@@ -11,7 +11,7 @@ Originally I wrote this for myself as "fan fiction" after I'd completed the game
 Two pieces go on your computer:
 
 1. **The mod**, from the Steam Workshop. Small. Names, dialogue graphs, quests, Lua scripts.
-2. **The Moonshine app**, from an installer I send you a link to. About 8 GB, nearly all
+2. **The Moonshine app**, from an installer I send you a link to. About 5.5 GB, nearly all
    of it model weights. It runs beside the game and talks to it through files, and provides speech to text and text to speech.
 
 Both are needed. The mod without the app renames people but the Talk option gives them
@@ -44,7 +44,7 @@ a line `moonshine_names` to it, or delete the file if you were not using it for 
 ### 2. The app (installer)
 
 You will get a link to `Moonshine-<version>-setup.exe`, about 100 MB. Run it. The
-weights, the database and the voices (about 8 GB) are downloaded by the installer while
+weights, the database and the voices (about 5.5 GB) are downloaded by the installer while
 it runs, with one progress bar over the lot; on a slow line that is the long part. If
 the connection drops it offers **Retry**; if you cancel, running it again later picks up
 the files it does not have yet.
@@ -130,4 +130,4 @@ game drops the names and the people go back to being *Beggar*.
 
 A list of the third-party software and model weights, and their licences, is in
 `LICENSES\README.txt` in the Moonshine folder. The language model is Qwen3, the voices
-are Qwen3-TTS, the ear is Moonshine Voice; all run locally.
+are Phonon's British English catalogue, the ear is Moonshine Voice; all run locally.

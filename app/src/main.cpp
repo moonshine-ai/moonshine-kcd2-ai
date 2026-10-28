@@ -448,10 +448,10 @@ void usage() {
         "                  directory holding one\n"
         "  --hear N        listen on the microphone for N seconds, printing the words\n"
         "                  as they are heard, and exit; the ear's --speak\n"
-        "  --speak TEXT    say this and exit. An NPC's clone when --actor is set,\n"
+        "  --speak TEXT    say this and exit. The voice named by --actor when it is set,\n"
         "                  otherwise the Kokoro voice from --voice\n"
-        "  --actor ABBR    with --speak or the terminal, that actor's clone (see\n"
-        "                  voices/actors.txt)\n"
+        "  --actor NAME    with --speak or the terminal, which voice: one of the Phonon\n"
+        "                  catalogue's (toby, maeve, ...; models/phonon-31m-en/voices)\n"
         "  --out FILE      with --speak, write a wav instead of playing it\n"
         "  --render FILE   write a batch of wavs and exit. Each line is a voice id,\n"
         "                  a tab, a wav path, a tab, and the words\n"
@@ -1534,10 +1534,16 @@ int preflight(const Args& args) {
     } else if (!tts_built()) {
         say("voice", "this build has no voice; words stay on the screen");
     } else {
+        const bool phonon = clone_engine_name() == "Phonon";
+        fs::path model;
         if (clones_built()) {
-            const fs::path model = find_clone_model();
-            if (model.empty()) {
+            model = find_clone_model();
+            if (model.empty() && phonon) {
+                missing("voice", "no Phonon model (models/phonon-31m-en/model.q8.gguf, or PHONON_MODEL_DIR)");
+            } else if (model.empty()) {
                 missing("voice", "no Qwen3-TTS model (models/qwen3-tts-0.6b/model.safetensors, or QWEN_MODEL_DIR)");
+            } else if (phonon) {
+                say("voice", model.string() + ", Phonon on the CPU");
             } else {
                 say("voice", model.string() + ", the Qwen3-TTS engine on the " +
                                  [] {
@@ -1549,14 +1555,18 @@ int preflight(const Args& args) {
             say("voice", "Kokoro through Moonshine Voice; no cloned voices in this build");
         }
         const fs::path voices = args.voices_path;
-        const std::size_t clones = count_in(voices / "clones", ".qvoice");
+        // Phonon's voices live in its model folder; the Qwen3-TTS engine's beside the data.
+        const std::size_t clones = phonon ? (model.empty() ? 0 : count_in(model / "voices", ".safetensors"))
+                                          : count_in(voices / "clones", ".qvoice");
         if (!fs::is_directory(voices, bad)) {
             missing("voices", voices.string());
-        } else if (clones_built() && clones == 0) {
+        } else if (clones_built() && phonon && clones == 0 && !model.empty()) {
+            missing("voices", model.string() + " holds no voices/*.safetensors");
+        } else if (clones_built() && !phonon && clones == 0) {
             missing("voices", voices.string() + " holds no clones/*.qvoice");
         } else {
-            say("voices", voices.string() + ": " + std::to_string(clones) + " cloned voice(s), " +
-                              std::to_string(imported_voices(voices).size()) + " imported");
+            say("voices", (phonon ? model.string() : voices.string()) + ": " + std::to_string(clones) +
+                              " voice(s), " + std::to_string(imported_voices(voices).size()) + " imported");
         }
         auto beside = [&](const char* name, const char* file_name, const char* without) {
             const fs::path file = voices / file_name;

@@ -10,16 +10,16 @@ Two pieces, built here:
   of souls into a KCD2 mod -- names, dialogue graphs, quests, and one Lua file. No DLL and
   no injector; uninstalling is deleting one folder.
 - **The app** (`app/`): `moonshine_app`, a C++ program that runs beside the game, follows
-  its log, and talks to the mod through files. It runs the model (llama.cpp), the cloned
-  voices (Qwen3-TTS), the ear (Moonshine Voice), and the knowledge base each soul answers
-  from.
+  its log, and talks to the mod through files. It runs the model (llama.cpp), the voices
+  (Phonon, through its Rust runtime), the ear (Moonshine Voice), and the knowledge base
+  each soul answers from.
 
 And the installer (`installer/`) that packs the app, the models and the data for testers.
 `TESTERS.md` is what a tester is sent; `INSTALL.md` is the step-by-step installation
 guide for players.
 
 The *data*, the names, biographies, relationships, knowledge, quests and routines of
-some 5,800 souls, and the voice clones, is not made here. It is generated in a separate
+some 5,800 souls, is not made here. It is generated in a separate
 repository and arrives as a **drop**: a folder of TSV and JSONL tables, one float32 matrix
 of knowledge vectors, the voices, and the game-derived assets, under a manifest of hashes.
 `data/DROP` pins the drop this checkout builds from; `tools/assemble_db.py` turns it into
@@ -31,11 +31,14 @@ integrates; it does not generate.
 ### What you need
 
 - CMake 3.20+, a C++20 compiler (Apple clang, MSVC 2022, or GCC 12+), git, Python 3.10+.
-- About 10 GB of disk for the drop and the models.
+- Rust (`cargo`, from https://rustup.rs) on Windows and Linux, for the voice: the Phonon
+  runtime is built from the `app/vendor/xn-ptts` submodule at configure time. Without it
+  the app builds and talks but does not speak.
+- About 7 GB of disk for the drop and the models.
 - Optional: `lua` and `luajit` for the mod's Lua checks (`brew install lua luajit`).
 
-Clone with the submodule (`app/vendor/llama.cpp` is pinned to an upstream commit; the
-patches in `app/vendor/patches/` are applied at configure time):
+Clone with the submodules (`app/vendor/llama.cpp` and `app/vendor/xn-ptts` are pinned to
+upstream commits; the patches in `app/vendor/patches/` are applied at configure time):
 
 ```sh
 git clone --recurse-submodules <this repository>
@@ -46,7 +49,7 @@ cd moonshine-kcd2-ai
 
 ```sh
 scripts/fetch_drop.sh --from <where drops are kept>     # data/kcd2/npcs.sqlite, voices
-scripts/fetch_models.sh                                 # models/, about 5.4 GB
+scripts/fetch_models.sh                                 # models/, about 2.9 GB
 scripts/fetch_moonshine.sh                              # third_party/moonshine, built
 ```
 
@@ -71,7 +74,10 @@ app/build/moonshine_app --soul kkut_additive_man_47 --json   # one soul's sheet
 ```
 
 `-DMOONSHINE_LLAMA=OFF` builds without llama.cpp (the app then needs a running Ollama,
-`--ollama`); `-DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF` build without Moonshine Voice. On
+`--ollama`); `-DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF` build without Moonshine Voice;
+`-DMOONSHINE_PHONON=OFF` builds without the voice (it is off on macOS regardless, where
+the runtime is Core ML only). `-DMOONSHINE_CLONE=ON` builds the earlier Qwen3-TTS engine
+back in, beside Phonon, for comparison; it is kept in the tree and off. On
 Windows, `scripts\build_windows.bat` finds Visual Studio, configures with Ninja, builds
 and runs the tests; `scripts\build_windows.bat release` is the CPU-only build the
 installer ships.
@@ -170,7 +176,7 @@ Three details are easy to get wrong and hard to debug:
 ## Layout
 
 ```
-app/            the companion app: src/, tests/, vendor/ (llama.cpp submodule, qwen3-tts, opus, headers)
+app/            the companion app: src/, tests/, vendor/ (llama.cpp and xn-ptts submodules, qwen3-tts, opus, headers)
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
 installer/      Stage.ps1, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
 scripts/        fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py

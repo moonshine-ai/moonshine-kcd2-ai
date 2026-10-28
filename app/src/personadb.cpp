@@ -228,10 +228,11 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
     // The name is for the subtitle and the log. An unnamed soul is a stranger to the
     // player even though the database knows their trade.
     persona.name = soul.name.empty() ? std::string("Stranger") : soul.name;
-    // The stand-in recording, from their gender. The actor's own clone is looked up and
-    // not used: copying it waits on the rights. Kept off the sheet, the same as a name
+    // Their voice, from the catalogue by gender and age, the same one every time for this
+    // soul. The game's actor is looked up only for the face: the mouth borrows their
+    // shipped clips, the voice is never theirs. Kept off the sheet, the same as a name
     // placed before the world text would break the prefix.
-    persona.actor = stand_in_voice(soul.gender);
+    persona.actor = voice_for(soul.gender, soul.age, soul.soul);
     persona.face = actor_abbr(soul.voice_id);
     const std::string& who = persona.name;
 
@@ -730,14 +731,15 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
     // fail and find() return nothing.
     {
         static constexpr char kVoice[] =
-            "SELECT s.voice_id FROM npc n "
+            "SELECT s.voice_id, s.age_label FROM npc n "
             "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name "
             "WHERE n.soul_name = ? LIMIT 1";
         sqlite3_stmt* row = nullptr;
         if (sqlite3_prepare_v2(db_, kVoice, -1, &row, nullptr) == SQLITE_OK) {
             bind(row, soul);
-            if (sqlite3_step(row) == SQLITE_ROW && sqlite3_column_type(row, 0) != SQLITE_NULL) {
-                found.voice_id = sqlite3_column_int(row, 0);
+            if (sqlite3_step(row) == SQLITE_ROW) {
+                if (sqlite3_column_type(row, 0) != SQLITE_NULL) found.voice_id = sqlite3_column_int(row, 0);
+                found.age = text_at(row, 1);
             }
             sqlite3_finalize(row);
         }

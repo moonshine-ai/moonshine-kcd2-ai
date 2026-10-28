@@ -52,11 +52,14 @@ struct ImportedVoice {
 // cloned voices can be played on this machine without it.
 bool tts_built();
 
-// Whether the cloned voices' engine is in this build, and where its model is as the
-// Speaker would find it (models/qwen3-tts-0.6b beside the working directory, or
-// QWEN_MODEL_DIR), or empty. For the start-up check, which says so before the game.
+// Whether the souls' voice engine is in this build, and where its model is as the
+// Speaker would find it (models/phonon-31m-en beside the working directory, or
+// PHONON_MODEL_DIR; the Qwen3-TTS engine's folder in a build that still carries that
+// engine), or empty. For the start-up check, which says so before the game.
 bool clones_built();
 std::filesystem::path find_clone_model();
+// What the engine is called, for that same check: "Phonon" or "Qwen3-TTS".
+std::string_view clone_engine_name();
 
 // The Moonshine asset tree (kokoro/ and en_gb/ under it), or empty if none of
 // the usual places has one. `asked` wins when it is non-empty.
@@ -71,11 +74,22 @@ std::string plain_voice_id(std::string_view asked);
 // voice.xml voice_id to the abbreviation of the clone, or empty when there is none.
 std::string actor_abbr(int voice_id);
 
-// The three recordings standing in until the actors' rights are cleared. A woman is
-// pete-female; anyone else, including a soul with no gender, is pete-male. Henry is
-// not a soul in the database, so his lines name kHenryVoice themselves.
-inline constexpr std::string_view kHenryVoice = "pete-henry";
+// The voices are Phonon's British English catalogue (gradium/phonon-voices, Apache 2.0),
+// twelve of them, each a speaker embedding under models/phonon-31m-en/voices/ and named
+// after its file. The game's own actors are not imitated: their voices are theirs.
+//
+// Henry is not a soul in the database, so his lines name kHenryVoice themselves; it is
+// his alone, so that the player's own voice is never also the man he is talking to.
+inline constexpr std::string_view kHenryVoice = "teddy";
+// The voice a line is spoken in when it is nobody's in particular: a woman's when asked
+// for one (the mod's female intent, a soul the database only knows the gender of), a man's
+// otherwise, including for a soul with no gender.
 std::string stand_in_voice(std::string_view gender);
+// A soul's own voice, picked once from the catalogue by their gender and age (the game's
+// voice.xml age label: young, adult, middle-aged, elderly, or nothing) and spread across
+// the voices of that age by a hash of `soul`, so neighbours differ and the same soul is the
+// same voice every time. Falls back to the stand-in when the gender says nothing.
+std::string voice_for(std::string_view gender, std::string_view age, std::string_view soul);
 
 // Which clone speaks a line the mod has put on screen. `who` is henry, male, female,
 // or npc -- npc is whoever the conversation is open with, and `actor` is their stand-in.

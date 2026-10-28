@@ -128,8 +128,8 @@ try {
     $app = Join-Path $home_ 'AppData\Local\Moonshine'
     if (-not (Test-Path -LiteralPath (Join-Path $app 'moonshine_app.exe'))) { Fault "no moonshine_app.exe under $app" }
     foreach ($need in @('Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
-                        'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\qwen3-tts-0.6b\model.safetensors',
-                        'libopenblas.dll', 'moonshine.dll', 'onnxruntime.dll', 'moonshine.cfg')) {
+                        'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
+                        'ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll', 'moonshine.cfg')) {
         if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
     }
     if (Test-Path -LiteralPath (Join-Path $app 'moonshine.cfg')) { Write-Output ("  moonshine.cfg: " + ((Get-Content -LiteralPath (Join-Path $app 'moonshine.cfg')) -join ' | ')) }
@@ -168,7 +168,6 @@ try {
     $convLog = Join-Path $report 'conversation.log'
     Push-Location $app
     try {
-        $env:MOONSHINE_TTS_BACKEND = 'cpu'
         & $Python (Join-Path $Repo 'scripts\fake_game.py') --app (Join-Path $app 'moonshine_app.exe') --world setting.txt `
             --gguf ('models\llm\' + $llm[0].Name) --personas 'data/kcd2/npcs.sqlite' --warmup 240 --timeout 120 2>&1 |
             Tee-Object -FilePath $convLog | ForEach-Object { "  " + $_ }

@@ -8,8 +8,8 @@ Two pieces go on your computer, and one installer puts both in place:
 
 1. **The mod**, a small folder in the game's `mods` folder. It gives people their names
    and the *Talk* option.
-2. **The Moonshine app**, about 8 GB, nearly all of it the language model and the
-   voices, which the installer downloads while it runs. It runs beside the game in its
+2. **The Moonshine app**, about 5.5 GB, most of it the language model and the
+   characters' knowledge, which the installer downloads while it runs. It runs beside the game in its
    own window.
 
 The mod without the app renames people but they have nothing to say. The app without the
@@ -27,7 +27,7 @@ Each step below ends with what you should see. If you see something else, go to
   share memory and the first answer each session comes slower.
 - **10 GB free** on your Windows drive (the app installs under your user folder, not the
   game's).
-- **An internet connection** for the install: about 8 GB is downloaded. On a slow line
+- **An internet connection** for the install: about 5.5 GB is downloaded. On a slow line
   this is the longest part, and the installer can be left to it.
 - **A microphone**, if you want to speak to people rather than type. Optional.
 - A Steam account that owns the game, signed in on this PC.
@@ -69,8 +69,8 @@ Download [download.moonshine.ai/kcd2/0.9.96/Moonshine-0.9.96-setup.exe](https://
 
    **Next**, then **Install**.
 10. The program is copied, then the installer downloads the model, voice and data files,
-    about 8 GB in all. The status line names the file it is on and the bar covers the
-    whole download; on a 100 Mbit/s line expect about fifteen minutes, on a slower one
+    about 5.5 GB in all. The status line names the file it is on and the bar covers the
+    whole download; on a 100 Mbit/s line expect about ten minutes, on a slower one
     longer. Leave it to run.
 
     If the connection drops, the installer says which file failed and offers **Retry**.
@@ -233,7 +233,7 @@ Saves made with the mod load fine without it; the names simply go back to *Begga
 
 ## What is in it
 
-The language model is Qwen3, the voices are Qwen3-TTS, the ear is Moonshine Voice; all
-run locally. The list of third-party software and model weights and their licences is in
+The language model is Qwen3, the voices are Phonon's British English catalogue, the ear
+is Moonshine Voice; all run locally. The list of third-party software and model weights and their licences is in
 `LICENSES\README.txt` in the Moonshine folder. The code is open source under the MIT
 licence at https://github.com/moonshine-ai/moonshine-kcd.

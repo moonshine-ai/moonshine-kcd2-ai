@@ -19,7 +19,8 @@ rem whatever this exe is linked against, so the installer carries vc_redist.x64.
 rem rather than this build carrying a static CRT.
 rem
 rem Wants: Visual Studio 2022 (Build Tools are enough) with the C++ workload and CMake, git
-rem with the llama.cpp submodule checked out (git submodule update --init), and, for the
+rem with the llama.cpp and xn-ptts submodules checked out (git submodule update --init), Rust
+rem (cargo, from https://rustup.rs) for the voice's runtime, and, for the
 rem ear, Moonshine Voice under third_party\moonshine (scripts\fetch_moonshine.ps1; run from
 rem this file's developer prompt, or MOONSHINE_ROOT names another checkout).
 setlocal
@@ -63,6 +64,17 @@ if not exist app\vendor\llama.cpp\CMakeLists.txt (
     echo app\vendor\llama.cpp is empty: git submodule update --init
     exit /b 1
 )
+if not exist app\vendor\xn-ptts\ptts-ffi\Cargo.toml (
+    echo app\vendor\xn-ptts is empty: git submodule update --init
+    exit /b 1
+)
+rem cargo, for the voice's runtime. rustup puts it under %USERPROFILE%\.cargo\bin, which a
+rem session begun before the install (an ssh one, say) does not have on its PATH yet.
+where cargo >nul 2>&1 || set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+where cargo >nul 2>&1 || (
+    echo no cargo on the PATH: install Rust from https://rustup.rs for the voice
+    exit /b 1
+)
 rem Ninja, which vcvars64 has just put on the PATH, in its multi-config form so that the
 rem binaries land in app\build\RelWithDebInfo\ as they did under the Visual Studio
 rem generator. The difference is the CUDA backend: MSBuild compiles its 189 .cu files one
@@ -79,8 +91,9 @@ if exist %BUILD%\CMakeCache.txt (
 )
 rem The Moonshine Voice library, for the ear at the menu's say row (app/src/listen.cpp):
 rem third_party\moonshine, built as a DLL by scripts\fetch_moonshine.ps1, or MOONSHINE_ROOT.
-rem Kokoro stays off: this build speaks the clones through the Qwen3-TTS engine, and the
-rem Kokoro build would ask for its assets at start-up. Without the library the app builds
+rem Kokoro stays off: this build speaks through Phonon (app\vendor\xn-ptts, built by cargo
+rem at configure time; rustup.rs puts cargo on the PATH), and the Kokoro build would ask for
+rem its assets at start-up. Without the library the app builds
 rem as before, without the ear, and the installer's staging step refuses the result.
 if not defined MOONSHINE_ROOT set "MOONSHINE_ROOT=%ROOT%\third_party\moonshine"
 set "MOONSHINE="

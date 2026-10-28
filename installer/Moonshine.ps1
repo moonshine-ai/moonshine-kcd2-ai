@@ -84,9 +84,9 @@ $stt = @(Get-ChildItem -LiteralPath (Join-Path $here 'models\stt') -Directory -E
 if ($stt.Count -gt 0) { $common += @('--stt-model', (Format-Arg ('models\stt\' + $stt[0].Name))) }
 if ($cfg['root']) { $common += @('--root', (Format-Arg $cfg['root'])) }
 if ($cfg['args']) { $common += $cfg['args'] }
-# The voice on the CPU: the game has the GPU to itself. A gpu already in the environment
-# is somebody's experiment and is kept.
-if (-not $env:MOONSHINE_TTS_BACKEND) { $env:MOONSHINE_TTS_BACKEND = 'cpu' }
+# The voice is Phonon, on the CPU, and the one engine in this build; the game has the GPU
+# to itself. Its thread count is the app's business (src/phonon.cpp sets RAYON_NUM_THREADS
+# to eight before the runtime loads, unless the environment already says).
 
 # --- stop ----------------------------------------------------------------------------------
 # A window running the loop below would start the app again two seconds after -Stop killed

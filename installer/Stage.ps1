@@ -15,16 +15,16 @@
 #     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, README.txt, VERSION.txt, LICENSES\
 #     setting.txt, manifest.json
 #     data\kcd2\npcs.sqlite         a vacuumed copy of the assembled database
-#     data\kcd2\voices\             clones\*.qvoice, phrases\, voices.txt, facials.txt, lexicon.tsv
+#     data\kcd2\voices\             phrases\, voices.txt, facials.txt, lexicon.tsv
 #     models\embeddinggemma-300m-q8_0.gguf
-#     models\qwen3-tts-0.6b\
+#     models\phonon-31m-en\         the voice: model, tokenizer, voices\*.safetensors
 #     models\llm\<name>.gguf        the one GGUF under models\llm
 #     models\stt\tiny-streaming-en\ the one folder under models\stt
 #     mod\moonshine_names\          from release\mod; Fetch-Package copies it into the game
 #   extra\vc_redist.x64.exe         run by the installer, not installed
 #
 # The installer carries only the program, the scripts and manifest.json; the rest (data\,
-# models\, mod\, about 8 GB) Setup downloads itself on the tester's machine, from [Files]
+# models\, mod\, about 3 GB) Setup downloads itself on the tester's machine, from [Files]
 # entries this script writes to release\stage\download_files.iss out of the manifest: the
 # models from where scripts\models.tsv pins them (Hugging Face, download.moonshine.ai), the
 # database, voices and mod from <DownloadBase>/<Version>/<path>. Fetch-Package.ps1 reads
@@ -36,6 +36,12 @@
 #   <Version>\Moonshine-<Version>-setup.exe
 #   latest\manifest.json            what Moonshine.ps1 -Update reads; copy it up last
 #
+# The installer, its uninstaller and moonshine_app.exe are Authenticode-signed through Azure
+# Artifact Signing when installer\signing.json is present (the account, certificate profile
+# and endpoint; nothing secret) and the client tools are installed (winget install -e --id
+# Microsoft.Azure.ArtifactSigningClientTools); the credential is this machine's `az login`.
+# Without signing.json the build is unsigned, with a note; -NoSign forces that.
+#
 # -DownloadBase is MOONSHINE_DOWNLOAD_BASE from the environment when not given. Every copy
 # is a robocopy or a hash-checked Copy-Item, so a second run only moves what changed; the
 # big weights are the same bytes from one build to the next, and their sha256s are cached.
@@ -46,7 +52,8 @@ param(
     [string]$DownloadBase = $env:MOONSHINE_DOWNLOAD_BASE,
     [string]$Repo = '',
     [string]$Python = $env:PYTHON,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$NoSign
 )
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 has $PSScriptRoot empty while the parameter defaults are evaluated.
@@ -104,6 +111,41 @@ function Mirror([string]$from, [string]$to, [string[]]$excludeDirs = @(), [strin
 Step "staging Moonshine $Version under $stage"
 Ensure-Dir $pkg
 
+# --- signing -------------------------------------------------------------------------------
+# One command for everything that gets a signature: signtool with the Artifact Signing dlib
+# and the metadata file, timestamped by Microsoft's authority (the certificates live three
+# days; the timestamp is what keeps the signature valid after). Written to stage\sign.cmd so
+# that ISCC can be given the same command for setup.exe and the uninstaller without the
+# quoting of two shells in between.
+$signCmd = $null
+$signMeta = Join-Path $installerSrc 'signing.json'
+if ($NoSign) {
+    Write-Output '  not signing (-NoSign)'
+} elseif (-not (Test-Path -LiteralPath $signMeta)) {
+    Write-Output '  not signing: no installer\signing.json (the Artifact Signing account and certificate profile)'
+} else {
+    $toolsDir = @("$env:ProgramFiles\Artifact Signing Client Tools", "$env:ProgramFiles\Trusted Signing Client Tools") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $toolsDir) { Fail 'installer\signing.json is here but the signing tools are not: winget install -e --id Microsoft.Azure.ArtifactSigningClientTools (or build with -NoSign)' }
+    $signtool = @(Get-ChildItem -LiteralPath $toolsDir -Recurse -Filter 'signtool.exe' | Where-Object { $_.FullName -notmatch '\\(x86|arm64)\\' } | Select-Object -First 1)
+    $dlib = @(Get-ChildItem -LiteralPath $toolsDir -Recurse -Filter '*.Dlib.dll' | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1)
+    if ($signtool.Count -eq 0 -or $dlib.Count -eq 0) { Fail "the signing tools under $toolsDir have no signtool.exe or x64 dlib" }
+    $signCmd = Join-Path $stage 'sign.cmd'
+    Set-Content -LiteralPath $signCmd -Encoding ASCII -Value @(
+        '@echo off',
+        ('"{0}" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib "{1}" /dmdf "{2}" %*' -f $signtool[0].FullName, $dlib[0].FullName, $signMeta)
+    )
+    Write-Output "  signing with $($signtool[0].FullName)"
+}
+function Sign-File([string]$path) {
+    if (-not $signCmd) { return }
+    if ((Get-AuthenticodeSignature -LiteralPath $path).Status -eq 'Valid') { return }
+    & $signCmd $path 2>&1 | Where-Object { "$_" -match 'rror|Success' } | ForEach-Object { Write-Output "    $_" }
+    if ($LASTEXITCODE -ne 0) { Fail "signing $path failed ($LASTEXITCODE); is `az login` current on this machine?" }
+    $sig = Get-AuthenticodeSignature -LiteralPath $path
+    if ($sig.Status -ne 'Valid') { Fail "$path was signed but the signature is $($sig.Status)" }
+    Write-Output ("  signed " + (Split-Path -Leaf $path) + " as " + $sig.SignerCertificate.Subject)
+}
+
 # --- the program ---------------------------------------------------------------------------
 Step 'program'
 $exe = Join-Path $build 'moonshine_app.exe'
@@ -111,10 +153,11 @@ if (-not (Test-Path -LiteralPath $exe)) { Fail "no release build at $exe -- run 
 $dlls = @(Get-ChildItem -LiteralPath $build -Filter '*.dll')
 $cuda = @($dlls | Where-Object { $_.Name -match '^(cublas|cudart|cublasLt|ggml-cuda)' })
 if ($cuda.Count -gt 0) { Fail ("the release build has CUDA DLLs beside it: " + (($cuda | ForEach-Object Name) -join ', ') + " -- that is not the release build") }
-foreach ($need in @('libopenblas.dll', 'moonshine.dll', 'onnxruntime.dll')) {
+foreach ($need in @('ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll')) {
     if (-not ($dlls | Where-Object Name -eq $need)) { Fail "the release build is missing $need" }
 }
 Copy-Same $exe (Join-Path $pkg 'moonshine_app.exe')
+Sign-File (Join-Path $pkg 'moonshine_app.exe')
 foreach ($dll in $dlls) { Copy-Same $dll.FullName (Join-Path $pkg $dll.Name) }
 # Anything else left in the package root from an earlier build.
 Get-ChildItem -LiteralPath $pkg -File | Where-Object { $_.Extension -in '.dll', '.exe', '.pdb' -and -not (Test-Path -LiteralPath (Join-Path $build $_.Name)) } |
@@ -168,7 +211,10 @@ chk.close()
 Step 'voices'
 $voices = Join-Path $Repo 'data\kcd2\voices'
 $voicesOut = Join-Path $pkg 'data\kcd2\voices'
-Mirror (Join-Path $voices 'clones') (Join-Path $voicesOut 'clones')
+# The voices themselves are in the Phonon model folder (models\phonon-31m-en\voices), below.
+# The clones\ folder of .qvoice recordings was the Qwen3-TTS engine's and is not shipped;
+# one left in the stage by an earlier build goes.
+if (Test-Path -LiteralPath (Join-Path $voicesOut 'clones')) { Remove-Item -LiteralPath (Join-Path $voicesOut 'clones') -Recurse -Force }
 Mirror (Join-Path $voices 'phrases') (Join-Path $voicesOut 'phrases')
 foreach ($name in @('facials.txt', 'lexicon.tsv')) {
     Copy-Same (Join-Path $voices $name) (Join-Path $voicesOut $name)
@@ -176,9 +222,6 @@ foreach ($name in @('facials.txt', 'lexicon.tsv')) {
 # voices.txt names the Kokoro voices, which this build does not carry; the app reads it
 # only when it is there. Shipped when the checkout has it, so the catalogue is complete.
 if (Test-Path -LiteralPath (Join-Path $voices 'voices.txt')) { Copy-Same (Join-Path $voices 'voices.txt') (Join-Path $voicesOut 'voices.txt') }
-$clones = @(Get-ChildItem -LiteralPath (Join-Path $voicesOut 'clones') -Filter '*.qvoice')
-if ($clones.Count -eq 0) { Fail 'no .qvoice files in the clones folder' }
-Write-Output ("  " + $clones.Count + " cloned voices")
 
 # --- the models ----------------------------------------------------------------------------
 # All four come from scripts\fetch_models.ps1 (scripts\models.tsv pins them), which is the
@@ -187,8 +230,14 @@ Step 'models'
 $models = Join-Path $Repo 'models'
 $modelsOut = Join-Path $pkg 'models'
 Copy-Same (Join-Path $models 'embeddinggemma-300m-q8_0.gguf') (Join-Path $modelsOut 'embeddinggemma-300m-q8_0.gguf')
-Mirror (Join-Path $models 'qwen3-tts-0.6b') (Join-Path $modelsOut 'qwen3-tts-0.6b') @('.cache', '.git') @('.gitattributes', '*.md')
-if (-not (Test-Path -LiteralPath (Join-Path $modelsOut 'qwen3-tts-0.6b\model.safetensors'))) { Fail 'qwen3-tts-0.6b has no model.safetensors' }
+# The voice: Phonon's checkpoint with the souls' voices inside it. The Qwen3-TTS folder an
+# earlier stage left behind goes.
+Mirror (Join-Path $models 'phonon-31m-en') (Join-Path $modelsOut 'phonon-31m-en') @('.cache', '.git') @('.gitattributes', '*.md')
+if (-not (Test-Path -LiteralPath (Join-Path $modelsOut 'phonon-31m-en\model.q8.gguf'))) { Fail 'phonon-31m-en has no model.q8.gguf -- scripts\fetch_models.ps1' }
+$phononVoices = @(Get-ChildItem -LiteralPath (Join-Path $modelsOut 'phonon-31m-en\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue)
+if ($phononVoices.Count -eq 0) { Fail 'phonon-31m-en\voices holds no .safetensors -- scripts\fetch_models.ps1' }
+Write-Output ("  voice: phonon-31m-en, " + $phononVoices.Count + " voices")
+if (Test-Path -LiteralPath (Join-Path $modelsOut 'qwen3-tts-0.6b')) { Write-Output '  removing qwen3-tts-0.6b'; Remove-Item -LiteralPath (Join-Path $modelsOut 'qwen3-tts-0.6b') -Recurse -Force }
 
 # The language model: the one GGUF under models\llm, which the launcher passes as --gguf.
 $ggufs = @(Get-ChildItem -LiteralPath (Join-Path $models 'llm') -Filter '*.gguf' -ErrorAction SilentlyContinue | Sort-Object Name)
@@ -373,9 +422,22 @@ if (-not $iscc) {
 $out = Join-Path $Repo "release\out\$Version"
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 Ensure-Dir $out
-& $iscc "/DVersion=$Version" "/DStage=$stage" "/DSource=$installerSrc" "/O$out" (Join-Path $installerSrc 'moonshine.iss')
+# With signing, ISCC is told the command as "azure" (moonshine.iss names it in SignTool=)
+# and signs setup.exe and the uninstaller with it. The command line is written to a .cmd
+# and run from there: quotes do not survive PowerShell 5.1's hand-off to a native program.
+$isccLine = "`"$iscc`" /DVersion=$Version `"/DStage=$stage`" `"/DSource=$installerSrc`" `"/O$out`""
+if ($signCmd) { $isccLine += " /DSign `"/Sazure=$signCmd `$f`"" }
+$isccLine += " `"$(Join-Path $installerSrc 'moonshine.iss')`""
+$isccCmd = Join-Path $stage 'iscc.cmd'
+Set-Content -LiteralPath $isccCmd -Encoding ASCII -Value @('@echo off', $isccLine, 'exit /b %ERRORLEVEL%')
+& cmd /c $isccCmd
 if ($LASTEXITCODE -ne 0) { Fail "ISCC failed ($LASTEXITCODE)" }
 Get-ChildItem -LiteralPath $out | ForEach-Object { Write-Output ("  " + $_.Name + "  " + [math]::Round($_.Length / 1MB) + " MB") }
+if ($signCmd) {
+    $sig = Get-AuthenticodeSignature -LiteralPath (Join-Path $out "Moonshine-$Version-setup.exe")
+    if ($sig.Status -ne 'Valid') { Fail "the installer's signature is $($sig.Status)" }
+    Write-Output ("  signed as " + $sig.SignerCertificate.Subject)
+}
 Write-Output "installer: $out"
 
 # The installer into the publish tree, and its hash into the published manifests. The

@@ -9,7 +9,7 @@
 ; also where the app writes its logs, and the one thing that would want elevation (the
 ; VC++ runtime) elevates itself when it has to.
 ;
-; A small installer: the program, its scripts and manifest.json, about 100 MB. The 8 GB of
+; A small installer: the program, its scripts and manifest.json, about 100 MB. The 5.5 GB of
 ; weights, the database, the voices and the mod are [Files] entries with the download flag
 ; (Stage.ps1 writes them to download_files.iss from the manifest), so Setup fetches them
 ; itself during the install step: one progress bar over the whole, the file's name in the
@@ -26,7 +26,7 @@
 ; task's text says. Silent installs that must not touch the game's folder pass
 ; /MERGETASKS=!copymod. /MIRROR=<folder> names a folder laid out like the installed one
 ; (release\stage\Moonshine on the build machine): a file found there with the right hash
-; is copied, not downloaded, which is how the verify scripts install without fetching 8 GB.
+; is copied, not downloaded, which is how the verify scripts install without fetching 5.5 GB.
 
 #ifndef Version
   #error Pass /DVersion=x.y.z
@@ -73,12 +73,21 @@ CloseApplications=yes
 CloseApplicationsFilter=moonshine_app.exe
 RestartApplications=no
 SetupLogging=yes
+#ifdef Sign
+; Stage.ps1 passes /DSign and /Sazure=<stage>\sign.cmd $f: signtool through Azure Artifact
+; Signing. Setup.exe and the uninstaller get the signature; moonshine_app.exe was signed in
+; the stage. A few retries, since the signing is a web service.
+SignTool=azure
+SignedUninstaller=yes
+SignToolRetryCount=3
+SignToolRetryDelay=2000
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-WelcomeLabel2=This will install Moonshine {#Version}, an early tester build, on your computer.%n%nIt puts a language model and a voice on your PC that let the unnamed people of Kuttenberg talk back. Around 8 GB is downloaded during the installation, so keep the internet connection up; if it is interrupted, run the installer again and it carries on from the files it already has. The mod is copied into the game's mods folder; nothing else in the game's folder is changed.%n%nIt is recommended that you close the game before continuing.
+WelcomeLabel2=This will install Moonshine {#Version}, an early tester build, on your computer.%n%nIt puts a language model and a voice on your PC that let the unnamed people of Kuttenberg talk back. Around 5.5 GB is downloaded during the installation, so keep the internet connection up; if it is interrupted, run the installer again and it carries on from the files it already has. The mod is copied into the game's mods folder; nothing else in the game's folder is changed.%n%nIt is recommended that you close the game before continuing.
 
 [Tasks]
 Name: "desktopicon"; Description: "Put a Moonshine shortcut on the desktop"; GroupDescription: "Shortcuts:"

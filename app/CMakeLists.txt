@@ -189,13 +189,91 @@ endif()
 add_executable(moonshine_app src/main.cpp src/voice.cpp src/listen.cpp)
 target_link_libraries(moonshine_app PRIVATE moonshine_core)
 
-# The cloned voices are spoken in-process by the Qwen3-TTS C engine, vendored under
-# vendor/qwen3-tts and built as a static library: the model is loaded once, at startup, and
-# each line is a generate call rather than a process launch. Optional in the same way as
-# llama.cpp -- without it the app still talks, it just does not speak -- and only the app
-# links it; the tests compile voice.cpp without the engine. Kokoro stays the fallback
-# where that library was found.
-option(MOONSHINE_CLONE "speak in the cloned voices with the in-process Qwen3-TTS engine" ON)
+# The souls' voices are spoken in-process by Phonon, Gradium's 31M text-to-speech model,
+# through the C interface of its Rust runtime, pinned as the submodule vendor/xn-ptts and
+# built here by cargo (rustup.rs puts it on the PATH; nothing else is needed). The runtime
+# is one shared library the exe needs beside it, as OpenBLAS was for the engine below; the
+# model is 68 MB under models/phonon-31m-en (scripts/models.tsv), with the voices in it.
+# Optional in the same way as llama.cpp -- without it the app still talks, it just does not
+# speak -- and only the app links it; the tests compile voice.cpp without any engine.
+#
+# Off on macOS: that build of the runtime drives Core ML only and loads an exported bundle,
+# not the checkpoint folder this ships. The app speaks there through Kokoro when built with
+# Moonshine Voice, or not at all.
+option(MOONSHINE_PHONON "speak in the Phonon voices through the vendored xn-ptts runtime" ON)
+set(XN_PTTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/xn-ptts)
+if(MOONSHINE_PHONON AND APPLE)
+    message(STATUS "Phonon is off on macOS (its runtime there is Core ML only)")
+    set(MOONSHINE_PHONON OFF)
+endif()
+if(MOONSHINE_PHONON AND NOT EXISTS ${XN_PTTS_DIR}/ptts-ffi/Cargo.toml)
+    message(WARNING "vendor/xn-ptts is empty; run git submodule update --init. "
+                    "Building without the Phonon voice.")
+    set(MOONSHINE_PHONON OFF)
+endif()
+if(MOONSHINE_PHONON)
+    find_program(CARGO cargo HINTS $ENV{USERPROFILE}/.cargo/bin $ENV{HOME}/.cargo/bin)
+    if(NOT CARGO)
+        message(WARNING "no cargo on the PATH (install Rust from https://rustup.rs). "
+                        "Building without the Phonon voice.")
+        set(MOONSHINE_PHONON OFF)
+    endif()
+endif()
+if(MOONSHINE_PHONON)
+    # The submodule's own .cargo/config.toml asks for the CPU of the build machine; this
+    # ships to other machines, so the baseline is set here instead, the one the runtime's
+    # own releases use. RUSTFLAGS in the environment replaces that file's setting.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+        set(MOONSHINE_PHONON_TARGET_CPU "x86-64-v3" CACHE STRING "rustc target-cpu for the Phonon runtime")
+    else()
+        set(MOONSHINE_PHONON_TARGET_CPU "generic" CACHE STRING "rustc target-cpu for the Phonon runtime")
+    endif()
+    set(PTTS_TARGET_DIR ${CMAKE_BINARY_DIR}/xn-ptts)
+    if(WIN32)
+        set(PTTS_SHARED ${PTTS_TARGET_DIR}/release/ptts_ffi.dll)
+        set(PTTS_IMPLIB ${PTTS_TARGET_DIR}/release/ptts_ffi.dll.lib)
+    else()
+        set(PTTS_SHARED ${PTTS_TARGET_DIR}/release/libptts_ffi.so)
+        set(PTTS_IMPLIB ${PTTS_SHARED})
+    endif()
+    # cargo keeps its own account of what is up to date, so it runs on every build and is
+    # a no-op in under a second when nothing changed. Always release: the debug build of
+    # the runtime is too slow to speak with.
+    add_custom_target(ptts_ffi_build
+        COMMAND ${CMAKE_COMMAND} -E env
+                "RUSTFLAGS=-C target-cpu=${MOONSHINE_PHONON_TARGET_CPU}"
+                "CARGO_TARGET_DIR=${PTTS_TARGET_DIR}"
+                ${CARGO} build --release --quiet -p ptts-ffi
+        WORKING_DIRECTORY ${XN_PTTS_DIR}
+        BYPRODUCTS ${PTTS_SHARED} ${PTTS_IMPLIB}
+        COMMENT "cargo: the Phonon runtime (ptts-ffi, release, target-cpu=${MOONSHINE_PHONON_TARGET_CPU})"
+        VERBATIM)
+    add_library(ptts_ffi SHARED IMPORTED)
+    set_target_properties(ptts_ffi PROPERTIES
+        IMPORTED_LOCATION ${PTTS_SHARED}
+        IMPORTED_IMPLIB ${PTTS_IMPLIB}
+        INTERFACE_INCLUDE_DIRECTORIES ${XN_PTTS_DIR}/ptts-ffi/include)
+    add_dependencies(moonshine_app ptts_ffi_build)
+    target_sources(moonshine_app PRIVATE src/phonon.cpp)
+    target_link_libraries(moonshine_app PRIVATE ptts_ffi)
+    target_compile_definitions(moonshine_app PRIVATE MOONSHINE_HAS_PHONON=1)
+    if(WIN32)
+        target_link_libraries(moonshine_app PRIVATE winmm)
+        add_custom_command(TARGET moonshine_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${PTTS_SHARED} $<TARGET_FILE_DIR:moonshine_app>
+            VERBATIM)
+    endif()
+endif()
+
+# The voices as they were spoken before Phonon (28 Oct 2026): cloned recordings through the
+# Qwen3-TTS C engine, vendored under vendor/qwen3-tts and built as a static library, the
+# model loaded once at startup and each line a generate call. Kept buildable and off: its
+# model is 2.5 GB where Phonon's is 68, it holds 3.6 GB resident where Phonon holds 300 MB,
+# and it speaks at real time where Phonon speaks at a tenth of it. Only the app links it;
+# the tests compile voice.cpp without the engine. Kokoro stays the fallback where that
+# library was found. Turned on beside Phonon, MOONSHINE_TTS_BACKEND=cpu picks it at runtime.
+option(MOONSHINE_CLONE "speak in the cloned voices with the in-process Qwen3-TTS engine" OFF)
 if(MOONSHINE_CLONE AND (APPLE OR WIN32))
     add_subdirectory(vendor/qwen3-tts EXCLUDE_FROM_ALL)
     target_sources(moonshine_app PRIVATE src/clone.cpp)
@@ -219,7 +297,8 @@ endif()
 # is a libllama model, the code predictor and code2wav come from libmtmd, and the in-context
 # voice prompt is built from the same .qvoice files. Picked at runtime when a GGUF pair is
 # found beside the safetensors and a GPU device is present; the vendored engine otherwise.
-option(MOONSHINE_GPU_CLONE "speak the cloned voices on the GPU through llama.cpp's Qwen3-TTS" ON)
+# Off since Phonon, with the engine above.
+option(MOONSHINE_GPU_CLONE "speak the cloned voices on the GPU through llama.cpp's Qwen3-TTS" OFF)
 if(MOONSHINE_GPU_CLONE AND MOONSHINE_LLAMA AND TARGET mtmd)
     target_sources(moonshine_app PRIVATE src/clone_llama.cpp)
     target_link_libraries(moonshine_app PRIVATE mtmd)
