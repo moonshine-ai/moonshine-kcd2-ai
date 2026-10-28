@@ -1,3 +1,6 @@
 [submodule "app/vendor/llama.cpp"]
 	path = app/vendor/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp
+[submodule "app/vendor/xn-ptts"]
+	path = app/vendor/xn-ptts
+	url = https://github.com/gradium-ai/xn-ptts.git
