@@ -1,20 +1,32 @@
 ; Moonshine for Kingdom Come: Deliverance 2 -- the tester installer.
 ;
-; Compiled on the Windows laptop by installer\Stage.ps1 after it has assembled the
-; package tree:
+; Compiled on the Windows laptop by installer\Stage.ps1 (Inno Setup 6.5 or later) after it
+; has assembled the package tree and written manifest.json and download_files.iss:
 ;
 ;   ISCC.exe /DVersion=0.9.94 /DStage=<repo>\release\stage /DSource=<repo>\installer /Oout moonshine.iss
 ;
 ; Per-user, no administrator prompt: it installs under %LOCALAPPDATA%\Moonshine, which is
 ; also where the app writes its logs, and the one thing that would want elevation (the
-; VC++ runtime) elevates itself when it has to. Close to 8 GB of weights go in, so the
-; output is sliced (setup.exe + .bin files, 2 GB each) and the weights are stored rather
-; than compressed: they are already dense and LZMA over them costs an hour for nothing.
+; VC++ runtime) elevates itself when it has to.
 ;
-; The mod is NOT installed here. Testers subscribe to it on the Steam Workshop and the
-; game loads it from its workshop folder. An unchecked task offers to drop a copy in the
-; game's mods\ folder instead, for a tester without the Workshop route; both at once is a
-; conflict (two mods, one id), which is why it is off by default and says so.
+; A small installer: the program, its scripts and manifest.json, about 100 MB. The 8 GB of
+; weights, the database, the voices and the mod are [Files] entries with the download flag
+; (Stage.ps1 writes them to download_files.iss from the manifest), so Setup fetches them
+; itself during the install step: one progress bar over the whole, the file's name in the
+; status line, the sha256 checked as each lands, Setup's own Retry/Skip/Cancel when one
+; fails. A file already in place with the right hash is left alone, so running the
+; installer again after a failed download, or over an older version, fetches only what is
+; missing or changed. Fetch-Package.ps1 reads the same manifest for the Start Menu's
+; "Download or repair Moonshine files" and for Moonshine.ps1 -Update.
+;
+; The mod is one of the downloaded parts, and a task, on by default, copies it into the
+; game's mods\ folder: the mod and the app then always come from the same build. The
+; alternative is the Steam Workshop item, which updates on its own; somebody subscribed to
+; it unticks the task, since both at once is a conflict (two mods, one id), which the
+; task's text says. Silent installs that must not touch the game's folder pass
+; /MERGETASKS=!copymod. /MIRROR=<folder> names a folder laid out like the installed one
+; (release\stage\Moonshine on the build machine): a file found there with the right hash
+; is copied, not downloaded, which is how the verify scripts install without fetching 8 GB.
 
 #ifndef Version
   #error Pass /DVersion=x.y.z
@@ -49,15 +61,11 @@ UninstallDisplayIcon={app}\moonshine.ico
 UninstallDisplayName=Moonshine (tester build {#Version})
 LicenseFile={#Pkg}\LICENSES\README.txt
 InfoBeforeFile={#Pkg}\README.txt
-; The slices: Inno's 2 GB-ish ceiling per file. Setup.exe stays small and the weights
-; land in Moonshine-x.y.z-setup-1.bin, -2.bin ... all of which must sit beside it.
-DiskSpanning=yes
-SlicesPerDisk=1
-DiskSliceSize=2100000000
-Compression=lzma2/fast
-SolidCompression=no
+Compression=lzma2/max
+SolidCompression=yes
 LZMAUseSeparateProcess=yes
-; Room for the package plus the runtime installer's own unpacking.
+; The downloads are counted through their ExternalSize; this is the runtime installer's
+; unpacking and the logs.
 ExtraDiskSpaceRequired=314572800
 WizardStyle=modern
 ShowLanguageDialog=no
@@ -70,36 +78,29 @@ SetupLogging=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-WelcomeLabel2=This will install Moonshine {#Version}, an early tester build, on your computer.%n%nIt puts a language model and a voice on your PC that let the unnamed people of Kuttenberg talk back. Around 8 GB goes on disk. Nothing in the game's folder is changed; the mod itself comes from the Steam Workshop.%n%nIt is recommended that you close the game before continuing.
+WelcomeLabel2=This will install Moonshine {#Version}, an early tester build, on your computer.%n%nIt puts a language model and a voice on your PC that let the unnamed people of Kuttenberg talk back. Around 8 GB is downloaded during the installation, so keep the internet connection up; if it is interrupted, run the installer again and it carries on from the files it already has. The mod is copied into the game's mods folder; nothing else in the game's folder is changed.%n%nIt is recommended that you close the game before continuing.
 
 [Tasks]
 Name: "desktopicon"; Description: "Put a Moonshine shortcut on the desktop"; GroupDescription: "Shortcuts:"
-Name: "copymod"; Description: "Also copy the mod into the game's mods folder (NOT needed if you subscribed on the Steam Workshop; both at once loads it twice)"; GroupDescription: "Without the Workshop:"; Flags: unchecked; Check: GameDirKnown
+Name: "copymod"; Description: "Install the mod into the game's mods folder (untick ONLY if you subscribed to it on the Steam Workshop; both at once loads it twice)"; GroupDescription: "The mod:"; Check: GameDirKnown
 
 [Files]
 ; The program and its scripts, compressed.
 Source: "{#Pkg}\moonshine_app.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\Moonshine.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Pkg}\Fetch-Package.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\Collect-Logs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "{#Pkg}\VERSION.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\setting.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Pkg}\manifest.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\LICENSES\*"; DestDir: "{app}\LICENSES"; Flags: ignoreversion recursesubdirs
 Source: "{#Source}\moonshine.ico"; DestDir: "{app}"; Flags: ignoreversion
-; The voices and the words: small, compressed.
-Source: "{#Pkg}\data\kcd2\voices\*"; DestDir: "{app}\data\kcd2\voices"; Flags: ignoreversion recursesubdirs
-; The weights and the database: stored. A file this size is also a bad candidate for
-; "ignoreversion" comparisons, so they are simply replaced.
-Source: "{#Pkg}\data\kcd2\npcs.sqlite"; DestDir: "{app}\data\kcd2"; Flags: ignoreversion nocompression
-Source: "{#Pkg}\models\*.gguf"; DestDir: "{app}\models"; Flags: ignoreversion nocompression
-Source: "{#Pkg}\models\llm\*"; DestDir: "{app}\models\llm"; Flags: ignoreversion nocompression recursesubdirs
-Source: "{#Pkg}\models\stt\*"; DestDir: "{app}\models\stt"; Flags: ignoreversion nocompression recursesubdirs
-Source: "{#Pkg}\models\qwen3-tts-0.6b\*"; DestDir: "{app}\models\qwen3-tts-0.6b"; Flags: ignoreversion nocompression recursesubdirs
 ; The VC++ runtime, unpacked to run and then thrown away.
 Source: "{#Stage}\extra\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsRedist
-; The mod, only for the task that asks for it.
-Source: "{#Stage}\mod\moonshine_names\*"; DestDir: "{code:GameDir}\mods\moonshine_names"; Flags: ignoreversion recursesubdirs uninsneveruninstall; Tasks: copymod
+; The downloads (data\, models\, mod\) and the mod's copy into the game: written by Stage.ps1.
+#include Stage + "\download_files.iss"
 
 [Dirs]
 Name: "{app}\logs"
@@ -107,6 +108,8 @@ Name: "{app}\logs"
 [Icons]
 Name: "{group}\Moonshine"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Start Moonshine and the game together"
 Name: "{group}\Check the Moonshine installation"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Check"; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"
+Name: "{group}\Download or repair Moonshine files"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Fetch-Package.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Fetch again any model or data file that is missing or damaged"
+Name: "{group}\Update Moonshine"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Update"; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Look for a newer Moonshine and install it"
 Name: "{group}\Collect Moonshine logs"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\Collect-Logs.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"
 Name: "{group}\Read me"; Filename: "{app}\README.txt"
 Name: "{group}\Uninstall Moonshine"; Filename: "{uninstallexe}"
@@ -123,11 +126,73 @@ Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File "
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\moonshine.cfg"
+; What Fetch-Package.ps1 put there after the install, which the uninstall log does not know.
+Type: filesandordirs; Name: "{app}\data"
+Type: filesandordirs; Name: "{app}\models"
+Type: filesandordirs; Name: "{app}\mod"
 
 [Code]
 var
   GameDirCache: String;
   GameDirLooked: Boolean;
+  RightOnes, WrongOnes: TStringList;   // paths already looked at: installed and correct, or not
+
+// --- the downloads -------------------------------------------------------------------------
+// Each file in download_files.iss has two entries: one that copies it from the /MIRROR
+// folder, one that downloads it. Both are skipped when the file already installed has the
+// right size and sha256, which is what makes a rerun after a broken download, or over an
+// older version, fetch only what differs. The size is looked at first: a 2.5 GB hash is
+// seconds, and a wrong size settles it without one. Checks can be asked more than once, so
+// the verdicts are kept.
+function Right(const Path, Bytes, Sha: String): Boolean;
+var
+  Full, Got: String;
+  Size: Int64;
+begin
+  if RightOnes.IndexOf(Path) >= 0 then begin
+    Result := True;
+    exit;
+  end;
+  if WrongOnes.IndexOf(Path) >= 0 then begin
+    Result := False;
+    exit;
+  end;
+  Result := False;
+  Full := ExpandConstant('{app}') + '\' + Path;
+  if FileExists(Full) and FileSize64(Full, Size) and (IntToStr(Size) = Bytes) then begin
+    try
+      Got := GetSHA256OfFile(Full);
+      Result := CompareText(Got, Sha) = 0;
+    except
+      Result := False;
+    end;
+  end;
+  if Result then RightOnes.Add(Path) else WrongOnes.Add(Path);
+  if Result then Log('already right: ' + Path);
+end;
+
+function MirrorHas(const Path, Bytes: String): Boolean;
+var
+  Full: String;
+  Size: Int64;
+begin
+  Result := False;
+  if ExpandConstant('{param:MIRROR}') = '' then exit;
+  Full := ExpandConstant('{param:MIRROR}') + '\' + Path;
+  Result := FileExists(Full) and FileSize64(Full, Size) and (IntToStr(Size) = Bytes);
+end;
+
+function FromMirror(const Path, Bytes, Sha: String): Boolean;
+begin
+  Result := (not Right(Path, Bytes, Sha)) and MirrorHas(Path, Bytes);
+  if Result then Log('from the mirror: ' + Path);
+end;
+
+function FromWeb(const Path, Bytes, Sha: String): Boolean;
+begin
+  Result := (not Right(Path, Bytes, Sha)) and (not MirrorHas(Path, Bytes));
+  if Result then Log('to download: ' + Path);
+end;
 
 // Where Steam put the game: the install folder Steam records for app 1771300, failing
 // that each library folder Steam lists, failing that the default. Empty when none of
@@ -240,9 +305,12 @@ end;
 function InitializeSetup: Boolean;
 begin
   Result := True;
+  RightOnes := TStringList.Create;
+  WrongOnes := TStringList.Create;
+  if ExpandConstant('{param:MIRROR}') <> '' then Log('mirror: ' + ExpandConstant('{param:MIRROR}'));
   if GameDir('') = '' then
     if SuppressibleMsgBox('Kingdom Come: Deliverance 2 was not found in a Steam library on this PC.' + #13#10#13#10 +
-        'Moonshine can be installed anyway and will look for the game again when it starts (its folder can be given in moonshine.cfg). Continue?',
+        'Moonshine can be installed anyway, but the mod cannot be copied into the game''s folder, and the app will look for the game again when it starts (its folder can be given in moonshine.cfg). Continue?',
         mbConfirmation, MB_YESNO, IDYES) = IDNO then
       Result := False;
 end;

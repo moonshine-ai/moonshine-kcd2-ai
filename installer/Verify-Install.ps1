@@ -6,16 +6,20 @@
 #
 #   powershell -ExecutionPolicy Bypass -File installer\Verify-Install.ps1 -Version 0.9.94 -Links D:\links.txt
 #       [-Game C:\KCD2] [-Python 'C:\Program Files\Python312\python.exe'] [-FakeGame D:\fake_game.py]
-#       [-Launcher D:\Moonshine.ps1] [-Seed C:\path\to\release\out\0.9.94] [-KeepApp]
+#       [-Launcher D:\Moonshine.ps1] [-Seed C:\path\to\release\out\0.9.94] [-Mirror C:\path\to\release\stage\Moonshine]
+#       [-KeepApp]
 #
-# The links file is the one the publisher wrote for testers: one URL per line, each
-# followed by the file's SHA-256. Steps:
+# The links file is the one the publisher wrote for testers: the installer's URL, followed
+# by its SHA-256 (the installer downloads the 8 GB of models and data itself). Steps:
 #
-#   download   every file the links file names, with curl, unless the one here already has
-#              the SHA-256 the file lists; -Seed names a folder whose copies are tried first
-#              (the machine that built them need not fetch 8 GB from itself)
+#   download   the installer, with curl, unless the one here already has the SHA-256 the
+#              file lists; -Seed names a folder whose copy is tried first
 #   install    any earlier Moonshine removed first; the runtime's presence noted before and
-#              after, since on a fresh image the installer is what brings it
+#              after, since on a fresh image the installer is what brings it. The installer
+#              downloads the models and data as part of this, the real test of the published
+#              URLs; -Mirror names a folder laid out like the installed one (the stage on the
+#              machine that built it) and is passed as /MIRROR, so files with the right hash
+#              are copied from there instead of fetched
 #   cfg        the cloud machines carry the GOG build at C:\KCD2, which neither Steam's
 #              registry nor the app's fixed paths know, so `root = <game>` goes into
 #              moonshine.cfg -- the road a tester with a second Steam library takes
@@ -35,6 +39,7 @@ param(
     [string]$FakeGame = '',
     [string]$Launcher = '',
     [string]$Seed = '',
+    [string]$Mirror = '',
     [switch]$KeepApp = $true
 )
 $ErrorActionPreference = 'Stop'
@@ -99,9 +104,16 @@ if (Test-Path -LiteralPath $app) { Remove-Item -LiteralPath $app -Recurse -Force
 Write-Output ("  VC++ runtime before: " + (Runtime-Present))
 $installLog = Join-Path $work 'install.log'
 $t0 = Get-Date
-$p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$installLog`"" -Wait -PassThru
+$setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS=!copymod', "/LOG=`"$installLog`"")
+if ($Mirror) { $setupArgs += "/MIRROR=`"$Mirror`"" }
+$p = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru
 Write-Output ("  installer exit " + $p.ExitCode + " after " + [math]::Round(((Get-Date) - $t0).TotalSeconds) + "s")
 if ($p.ExitCode -ne 0) { Fault "the installer exited $($p.ExitCode)" }
+# How the big files came: the [Code] logs a line per file each time Setup asks its Check.
+function Count-Logged([string]$tag) {
+    return @(Select-String -LiteralPath $installLog -Pattern $tag -ErrorAction SilentlyContinue | ForEach-Object { $_.Line -replace "^.*$tag" } | Sort-Object -Unique).Count
+}
+Write-Output ("  files: {0} downloaded, {1} from the mirror, {2} already right" -f (Count-Logged 'to download: '), (Count-Logged 'from the mirror: '), (Count-Logged 'already right: '))
 Write-Output ("  VC++ runtime after:  " + (Runtime-Present))
 if ((Runtime-Present) -eq 'absent') { Fault 'no VC++ runtime after the install' }
 # The [Code] logs 'VC++ runtime already present' when its Check says no; a run shows as
@@ -109,7 +121,7 @@ if ((Runtime-Present) -eq 'absent') { Fault 'no VC++ runtime after the install' 
 $skipped = Select-String -LiteralPath $installLog -Pattern 'VC\+\+ runtime already present' -Quiet
 $ran = Select-String -LiteralPath $installLog -Pattern 'Running the command.*vc_redist' -Quiet
 Write-Output ("  installer log: vc_redist " + $(if ($ran) { 'was run' } elseif ($skipped) { 'skipped, runtime already present' } else { 'neither run nor skipped?' }))
-foreach ($need in @('moonshine_app.exe', 'Moonshine.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'LICENSES\README.txt',
+foreach ($need in @('moonshine_app.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
                     'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\qwen3-tts-0.6b\model.safetensors',
                     'libopenblas.dll', 'moonshine.dll', 'onnxruntime.dll', 'unins000.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }

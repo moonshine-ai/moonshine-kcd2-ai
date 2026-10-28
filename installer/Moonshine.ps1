@@ -6,6 +6,14 @@
 #   powershell -ExecutionPolicy Bypass -File Moonshine.ps1 -Stop            stop the app (the game is left alone)
 #   powershell -ExecutionPolicy Bypass -File Moonshine.ps1 -NoGame          the app alone; the game is
 #                                                                            started some other way
+#   powershell -ExecutionPolicy Bypass -File Moonshine.ps1 -Update          look for a newer Moonshine
+#
+# -Update reads the newest manifest from where the installed manifest.json says it is
+# published (its `latest`). A newer version there: its installer is downloaded, checked
+# against the hash the manifest gives, and started; it keeps every model and data file
+# that has not changed and downloads the rest. The same version: Fetch-Package.ps1 is run
+# over the installed manifest instead, which puts back anything missing or damaged. This
+# is the shape the in-app Update will take; the app will do the same over the same files.
 #
 # What it does, in order: makes sure every file the app will open is there
 # (moonshine_app --where), asks Steam to start the game, and then runs the app in this
@@ -29,7 +37,8 @@ param(
     [switch]$Stop,
     # Do not ask Steam for the game: for a build of the game that is not Steam's (the GOG
     # one on the cloud test machines), or a game already up that this should only join.
-    [switch]$NoGame
+    [switch]$NoGame,
+    [switch]$Update
 )
 $ErrorActionPreference = 'Continue'
 $here = $PSScriptRoot
@@ -103,6 +112,66 @@ function Stop-App {
 if ($Stop) {
     if (Stop-App) { Write-Output 'stopped' } else { Write-Output 'an app is still running and would not stop' }
     return
+}
+
+# --- update --------------------------------------------------------------------------------
+function Compare-Version([string]$a, [string]$b) {
+    # Dotted numbers, piecewise; anything that is not a number sorts as 0.
+    $pa = $a -split '[.-]'; $pb = $b -split '[.-]'
+    for ($i = 0; $i -lt [Math]::Max($pa.Count, $pb.Count); $i++) {
+        $x = 0; $y = 0
+        if ($i -lt $pa.Count) { [void][int]::TryParse($pa[$i], [ref]$x) }
+        if ($i -lt $pb.Count) { [void][int]::TryParse($pb[$i], [ref]$y) }
+        if ($x -ne $y) { return $x.CompareTo($y) }
+    }
+    return 0
+}
+if ($Update) {
+    $fetch = Join-Path $here 'Fetch-Package.ps1'
+    $manifestPath = Join-Path $here 'manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath) -or -not (Test-Path -LiteralPath $fetch)) {
+        Write-Output 'this installation has no manifest.json or Fetch-Package.ps1; it is older than the update mechanism. Install the new version over it.'
+        exit 1
+    }
+    $installed = (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+    $here_v = $installed.version
+    if (Test-Path -LiteralPath (Join-Path $here 'VERSION.txt')) { $here_v = (Get-Content -LiteralPath (Join-Path $here 'VERSION.txt') -Raw).Trim() }
+    if (-not $installed.latest) { Write-Output 'the manifest does not say where updates are published'; exit 1 }
+    Write-Output "installed: Moonshine $here_v"
+    Write-Output "looking at $($installed.latest) ..."
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+        $latest = (Invoke-WebRequest -Uri $installed.latest -UseBasicParsing -TimeoutSec 60).Content | ConvertFrom-Json
+    } catch {
+        Write-Output ("could not read it: " + $_.Exception.Message)
+        exit 1
+    }
+    Write-Output "published: Moonshine $($latest.version)"
+    if ((Compare-Version $latest.version $here_v) -le 0) {
+        Write-Output 'This is the newest version. Checking the files it needs are all here ...'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $fetch -Manifest $manifestPath
+        exit $LASTEXITCODE
+    }
+    if (-not $latest.setup -or -not $latest.setup.url -or -not $latest.setup.sha256) {
+        Write-Output 'the published manifest does not name an installer; download the new version by hand'
+        exit 1
+    }
+    $setupName = Split-Path -Leaf ([Uri]$latest.setup.url).AbsolutePath
+    $setupDir = Join-Path $env:TEMP 'moonshine-update'
+    New-Item -ItemType Directory -Force -Path $setupDir | Out-Null
+    $setupPath = Join-Path $setupDir $setupName
+    # The installer is fetched through Fetch-Package.ps1 too, from a one-file manifest, so
+    # it gets the same resume, retries and hash check as everything else.
+    $one = @{ version = $latest.version; files = @(@{ path = $setupName; bytes = $latest.setup.bytes; sha256 = $latest.setup.sha256; url = $latest.setup.url }) }
+    $onePath = Join-Path $setupDir 'setup-manifest.json'
+    $one | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $onePath -Encoding UTF8
+    Write-Output "downloading the installer for $($latest.version) ..."
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $fetch -Manifest $onePath -Dest $setupDir
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setupPath)) { Write-Output 'the installer did not download; try again later'; exit 1 }
+    if (-not (Stop-App)) { Write-Output 'the app is running and would not stop; close it and run the update again'; exit 1 }
+    Write-Output 'starting the installer. It keeps the model and data files that have not changed and downloads the rest.'
+    Start-Process -FilePath $setupPath -ArgumentList "/DIR=`"$here`""
+    exit 0
 }
 
 # --- the check -----------------------------------------------------------------------------

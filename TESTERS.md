@@ -43,19 +43,20 @@ a line `moonshine_names` to it, or delete the file if you were not using it for 
 
 ### 2. The app (installer)
 
-You will get links to one `Moonshine-<version>-setup.exe` and several
-`Moonshine-<version>-setup-1.bin`, `-2.bin`, ... files. **Download all of them into the
-same folder**, then run the `.exe`. The `.bin` files are the weights; the exe will not
-run without them beside it.
+You will get a link to `Moonshine-<version>-setup.exe`, about 100 MB. Run it. The
+weights, the database and the voices (about 8 GB) are downloaded by the installer while
+it runs, with one progress bar over the lot; on a slow line that is the long part. If
+the connection drops it offers **Retry**; if you cancel, running it again later picks up
+the files it does not have yet.
 
 - Windows will show a blue **"Windows protected your PC"** box, because the installer is
   not signed with a certificate it knows. Click **More info**, then **Run anyway**.
 - The installer asks for no administrator rights and installs under
   `C:\Users\<you>\AppData\Local\Moonshine`. The one thing that may ask for permission is
   the Microsoft Visual C++ runtime, if your PC does not already have it.
-- Leave the option **"Also copy the mod into the game's mods folder"** unticked. It is
-  there for people who cannot use the Workshop; with the Workshop item subscribed as
-  well you would have the mod twice.
+- **Untick** the option **"Install the mod into the game's mods folder"**. It is ticked
+  by default for people who do not use the Workshop; with the Workshop item subscribed
+  as well you would have the mod twice.
 - At the end, let it **Check the installation**. A window lists everything the app
   found and ends in `ready`. If it ends in `NOT READY`, something is marked `MISSING` a
   few lines up; see *If it does not work*.
@@ -95,8 +96,12 @@ the lips moving roughly rather than exactly.
   game was not found. If the game is in a Steam library the app did not look in, make
   a file `moonshine.cfg` in the Moonshine folder with one line:
   `root = D:\SteamLibrary\steamapps\common\KingdomComeDeliverance2` (your path). Then
-  run *Check the Moonshine installation* from the Start Menu. Otherwise, run the
-  installer again.
+  run *Check the Moonshine installation* from the Start Menu. Otherwise a download did
+  not finish: run *Download or repair Moonshine files* from the Start Menu, which fetches
+  only what is missing or damaged.
+- **A new build is out.** *Update Moonshine* in the Start Menu downloads the new
+  installer and runs it; files that did not change between builds are kept, so it is
+  far smaller than the first install.
 - **Nobody has a name.** The mod is not loading. Check the *Mods* menu in the game, and
   `mod_order.txt` as above.
 - **Names but no Talk option, or Talk and then silence.** The app is not running, or

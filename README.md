@@ -15,7 +15,8 @@ Two pieces, built here:
   from.
 
 And the installer (`installer/`) that packs the app, the models and the data for testers.
-`TESTERS.md` is what a tester is sent.
+`TESTERS.md` is what a tester is sent; `INSTALL.md` is the step-by-step installation
+guide for players.
 
 The *data*, the names, biographies, relationships, knowledge, quests and routines of
 some 5,800 souls, and the voice clones, is not made here. It is generated in a separate
@@ -97,21 +98,36 @@ With the release build, the drop, the models and a mod folder under `release\mod
 in place:
 
 ```bat
-powershell -ExecutionPolicy Bypass -File installer\Stage.ps1 -Version 0.9.123
+powershell -ExecutionPolicy Bypass -File installer\Stage.ps1 -Version 0.9.123 -DownloadBase https://download.moonshine.ai/kcd2
 ```
 
 stages the package under `release\stage\`, runs its own preflight from inside it, and
-builds `release\out\<version>\Moonshine-<version>-setup.exe` with Inno Setup (installed
-through winget if missing). `scripts/release_version.sh` prints the version a build
+builds `release\out\<version>\Moonshine-<version>-setup.exe` with Inno Setup 6.5+
+(installed through winget if missing). The installer is small, about 100 MB: the models,
+the database, the voices and the mod it downloads itself while installing, from `[Files]`
+entries Stage.ps1 generates (`release\stage\download_files.iss`) out of
+`release\stage\Moonshine\manifest.json`. The models come from where `scripts/models.tsv`
+pins them (Hugging Face, download.moonshine.ai); the database, voices and mod from
+`<DownloadBase>/<version>/...`, and Stage.ps1 lays those out under
+`release\publish\<version>\` for uploading, with the installer and the manifest beside
+them, plus `release\publish\latest\manifest.json`, which the installed
+`Moonshine.ps1 -Update` reads to find a newer build. `installer/Publish.sh <version>`
+(run on a machine with the aws CLI and the R2 token in `CLOUDFLARE_*`) hash-checks that
+tree and puts it in the R2 bucket behind https://download.moonshine.ai/kcd2/, `latest`
+last. The same manifest
+drives `Fetch-Package.ps1`, the Start Menu's "Download or repair" and the update; an
+in-app Update would read it too. `scripts/release_version.sh` prints the version a build
 carries, `0.9.<commit count>` unless `MOONSHINE_VERSION` says otherwise.
 `installer\Verify-Clean.ps1` runs the installer as a fresh local account and talks to the
-result; `installer\Verify-Install.ps1` does the same from a tester's download links.
+result, with `/MIRROR=release\stage\Moonshine` so nothing is fetched (`-Download` to test
+the hosting too); `installer\Verify-Install.ps1` does the same from a tester's link.
 
 ## Installing the mod
 
 The whole of the build output belongs in `<game>\mods\moonshine_names\`, and nothing else
-has to be touched. Testers get it from the Steam Workshop (the installer also carries a
-copy, for an off-by-default task that puts it in `mods\`). By hand: copy the folder. If
+has to be touched. The installer carries a copy and puts it there by default; the Steam
+Workshop item is the alternative, for testers and for anyone who wants Steam to update
+the mod on its own (not both at once: two mods, one id). By hand: copy the folder. If
 you have other mods and a `mod_order.txt`, note that the file is a whitelist and must name
 `moonshine_names` or the item is skipped.
 

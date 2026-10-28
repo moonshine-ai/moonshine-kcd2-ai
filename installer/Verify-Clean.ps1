@@ -4,19 +4,25 @@
 # installed for everybody. Then the launcher's own check from that account, and a real
 # conversation (model, embedder, voice) against the installed tree with the fake game.
 #
-#   powershell -ExecutionPolicy Bypass -File installer\Verify-Clean.ps1 -Version 0.9.94 [-Keep]
+#   powershell -ExecutionPolicy Bypass -File installer\Verify-Clean.ps1 -Version 0.9.94 [-Keep] [-Download]
 #
 # Needs an administrator (the account is made and removed here). The
 # installer and the checks run as the test account through a scheduled task, which is the
 # one way to run a program as another user from an ssh session without a desktop. The
 # account is removed at the end unless -Keep, profile and all; the installer's log, the
 # check's output and the conversation's transcript are left under <Repo>\release\verify\.
+#
+# The installer downloads the models and data; here, on the machine that has the stage,
+# it is given /MIRROR=<Repo>\release\stage\Moonshine and copies them from there instead,
+# so the test is of the installer and the app, not of the hosting. -Download leaves the
+# mirror out, for a test of the published URLs too (8 GB, and the files must be up).
 param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Repo = '',
     [string]$Python = $env:PYTHON,
     [string]$User = 'moontest',
-    [switch]$Keep
+    [switch]$Keep,
+    [switch]$Download
 )
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 has $PSScriptRoot empty while the parameter defaults are evaluated.
@@ -99,23 +105,29 @@ function Run-As([string]$name, [string]$commandLine, [int]$timeoutSeconds) {
 
 try {
     # --- the install -----------------------------------------------------------------------
-    # The whole output folder is copied, slices and all; the exe reads the .bin files beside it.
+    # The installer is copied where the test account can read it.
     Step 'install'
     $setupCopy = Join-Path $share 'setup'
     if (Test-Path -LiteralPath $setupCopy) { Remove-Item -LiteralPath $setupCopy -Recurse -Force }
     & robocopy $out $setupCopy /E /NFL /NDL /NJH /NJS /NP | Out-Null
     $installLog = Join-Path $share 'install.log'
     if (Test-Path -LiteralPath $installLog) { Remove-Item -LiteralPath $installLog -Force }
-    $cmd = "`"$setupCopy\Moonshine-$Version-setup.exe`" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$installLog`""
-    $code = Run-As 'install' $cmd 1800
+    # The mod task is left out: this machine has the Workshop mod, and the test is of the app.
+    $cmd = "`"$setupCopy\Moonshine-$Version-setup.exe`" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=!copymod /LOG=`"$installLog`""
+    if (-not $Download) { $cmd += " /MIRROR=`"$(Join-Path $Repo 'release\stage\Moonshine')`"" }
+    $code = Run-As 'install' $cmd $(if ($Download) { 7200 } else { 1800 })
     Write-Output "  installer exit $code"
     if ($code -ne 0) { Fault "the installer exited $code" }
+    # The [Code] logs a line per file each time Setup asks its Check, so distinct names.
+    $fromWeb = @(Select-String -LiteralPath $installLog -Pattern 'to download: ' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line -replace '^.*to download: ' } | Sort-Object -Unique).Count
+    $fromMirror = @(Select-String -LiteralPath $installLog -Pattern 'from the mirror: ' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line -replace '^.*from the mirror: ' } | Sort-Object -Unique).Count
+    Write-Output "  files: $fromWeb downloaded, $fromMirror from the mirror"
     Copy-Item -LiteralPath $installLog -Destination (Join-Path $report 'install.log') -Force -ErrorAction SilentlyContinue
     $home_ = Profile-Dir
     Write-Output "  profile: $home_"
     $app = Join-Path $home_ 'AppData\Local\Moonshine'
     if (-not (Test-Path -LiteralPath (Join-Path $app 'moonshine_app.exe'))) { Fault "no moonshine_app.exe under $app" }
-    foreach ($need in @('Moonshine.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'LICENSES\README.txt',
+    foreach ($need in @('Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
                         'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\qwen3-tts-0.6b\model.safetensors',
                         'libopenblas.dll', 'moonshine.dll', 'onnxruntime.dll', 'moonshine.cfg')) {
         if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
