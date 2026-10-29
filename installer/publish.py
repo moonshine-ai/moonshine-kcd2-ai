@@ -76,29 +76,40 @@ def digest(path: str, algo: str) -> str:
 
 
 class Progress:
-    """A file wrapped so that http.client's reads show how far the upload has got."""
+    """A file wrapped so that http.client's reads show how far the upload has got.
+
+    On a terminal, one line redrawn twice a second; on a pipe (release.sh reads this over
+    ssh), a fresh line every ten seconds, with the rate and the time left, so a 2.5 GB
+    database going up at a laptop's few MB/s is seen to be moving.
+    """
 
     def __init__(self, f, total: int, label: str):
         self.f, self.total, self.label = f, total, label
         self.done = 0
         self.t0 = time.monotonic()
-        self.shown = -1.0
+        self.shown = self.t0
         self.tty = sys.stdout.isatty()
+        self.every = 0.5 if self.tty else 10.0
 
     def read(self, n: int = -1) -> bytes:
         data = self.f.read(n)
         self.done += len(data)
         now = time.monotonic()
-        if self.tty and now - self.shown >= 0.5:
-            rate = self.done / max(now - self.t0, 1e-6) / 1e6
+        if now - self.shown >= self.every and self.done < self.total:
+            rate = self.done / max(now - self.t0, 1e-6)
             pct = self.done * 100 // max(self.total, 1)
-            print(f"\r  {pct:3d}%  {mb(self.done):>12} / {mb(self.total):<12} {rate:5.1f} MB/s  {self.label}", end="", flush=True)
+            left = (self.total - self.done) / max(rate, 1.0)
+            line = f"  {pct:3d}%  {mb(self.done):>12} / {mb(self.total):<12} {rate / 1e6:5.1f} MB/s  {int(left // 60)}:{int(left % 60):02d} left  {self.label}"
+            if self.tty:
+                print("\r" + line, end="", flush=True)
+            else:
+                print(line, flush=True)
             self.shown = now
         return data
 
     def finish(self) -> None:
         if self.tty:
-            print("\r" + " " * 100 + "\r", end="", flush=True)
+            print("\r" + " " * 110 + "\r", end="", flush=True)
 
 
 class Store:
@@ -204,6 +215,9 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="hash and HEAD, report, upload nothing")
     ap.add_argument("--no-latest", action="store_true", help="leave latest/manifest.json as it is (a release not yet announced)")
     args = ap.parse_args()
+    # Each line as it is printed, even into a pipe: release.sh is watching from the other
+    # end of an ssh connection, and the per-file lines are what tell it the upload moves.
+    sys.stdout.reconfigure(line_buffering=True)
 
     version = args.version
     repo = os.path.abspath(args.repo)
