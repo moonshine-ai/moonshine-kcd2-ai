@@ -38,7 +38,7 @@ game closed.
 
 ## Step 1: Download the installer
 
-Download [download.moonshine.ai/kcd2/0.9.96/Moonshine-0.9.96-setup.exe](https://download.moonshine.ai/kcd2/0.9.96/Moonshine-0.9.96-setup.exe); it is around
+Download [download.moonshine.ai/kcd2/0.9.98/Moonshine-0.9.98-setup.exe](https://download.moonshine.ai/kcd2/0.9.98/Moonshine-0.9.98-setup.exe); it is around
 40 MB. It is the only file you need: the models and the rest come down while it runs.
 
 **You should see** `Moonshine-<version>-setup.exe` in your Downloads folder.
@@ -89,23 +89,11 @@ window.
 If the last line is `NOT READY`, look a few lines up for something marked `MISSING` and
 see *If something goes wrong*.
 
-## Step 3: Check the mod in the game
+## Step 3: Play
 
-1. Start the game from Steam, just this once.
-2. On the main menu choose **Mods**.
+Always start the game **through the Moonshine app**, not from Steam, because the mod needs the companion app running to handle the local AI model generation.
 
-**You should see** *Moonshine NPC Names* in the list, ticked. If it is there but
-unticked, tick it. Quit the game.
-
-> If you use other mods and have made a `mod_order.txt` file in the game's `mods`
-> folder, that file is a whitelist: anything not named in it does not load. Add a line
-> `moonshine_names`, or delete the file if you were not relying on it.
-
-## Step 4: Play
-
-Always start the game **through Moonshine**, not from Steam.
-
-1. Double-click **Moonshine** on the desktop (or Start Menu > Moonshine > Moonshine).
+1. Double-click **Moonshine** on the desktop (or search for the Moonshine app after pressing the Windows key).
 2. A console window opens. It checks the installation, asks Steam to start the game, and
    loads the model. Leave this window open while you play; closing it stops the voices,
    and the game carries on without them.
