@@ -141,11 +141,13 @@ trap 'restore' ERR
 step "source to $host:$checkout"
 # The tracked files as a tar stream, less the submodules (git lists each as its path, and
 # tar would pack the whole checkout under it); mtimes travel with the files, so one that
-# has not changed does not make MSVC rebuild its object.
+# has not changed does not make MSVC rebuild its object. COPYFILE_DISABLE keeps macOS's
+# tar from adding a ._name sidecar (the file's extended attributes) beside every file,
+# which on the other side are junk that a glob picks up (the patches' did, once).
 excludes=()
 while IFS= read -r sub; do excludes+=(--exclude "$sub"); done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}')
 count=$(git ls-files -s | awk '$1 != "160000"' | wc -l | tr -d ' ')
-git ls-files -z | tar -czf - --null -T - ${excludes[@]+"${excludes[@]}"} |
+git ls-files -z | COPYFILE_DISABLE=1 tar -czf - --null -T - ${excludes[@]+"${excludes[@]}"} |
     ssh "$host" "tar -xzf - -C $checkout"
 echo "  $count files"
 
