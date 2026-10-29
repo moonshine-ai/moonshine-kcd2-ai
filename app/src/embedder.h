@@ -1,18 +1,21 @@
 // Turning a line into a vector, so what the player said can be matched against what a soul
 // knows (knowledge.h).
 //
-// The vectors in npcs.sqlite were written by EmbeddingGemma through sentence-transformers:
-// each text under the document prompt, mean-pooled, through the two dense layers, and
-// L2-normalised (data/kcd2/knowledge-design/plan.md section 6a). A query has to go through
-// the same model under the query prompt or the cosine means nothing, so this is a second,
-// small llama.cpp context beside the one that talks -- 300M parameters, 334 MB at Q8_0,
-// 30 ms a line on the CPU -- loaded from a GGUF converted with the dense modules kept
+// The vectors in npcs-vectors.sqlite were written by EmbeddingGemma through
+// sentence-transformers: each text under the document prompt, mean-pooled, through the
+// two dense layers, and L2-normalised (data/kcd2/knowledge-design/plan.md section 6a), and
+// stored as bytes with a scale (data/schema.sql). A query has to go through the same model
+// under the query prompt or the cosine means nothing, so this is a second, small llama.cpp
+// context beside the one that talks -- 300M parameters, 334 MB at Q8_0, 30 ms a line on
+// the CPU -- loaded from a GGUF converted with the dense modules kept
 // (`convert_hf_to_gguf.py --sentence-transformers-dense-modules`; the public GGUFs leave
 // them out, and without them the vectors do not agree with the stored ones).
 
 #ifndef MOONSHINE_EMBEDDER_H
 #define MOONSHINE_EMBEDDER_H
 
+#include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -44,6 +47,23 @@ inline float cosine(const std::vector<float>& a, const std::vector<float>& b) {
     float dot = 0.0f;
     for (std::size_t i = 0; i < a.size(); ++i) dot += a[i] * b[i];
     return dot;
+}
+
+// The first `dim` components, made a unit vector again. EmbeddingGemma is trained so that
+// a prefix of its embedding is itself an embedding (Matryoshka representation learning:
+// 768, 512, 256 or 128 wide), so a query is brought to meet stored vectors cut shorter
+// than it (the shipped ones are the whole 768; 256 was tried and ranked worse). A vector
+// no longer than `dim` comes back as it is.
+inline std::vector<float> truncated(const std::vector<float>& v, std::size_t dim) {
+    if (v.size() <= dim) return v;
+    std::vector<float> out(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(dim));
+    float sum = 0.0f;
+    for (const float x : out) sum += x * x;
+    if (sum > 0.0f) {
+        const float inv = 1.0f / std::sqrt(sum);
+        for (float& x : out) x *= inv;
+    }
+    return out;
 }
 
 #ifdef MOONSHINE_HAS_LLAMA

@@ -79,6 +79,22 @@ TEST_CASE("a vector of the wrong length is dropped rather than scored") {
     CHECK(index.query(axis(0, 4)).empty());
 }
 
+TEST_CASE("a query wider than the stored vectors is cut to their width, a unit vector again") {
+    SoulIndex index;
+    index.add(item("a"), {axis(0, 4)}, {"a"});
+    index.add(item("b"), {axis(1, 4)}, {"b"});
+    // (0.6, 0.8) in the first two components and weight beyond them that is cut away: the
+    // kept part re-normalised is (0.6, 0.8, 0, 0), so b scores 0.8 and a 0.6.
+    const std::vector<KbHit> hits = index.query({0.3f, 0.4f, 0.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.5f});
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].item->item_id == "b");
+    CHECK(hits[0].score == doctest::Approx(0.8f));
+    CHECK(hits[1].score == doctest::Approx(0.6f));
+    // truncated() itself: a vector no wider than asked comes back untouched.
+    CHECK(truncated(axis(1, 4), 8) == axis(1, 4));
+    CHECK(truncated(axis(1, 8), 4) == axis(1, 4));
+}
+
 TEST_CASE("pick takes the best above tau and nothing below it") {
     const KbItem a = item("life:birth");
     const KbItem b = item("life:trade");

@@ -381,7 +381,8 @@ void usage() {
         "  --user DIR      what the engine calls %USER%, holding profiles and saves\n"
         "  --modid ID      mod id, must match the generator's (default moonshine_names)\n"
         "  --world FILE    the world setting shared by every NPC (default setting.txt)\n"
-        "  --personas DB   npcs.sqlite, who each soul is (default data/kcd2/npcs.sqlite)\n"
+        "  --personas DB   npcs.sqlite, who each soul is (default data/kcd2/npcs.sqlite);\n"
+        "                  the knowledge vectors are read from npcs-vectors.sqlite beside it\n"
         "  --soul ID       print one soul's character sheet and stop\n"
         "  --charisma N    how well dressed the player is, 0..1 (rch)\n"
         "  --blood N       blood on the player, 0..1 (bld)\n"
@@ -693,9 +694,11 @@ Knowing open_knowledge(const Args& args) {
         return out;
     }
     if (!out.base->has_tables()) {
-        std::cout << "knowledge:  " << args.personas_path
-                  << " has no knowledge tables (run build_kcd2_knowledge.py), so every soul"
-                     " answers from the sheet alone\n";
+        // No tables, or no npcs-vectors.sqlite beside the database (trouble() says which).
+        std::cout << "knowledge:  " << args.personas_path << " "
+                  << (out.base->trouble().empty() ? "has no knowledge tables (run build_kcd2_knowledge.py)"
+                                                  : out.base->trouble())
+                  << ", so every soul answers from the sheet alone\n";
         out.base.reset();
         return out;
     }
@@ -717,7 +720,9 @@ Knowing open_knowledge(const Args& args) {
     }
     out.director = std::make_unique<KnowledgeDirector>(*out.embedder, *out.base);
     std::cout << "knowledge:  " << out.base->souls_with_items() << " souls with items, found by "
-              << out.embedder->describe() << "\n";
+              << out.embedder->describe()
+              << (out.base->vectors_in() == "main" ? " (vectors in the one file, the layout before npcs-vectors.sqlite)" : "")
+              << "\n";
 #else
     std::cout << "knowledge:  built without the llama.cpp backend, so there is no embedder and"
                  " the model answers from the sheet alone\n";

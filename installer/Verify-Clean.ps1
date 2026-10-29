@@ -128,7 +128,7 @@ try {
     $app = Join-Path $home_ 'AppData\Local\Moonshine'
     if (-not (Test-Path -LiteralPath (Join-Path $app 'moonshine_app.exe'))) { Fault "no moonshine_app.exe under $app" }
     foreach ($need in @('Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
-                        'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
+                        'data\kcd2\npcs.sqlite', 'data\kcd2\npcs-vectors.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
                         'ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll', 'moonshine.cfg')) {
         if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
     }

@@ -5,7 +5,7 @@ data/DROP names the drop and the sha256 of its manifest. This fetches that drop 
 wherever drops are kept -- a directory on this machine or a mounted share, an s3:// bucket
 (any S3-compatible store, signed here with the standard library), a gs:// bucket (through
 gcloud), or an https:// prefix -- checks every file against the manifest, and
-then runs tools/assemble_db.py so that data/kcd2/npcs.sqlite and data/kcd2/voices/ are what
+then runs tools/assemble_db.py so that data/kcd2/npcs.sqlite, npcs-vectors.sqlite and voices/ are what
 the app, the mod generator and the installer read. Files already present at the right size
 and hash are not fetched again, so a new drop that changes one table moves one file.
 
@@ -25,6 +25,7 @@ assemble_db.py, so it runs on the Windows build host's Python as it is.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -186,19 +187,22 @@ def main() -> int:
     if args.no_assemble:
         return 0
 
-    # Assemble once per drop: a stamp beside the database says which manifest built it.
+    # Assemble once per drop and schema: a stamp beside the database says which manifest
+    # built it, against which schema.sql, so a change to either builds it again.
     db = Path(args.db)
+    vectors = assemble_db.vectors_path(db)
     stamp = db.with_name(db.name + ".from")
-    if db.exists() and stamp.exists() and stamp.read_text().strip() == f"{drop} {want_manifest}":
-        print(f"=== {db} is already assembled from {drop} ===")
+    schema = (HERE / "data" / "schema.sql").read_text()
+    built_from = f"{drop} {want_manifest} {hashlib.sha256(schema.encode('utf-8')).hexdigest()}"
+    if db.exists() and vectors.exists() and stamp.exists() and stamp.read_text().strip() == built_from:
+        print(f"=== {db} and {vectors.name} are already assembled from {drop} ===")
     else:
-        schema = (HERE / "data" / "schema.sql").read_text()
         # The manifest was checked file by file above; assemble_db's own pass would be a
         # second read of 2 GB.
         assemble_db.assemble(local, db, schema, do_verify=False)
-        stamp.write_text(f"{drop} {want_manifest}\n")
+        stamp.write_text(built_from + "\n")
     assemble_db.place_voices(local, Path(args.voices))
-    print(f"ready: {db}, {args.voices}, assets under {local / 'assets'}")
+    print(f"ready: {db}, {vectors}, {args.voices}, assets under {local / 'assets'}")
     return 0
 
 

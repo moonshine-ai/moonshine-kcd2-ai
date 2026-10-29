@@ -14,7 +14,8 @@
 #     moonshine_app.exe + DLLs      app\build-release\RelWithDebInfo\ (CPU-only build)
 #     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, README.txt, VERSION.txt, LICENSES\
 #     setting.txt, manifest.json
-#     data\kcd2\npcs.sqlite         a vacuumed copy of the assembled database
+#     data\kcd2\npcs.sqlite         a vacuumed copy of the assembled database...
+#     data\kcd2\npcs-vectors.sqlite ...and of the knowledge base's vectors beside it
 #     data\kcd2\voices\             phrases\ (the lines in voices this package has), voices.txt, facials.txt, lexicon.tsv
 #     models\embeddinggemma-300m-q8_0.gguf
 #     models\phonon-31m-en\         the voice: model, tokenizer, voices\*.safetensors
@@ -47,8 +48,8 @@
 # -DownloadBase is MOONSHINE_DOWNLOAD_BASE from the environment when not given. Every copy
 # is a robocopy or a hash-checked Copy-Item, so a second run only moves what changed; the
 # big weights are the same bytes from one build to the next, and their sha256s are cached.
-# -Repo is this checkout unless told otherwise; -Python is the first python.exe on the PATH
-# unless told.
+# -Repo is this checkout unless told otherwise; -Python, unless told, is the interpreter the
+# py launcher names, else the first python.exe on the PATH.
 param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$DownloadBase = $env:MOONSHINE_DOWNLOAD_BASE,
@@ -62,6 +63,15 @@ $ErrorActionPreference = 'Stop'
 if (-not $Repo) { $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path }
 if (-not $DownloadBase) { Write-Error 'where the database, voices and mod will be hosted: -DownloadBase https://... (or MOONSHINE_DOWNLOAD_BASE)'; exit 1 }
 $DownloadBase = $DownloadBase.TrimEnd('/')
+if (-not $Python) {
+    # The py launcher's answer first: it names a real interpreter, where the python.exe on
+    # the PATH may be the Store's stub or a uv shim whose interpreter has gone.
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($launcher) {
+        $found = & $launcher.Source -3 -c 'import sys; print(sys.executable)' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $found -and (Test-Path -LiteralPath $found)) { $Python = $found }
+    }
+}
 if (-not $Python) {
     $cmd = Get-Command python.exe, python3.exe -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'WindowsApps' } | Select-Object -First 1
     if (-not $cmd) { Write-Error 'no python on the PATH; -Python C:\path\to\python.exe'; exit 1 }
@@ -174,36 +184,44 @@ Set-Content -LiteralPath (Join-Path $pkg 'VERSION.txt') -Value $Version -NoNewli
 Copy-Same (Join-Path $Repo 'setting.txt') (Join-Path $pkg 'setting.txt')
 
 # --- the database --------------------------------------------------------------------------
-# The assembled DB (scripts\fetch_drop.ps1) is already a clean single file; VACUUM INTO
-# copies it from a consistent read all the same, so a DB the app has open, or one somebody
-# edited by hand, ships whole.
+# Two files (data\schema.sql): npcs.sqlite, and npcs-vectors.sqlite beside it with the
+# knowledge base's vectors, which the app attaches. The assembled pair (scripts\fetch_drop.ps1)
+# is already clean; VACUUM INTO copies each from a consistent read all the same, so a DB the
+# app has open, or one somebody edited by hand, ships whole. 16 KB pages, as the assembler
+# writes them: the rows are long and a bigger page is fewer reads and less slack.
 Step 'database'
-$db = Join-Path $Repo 'data\kcd2\npcs.sqlite'
-if (-not (Test-Path -LiteralPath $db)) { Fail "no database at $db -- run scripts\fetch_drop.ps1" }
-$dbOut = Join-Path $pkg 'data\kcd2\npcs.sqlite'
-Ensure-Dir (Split-Path -Parent $dbOut)
-$stampFile = "$dbOut.from"
-$srcStamp = (Get-Item -LiteralPath $db).LastWriteTimeUtc.Ticks.ToString()
-if ((Test-Path -LiteralPath $dbOut) -and (Test-Path -LiteralPath $stampFile) -and ((Get-Content -LiteralPath $stampFile) -eq $srcStamp)) {
-    Write-Output '  unchanged'
-} else {
+$dbDir = Join-Path $Repo 'data\kcd2'
+foreach ($name in @('npcs.sqlite', 'npcs-vectors.sqlite')) {
+    $db = Join-Path $dbDir $name
+    if (-not (Test-Path -LiteralPath $db)) { Fail "no database at $db -- run scripts\fetch_drop.ps1" }
+    $dbOut = Join-Path $pkg ('data\kcd2\' + $name)
+    Ensure-Dir (Split-Path -Parent $dbOut)
+    $stampFile = "$dbOut.from"
+    $srcStamp = (Get-Item -LiteralPath $db).LastWriteTimeUtc.Ticks.ToString()
+    if ((Test-Path -LiteralPath $dbOut) -and (Test-Path -LiteralPath $stampFile) -and ((Get-Content -LiteralPath $stampFile) -eq $srcStamp)) {
+        Write-Output "  $name unchanged"
+        continue
+    }
     if (Test-Path -LiteralPath $dbOut) { Remove-Item -LiteralPath $dbOut -Force }
     $py = @"
 import sqlite3, sys
 src, dst = sys.argv[1], sys.argv[2]
 con = sqlite3.connect(src)
 con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+con.execute("PRAGMA page_size=16384")
 con.execute("VACUUM INTO ?", (dst,))
 con.close()
 chk = sqlite3.connect(dst)
 print("  integrity:", chk.execute("PRAGMA integrity_check").fetchone()[0])
-print("  tables:", chk.execute("select count(*) from sqlite_master where type='table'").fetchone()[0])
+print("  tables:", chk.execute("select count(*) from sqlite_master where type='table'").fetchone()[0],
+      " page size:", chk.execute("PRAGMA page_size").fetchone()[0])
 chk.close()
 "@
     $pyFile = Join-Path $env:TEMP 'moonshine_vacuum.py'
     Set-Content -LiteralPath $pyFile -Value $py
+    Write-Output "  $name"
     & $Python $pyFile $db $dbOut
-    if ($LASTEXITCODE -ne 0) { Fail 'VACUUM INTO failed' }
+    if ($LASTEXITCODE -ne 0) { Fail "VACUUM INTO failed for $name" }
     Remove-Item -LiteralPath $pyFile -Force
     Set-Content -LiteralPath $stampFile -Value $srcStamp -NoNewline
     Write-Output ("  " + [math]::Round((Get-Item -LiteralPath $dbOut).Length / 1MB) + " MB")

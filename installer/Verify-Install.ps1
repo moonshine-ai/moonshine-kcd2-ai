@@ -122,7 +122,7 @@ $skipped = Select-String -LiteralPath $installLog -Pattern 'VC\+\+ runtime alrea
 $ran = Select-String -LiteralPath $installLog -Pattern 'Running the command.*vc_redist' -Quiet
 Write-Output ("  installer log: vc_redist " + $(if ($ran) { 'was run' } elseif ($skipped) { 'skipped, runtime already present' } else { 'neither run nor skipped?' }))
 foreach ($need in @('moonshine_app.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
-                    'data\kcd2\npcs.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
+                    'data\kcd2\npcs.sqlite', 'data\kcd2\npcs-vectors.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon-31m-en\model.q8.gguf', 'models\phonon-31m-en\voices\toby.safetensors',
                     'ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll', 'unins000.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
 }

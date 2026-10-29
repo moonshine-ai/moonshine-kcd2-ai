@@ -23,7 +23,9 @@ some 5,800 souls, is not made here. It is generated in a separate
 repository and arrives as a **drop**: a folder of TSV and JSONL tables, one float32 matrix
 of knowledge vectors, the voices, and the game-derived assets, under a manifest of hashes.
 `data/DROP` pins the drop this checkout builds from; `tools/assemble_db.py` turns it into
-the SQLite file both the app and the generator read. This repository assembles and
+the SQLite file both the app and the generator read, and a second beside it with the
+knowledge vectors (EmbeddingGemma's 768 components as int8, a quarter of the float32
+matrix) that only the app reads. This repository assembles and
 integrates; it does not generate.
 
 ## Building
@@ -48,7 +50,7 @@ cd moonshine-kcd2-ai
 ### The data and the models
 
 ```sh
-scripts/fetch_drop.sh --from <where drops are kept>     # data/kcd2/npcs.sqlite, voices
+scripts/fetch_drop.sh --from <where drops are kept>     # data/kcd2/npcs.sqlite, npcs-vectors.sqlite, voices
 scripts/fetch_models.sh                                 # models/, about 2.9 GB
 scripts/fetch_moonshine.sh                              # third_party/moonshine, built
 ```

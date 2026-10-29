@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <regex>
 #include <sstream>
@@ -63,6 +64,53 @@ const std::regex& quest_ask_pattern() {
     return pattern;
 }
 
+// The bytes a sha's hex digits spell (the drop keys vectors by the first 16 digits of
+// the sha256, so eight bytes; a whole sha256 would be 32), or empty for anything that
+// is not hex: the vectors are keyed by the bytes, the item and question rows carry the hex.
+std::string sha_bytes(std::string_view hex) {
+    if (hex.empty() || hex.size() % 2 != 0 || hex.size() > 64) return {};
+    std::string out(hex.size() / 2, '\0');
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        int byte = 0;
+        for (int half = 0; half < 2; ++half) {
+            const char c = hex[2 * i + static_cast<std::size_t>(half)];
+            int digit;
+            if (c >= '0' && c <= '9') digit = c - '0';
+            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            else return {};
+            byte = byte * 16 + digit;
+        }
+        out[i] = static_cast<char>(byte);
+    }
+    return out;
+}
+
+// A stored vector as floats: `dim` int8s times `scale`, made a unit vector again (the
+// rounding took it a hair off one), or -- a row from before the vectors were quantised --
+// `dim` float32s as they are. Empty when the blob is neither.
+std::vector<float> vector_from(int dim, double scale, const void* blob, int bytes) {
+    std::vector<float> vec;
+    if (!blob || dim <= 0) return vec;
+    if (bytes == dim) {
+        const auto* q = static_cast<const signed char*>(blob);
+        vec.resize(static_cast<std::size_t>(dim));
+        float sum = 0.0f;
+        for (int i = 0; i < dim; ++i) {
+            vec[static_cast<std::size_t>(i)] = static_cast<float>(q[i] * scale);
+            sum += vec[static_cast<std::size_t>(i)] * vec[static_cast<std::size_t>(i)];
+        }
+        if (sum > 0.0f) {
+            const float inv = 1.0f / std::sqrt(sum);
+            for (float& x : vec) x *= inv;
+        }
+    } else if (bytes >= dim * static_cast<int>(sizeof(float))) {
+        vec.resize(static_cast<std::size_t>(dim));
+        std::memcpy(vec.data(), blob, static_cast<std::size_t>(dim) * sizeof(float));
+    }
+    return vec;
+}
+
 const std::regex& another_pattern() {
     static const std::regex pattern(
         R"(\b(other|another|the first|the second|the third|what about|and the|instead|else)\b)",
@@ -96,11 +144,12 @@ void SoulIndex::add(KbItem item, std::vector<std::vector<float>> vectors,
     }
 }
 
-std::vector<KbHit> SoulIndex::query(const std::vector<float>& q,
+std::vector<KbHit> SoulIndex::query(const std::vector<float>& query,
                                     const std::vector<std::string_view>& prefixes,
                                     std::size_t top) const {
     std::vector<KbHit> out;
-    if (rows_.empty() || static_cast<int>(q.size()) != dim_) return out;
+    if (rows_.empty() || static_cast<int>(query.size()) < dim_) return out;
+    const std::vector<float> q = truncated(query, static_cast<std::size_t>(dim_));
     const auto in_field = [&](const KbItem& item) {
         if (prefixes.empty()) return true;
         for (const std::string_view prefix : prefixes) {
@@ -348,6 +397,31 @@ KnowledgeBase::KnowledgeBase(std::filesystem::path path) : path_(std::move(path)
         trouble_ = db_ ? sqlite3_errmsg(db_) : "out of memory";
         if (db_) sqlite3_close(db_);
         db_ = nullptr;
+        return;
+    }
+    // The vectors: npcs-vectors.sqlite beside the database, attached as `vec` (read-only,
+    // as the connection is). Without one, a database from before the split may hold the
+    // table itself; otherwise there are no vectors, and has_tables() says so.
+    std::filesystem::path vectors = path_;
+    vectors.replace_filename(path_.stem().string() + "-vectors" + path_.extension().string());
+    std::error_code ignored;
+    if (std::filesystem::exists(vectors, ignored)) {
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, "ATTACH DATABASE ?1 AS vec", -1, &stmt, nullptr) == SQLITE_OK) {
+            const std::string where = vectors.string();
+            sqlite3_bind_text(stmt, 1, where.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt) == SQLITE_DONE) vectors_in_ = "vec";
+            else trouble_ = "cannot attach " + vectors.filename().string() + ": " + sqlite3_errmsg(db_);
+            sqlite3_finalize(stmt);
+        }
+    } else {
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql = "SELECT count(*) FROM main.sqlite_master WHERE type = 'table' AND name = 'npc_kb_vector'";
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 1) vectors_in_ = "main";
+            sqlite3_finalize(stmt);
+        }
+        if (vectors_in_.empty()) trouble_ = "no " + vectors.filename().string() + " beside it";
     }
 }
 
@@ -356,11 +430,13 @@ KnowledgeBase::~KnowledgeBase() {
 }
 
 bool KnowledgeBase::has_tables() const {
-    if (!db_) return false;
+    if (!db_ || vectors_in_.empty()) return false;
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN "
-                      "('npc_kb_owner', 'npc_kb_item', 'npc_kb_question', 'npc_kb_vector')";
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    const std::string sql =
+        "SELECT (SELECT count(*) FROM main.sqlite_master WHERE type = 'table' AND name IN "
+        "('npc_kb_owner', 'npc_kb_item', 'npc_kb_question')) + (SELECT count(*) FROM " +
+        vectors_in_ + ".sqlite_master WHERE type = 'table' AND name = 'npc_kb_vector')";
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
     int found = 0;
     if (sqlite3_step(stmt) == SQLITE_ROW) found = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
@@ -452,24 +528,33 @@ SoulIndex KnowledgeBase::load(std::string_view soul) const {
     sqlite3_finalize(questions);
 
     // The vectors, one lookup each by primary key. A few thousand point reads on a local
-    // file is a few milliseconds.
+    // file is a few milliseconds. The split layout keys them by the sha's bytes and
+    // stores int8s with a scale; the one-file layout from before keyed them by the hex
+    // and stored float32s (vector_from reads either blob).
     std::unordered_map<std::string, std::vector<float>> vectors;
-    {
+    if (!vectors_in_.empty()) {
+        const bool split = vectors_in_ == "vec";
         sqlite3_stmt* stmt = nullptr;
-        const char* sql = "SELECT dim, vec FROM npc_kb_vector WHERE sha = ?";
-        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        const std::string sql = split ? "SELECT dim, vec, scale FROM vec.npc_kb_vector WHERE sha = ?"
+                                      : "SELECT dim, vec, 1.0 FROM main.npc_kb_vector WHERE sha = ?";
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
             for (const Pending& p : pending) {
                 for (const std::string& sha : p.shas) {
                     if (sha.empty() || vectors.count(sha)) continue;
                     sqlite3_reset(stmt);
-                    sqlite3_bind_text(stmt, 1, sha.c_str(), -1, SQLITE_TRANSIENT);
+                    if (split) {
+                        const std::string key = sha_bytes(sha);
+                        if (key.empty()) continue;
+                        sqlite3_bind_blob(stmt, 1, key.data(), static_cast<int>(key.size()), SQLITE_TRANSIENT);
+                    } else {
+                        sqlite3_bind_text(stmt, 1, sha.c_str(), -1, SQLITE_TRANSIENT);
+                    }
                     if (sqlite3_step(stmt) != SQLITE_ROW) continue;
                     const int dim = sqlite3_column_int(stmt, 0);
                     const void* blob = sqlite3_column_blob(stmt, 1);
                     const int bytes = sqlite3_column_bytes(stmt, 1);
-                    if (!blob || dim <= 0 || bytes < dim * static_cast<int>(sizeof(float))) continue;
-                    std::vector<float> vec(static_cast<std::size_t>(dim));
-                    std::memcpy(vec.data(), blob, static_cast<std::size_t>(dim) * sizeof(float));
+                    std::vector<float> vec = vector_from(dim, sqlite3_column_double(stmt, 2), blob, bytes);
+                    if (vec.empty()) continue;
                     vectors.emplace(sha, std::move(vec));
                 }
             }

@@ -1,6 +1,7 @@
 // The shipped schema and the app's readers agree.
 //
-// data/schema.sql is what tools/assemble_db.py builds npcs.sqlite from, and the loaders in
+// data/schema.sql is what tools/assemble_db.py builds npcs.sqlite and npcs-vectors.sqlite
+// from (the file divides at its "==== npcs-vectors.sqlite" line), and the loaders in
 // personadb.cpp and knowledge.cpp are written against it by name. Neither side is told
 // when the other moves: PersonaDb answers a missing column with an empty field rather than
 // an error, which is right for a database built before some stage existed and wrong for a
@@ -39,20 +40,42 @@ std::string slurp(const std::filesystem::path& path) {
     return out.str();
 }
 
+// The two shas the knowledge rows carry (as hex) and the vectors are keyed by (as bytes):
+// one a whole sha256, the other the 16-digit prefix the drop uses.
+const std::string kAnswerSha(64, 'a');
+const std::string kQuestionSha(16, 'b');
+
 class SchemaDb {
 public:
     SchemaDb() {
         std::random_device seed;
-        path_ = std::filesystem::temp_directory_path() /
-                ("moonshine-schema-" + std::to_string(seed()) + ".sqlite");
+        const std::string stem = "moonshine-schema-" + std::to_string(seed());
+        path_ = std::filesystem::temp_directory_path() / (stem + ".sqlite");
+        vectors_ = std::filesystem::temp_directory_path() / (stem + "-vectors.sqlite");
+        const std::string schema = slurp(MOONSHINE_SCHEMA_SQL);
+        const std::size_t divide = schema.find("-- ==== npcs-vectors.sqlite");
+        REQUIRE_MESSAGE(divide != std::string::npos, "schema.sql has no npcs-vectors.sqlite section");
         REQUIRE(sqlite3_open(path_.string().c_str(), &db_) == SQLITE_OK);
-        exec(slurp(MOONSHINE_SCHEMA_SQL));
+        exec(schema.substr(0, divide));
         fill();
+        // The vectors' own file, beside it: the two the rows above name, 2 wide, as the
+        // quantised form stores them (scale 1/127, so X'7F00' is (1, 0)).
+        sqlite3* vec = nullptr;
+        REQUIRE(sqlite3_open(vectors_.string().c_str(), &vec) == SQLITE_OK);
+        char* err = nullptr;
+        const std::string rows = "INSERT INTO npc_kb_vector (sha, dim, scale, vec) VALUES (X'" + kAnswerSha +
+                                 "',2,0.007874015748031496,X'7F00'),(X'" + kQuestionSha + "',2,0.007874015748031496,X'007F');";
+        const int rc = sqlite3_exec(vec, (schema.substr(divide) + rows).c_str(), nullptr, nullptr, &err);
+        const std::string why = err ? err : "";
+        sqlite3_free(err);
+        sqlite3_close(vec);
+        REQUIRE_MESSAGE(rc == SQLITE_OK, why);
     }
     ~SchemaDb() {
         sqlite3_close(db_);
         std::error_code ignored;
         std::filesystem::remove(path_, ignored);
+        std::filesystem::remove(vectors_, ignored);
     }
     const std::filesystem::path& path() const { return path_; }
 
@@ -136,11 +159,9 @@ public:
             "price_kind, price_what, menu, when_tag, fact, answer, withheld, source, flag, "
             "answer_sha, inputs_sha, model, written_at) VALUES ('kkut_man_a','life:work',"
             " 'self','work','chat','His work','open',NULL,NULL,1,NULL,'He is a carpenter.',"
-            " 'I cut and join.',NULL,'bio',NULL,'sha-answer','sha-in','m','2026');"
+            " 'I cut and join.',NULL,'bio',NULL,'" + kAnswerSha + "','sha-in','m','2026');"
             "INSERT INTO npc_kb_question (owner, item_id, n, text, sha) VALUES "
-            "('kkut_man_a','life:work',0,'What do you do?','sha-q');"
-            "INSERT INTO npc_kb_vector (sha, dim, vec) VALUES "
-            "('sha-answer',2,X'0000803F00000000'),('sha-q',2,X'000000000000803F');"
+            "('kkut_man_a','life:work',0,'What do you do?','" + kQuestionSha + "');"
 
             "INSERT INTO npc_quest (quest_id, hook_id, kind, giver_soul, giver_name, giver_trade, "
             "target_soul, target_name, target_trade, item_class, item_name, reward_tier, "
@@ -175,6 +196,7 @@ public:
 
 private:
     std::filesystem::path path_;
+    std::filesystem::path vectors_;
     sqlite3* db_ = nullptr;
 };
 
@@ -243,11 +265,22 @@ TEST_CASE("the shipped schema carries the knowledge base") {
     REQUIRE_MESSAGE(base.ok(), base.trouble());
     CHECK(base.has_tables());
     CHECK(base.souls_with_items() == 1);
+    CHECK(base.vectors_in() == "vec");
     const SoulIndex index = base.load("kkut_man_a");
     REQUIRE(index.size() == 1);
     CHECK(index.dim() == 2);
-    // The answer's vector and the question's, both found by sha in npc_kb_vector.
+    // The answer's vector and the question's, both found by the sha's bytes in the
+    // attached npc_kb_vector, and the int8s back to unit floats.
     CHECK(index.vectors() == 2);
     REQUIRE(index.find("life:work") != nullptr);
     CHECK(index.find("life:work")->answer == "I cut and join.");
+    const std::vector<KbHit> hits = index.query({0.0f, 1.0f});
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].score == doctest::Approx(1.0f));
+    CHECK(hits[0].via == "What do you do?");
+    // A query from a wider model is cut to the stored width before scoring.
+    const std::vector<KbHit> wide = index.query({1.0f, 0.0f, 0.5f, 0.5f});
+    REQUIRE(wide.size() == 1);
+    CHECK(wide[0].score == doctest::Approx(1.0f));
+    CHECK(wide[0].via == "I cut and join.");
 }

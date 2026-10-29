@@ -1,10 +1,14 @@
--- The schema of npcs.sqlite as the app and the mod generator read it.
+-- The schema of npcs.sqlite, and of npcs-vectors.sqlite beside it, as the app and the mod
+-- generator read them.
 --
 -- This file is the one source for the shipped database. tools/assemble_db.py runs it and
 -- then loads a data drop into it (drop/db/<table>.tsv or .jsonl, plus the vector matrix);
 -- app/tests/test_schema.cpp runs it and asks the app's own loaders to read a row of every
 -- table, so a column renamed here and not in the code (or the other way about) fails a
--- unit test rather than a conversation.
+-- unit test rather than a conversation. It is two files' worth: everything up to the
+-- "==== npcs-vectors.sqlite" line is npcs.sqlite, and what follows it is the vectors' own
+-- file, so that the text (which changes with every drop, and is a few hundred megabytes)
+-- and the vectors (which change only when the knowledge does) ship and download apart.
 --
 -- Only the tables somebody ships reads are here. The generation pipeline keeps many more
 -- (drafts, reviews, batch jobs, circles, opinions, the social graph's edges) in its working
@@ -303,14 +307,7 @@ CREATE TABLE npc_kb_question (
     PRIMARY KEY (owner, item_id, n)
 );
 CREATE INDEX idx_kb_question_sha ON npc_kb_question(sha);
-
--- vec is dim native-endian float32s; the drop carries them little-endian in one matrix
--- (db/npc_kb_vector.f32) with db/npc_kb_vector.index.tsv saying which row is whose.
-CREATE TABLE npc_kb_vector (
-    sha TEXT PRIMARY KEY,
-    dim INTEGER NOT NULL,
-    vec BLOB NOT NULL
-);
+-- The vectors these shas name are in the second file, at the end of this schema.
 
 -- ---- the quests ------------------------------------------------------------------ app mod sched
 
@@ -437,3 +434,28 @@ CREATE TABLE npc_routine_object (
     pos_z REAL,
     PRIMARY KEY (level, guid)
 );
+
+-- ==== npcs-vectors.sqlite ================================================================== app
+--
+-- The knowledge base's vectors, keyed by the sha of their text: the sha the rows of
+-- npc_kb_item (answer_sha) and npc_kb_question (sha) carry as hex, here as its bytes
+-- (the drop keys them by the first 16 hex digits of the sha256, so eight bytes; a whole
+-- sha256 would be 32, and the app reads either).
+-- EmbeddingGemma's 768 floats stored as signed bytes: vec is dim int8s, each vec[i] * scale
+-- the component, with scale the vector's largest magnitude over 127. The app rebuilds the
+-- floats on reading and normalises again. A quarter of the float32 original, and ranks as
+-- it does: measured over 8 souls x 19 lines, the same best item on every one and every
+-- score within 0.002, so the thresholds in app/src/knowledge.h keep their float32
+-- calibration. (Keeping only the first 256 components, which the model is trained to allow,
+-- Matryoshka-style, would be a twelfth, but scores ran higher and closer together and the
+-- best item changed on one line in ten; the app cuts a wider query to the rows' dim, so
+-- that layout reads too if it is ever wanted.) WITHOUT ROWID: the key is the row's address,
+-- with no second tree beside it. tools/assemble_db.py writes it from the drop's float32
+-- matrix (db/npc_kb_vector.f32, little-endian, with db/npc_kb_vector.index.tsv saying
+-- which row is whose).
+CREATE TABLE npc_kb_vector (
+    sha BLOB PRIMARY KEY,
+    dim INTEGER NOT NULL,
+    scale REAL NOT NULL,
+    vec BLOB NOT NULL
+) WITHOUT ROWID;

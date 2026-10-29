@@ -13,6 +13,7 @@ __pycache__/
 # moonshine-voice-characters, fetched here, never committed here.
 /drop/
 /data/kcd2/npcs.sqlite*
+/data/kcd2/npcs-vectors.sqlite*
 /data/kcd2/voices/clones/
 /data/kcd2/voices/phrases/
 /data/kcd2/voices/facials.txt

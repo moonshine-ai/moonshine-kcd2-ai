@@ -43,6 +43,13 @@ struct sqlite3;
 
 namespace moonshine {
 
+// The thresholds below are scores against the stored vectors: EmbeddingGemma's 768
+// components as int8 with a scale per vector (data/schema.sql, npcs-vectors.sqlite). The
+// quantisation does not move them: over 8 souls x 19 lines the int8 rows and the float32
+// ones agreed on the best item every time and on every shared score to within 0.002, so
+// the calibrations below, made at float32, stand. (The first 256 components alone were
+// tried and did not: scores ran 0.77x + 0.20 and the best item changed on one line in ten.)
+//
 // Below this the best item is not what the line was about, and nothing is injected.
 // Measured on the pilot's gold set with the answer-and-questions index (plan section 6a):
 // keeps 95% of what is in scope and turns away 96% of what is not.
@@ -100,8 +107,10 @@ public:
              std::vector<std::string> texts);
 
     // The items ranked for a unit query vector, best first, each with its best text's
-    // score. `prefixes` restricts the field to items whose id starts with one of them;
-    // empty means all. At most `top` of them.
+    // score. A query wider than the stored vectors is cut to their width (truncated(),
+    // embedder.h); a narrower one is another model's and scores nothing. `prefixes`
+    // restricts the field to items whose id starts with one of them; empty means all. At
+    // most `top` of them.
     std::vector<KbHit> query(const std::vector<float>& q,
                              const std::vector<std::string_view>& prefixes = {},
                              std::size_t top = 12) const;
@@ -187,7 +196,9 @@ Advice quest_ask_direction(std::string_view quest_id, std::string_view ask, int 
 Advice gate_knowledge(Advice advice, KbGate gate, std::string_view quest_id, std::string_view ask,
                       bool again, std::string_view remind);
 
-// The knowledge tables of npcs.sqlite, read-only.
+// The knowledge tables of npcs.sqlite, read-only, with the vectors from npcs-vectors.sqlite
+// beside it (attached as `vec`; data/schema.sql says why they are two files). A database
+// from before the split, with npc_kb_vector in the one file, is read as it was.
 class KnowledgeBase {
 public:
     explicit KnowledgeBase(std::filesystem::path path);
@@ -199,8 +210,11 @@ public:
     const std::string& trouble() const { return trouble_; }
     // Whether the tables are there at all: a database built before the knowledge stage has
     // every soul knowing nothing, which is worth one line at start-up rather than a line a
-    // conversation.
+    // conversation. False too when the vectors' file is missing, which trouble() then says.
     bool has_tables() const;
+    // Where the vectors are read from: "vec" (npcs-vectors.sqlite) or "main" (the one-file
+    // layout), for the status line.
+    const std::string& vectors_in() const { return vectors_in_; }
     // How many souls have items, for the status line.
     int souls_with_items() const;
     // Everything the soul's owners hold, with the vectors of every answer and question that
@@ -211,6 +225,7 @@ private:
     std::filesystem::path path_;
     sqlite3* db_ = nullptr;
     std::string trouble_;
+    std::string vectors_in_;
 };
 
 // The director for the knowledge: the embedder, the base, and the index of the soul being
