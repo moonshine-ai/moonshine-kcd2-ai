@@ -18,7 +18,7 @@ the dialog that's known ahead of time, and licensing their voices for better clo
 freeform speech.
 
 How to install and play it follows. Building it from source is covered under *The
-repository* in the project's README at https://github.com/moonshine-ai/moonshine-kcd.
+repository* in the project's README at https://github.com/moonshine-ai/moonshine-kcd-ai.
 
 ## Installing
 
@@ -26,7 +26,7 @@ Two pieces go on your computer, and one installer puts both in place:
 
 1. **The mod**, a small folder in the game's `mods` folder. It gives people their names
    and the *Talk* option.
-2. **The Moonshine app**, about 5.5 GB, most of it the language model and the
+2. **The Moonshine app**, about 4 GB, most of it the language model and the
    characters' knowledge, which the installer downloads while it runs. It runs beside the
    game in its own window.
 
@@ -46,7 +46,7 @@ Each step below ends with what you should see. If you see something else, go to
   the graphics card, so the game keeps the GPU to itself.
 - **10 GB free** on your Windows drive (the app installs under your user folder, not the
   game's).
-- **An internet connection** for the install: about 5.5 GB is downloaded. On a slow line
+- **An internet connection** for the install: about 4 GB is downloaded. On a slow line
   this is the longest part, and the installer can be left to it.
 - **A microphone**, if you want to speak to people rather than type. Optional.
 - A Steam account that owns the game, signed in on this PC.
@@ -88,8 +88,8 @@ Download [download.moonshine.ai/kcd2/0.9.99/Moonshine-0.9.99-setup.exe](https://
 
    **Next**, then **Install**.
 10. The program is copied, then the installer downloads the model, voice and data files,
-    about 5.5 GB in all. The status line names the file it is on and the bar covers the
-    whole download; on a 100 Mbit/s line expect about ten minutes, on a slower one
+    about 4 GB in all. The status line names the file it is on and the bar covers the
+    whole download; on a 100 Mbit/s line expect about six minutes, on a slower one
     longer. Leave it to run.
 
     If the connection drops, the installer says which file failed and offers **Retry**.
@@ -214,18 +214,6 @@ the game's `kcd.log`, what the app found of the installation and a few lines abo
 PC. No saves, and nothing personal beyond what you typed into conversations. Send that
 zip with a sentence about what you were doing when it went wrong.
 
-### The Steam Workshop instead
-
-The mod is also on the Steam Workshop: **WORKSHOP_URL**. Subscribing there means Steam
-updates the mod on its own. If you prefer that:
-
-1. Subscribe to the item.
-2. In the installer, **untick** *Install the mod into the game's mods folder*.
-
-Do not do both: two copies of the mod load it twice. The mod on the Workshop and the app
-you installed must be of the same version; if an update to one makes the other
-misbehave, update both.
-
 ### Updating
 
 Start Menu > Moonshine > **Update Moonshine** looks for a newer version. If there is
@@ -270,7 +258,7 @@ cuts it off here and ships it as the package's `README.txt`, which the installer
 
 The *data*, the names, biographies, relationships, knowledge, quests and routines of
 some 5,800 souls, is not made here. It is generated in a separate
-repository and arrives as a **drop**: a folder of TSV and JSONL tables, one float32 matrix
+repository and arrives as a **drop**: a folder of TSV and JSONL tables, one int8 matrix
 of knowledge vectors, the voices, and the game-derived assets, under a manifest of hashes.
 `data/DROP` pins the drop this checkout builds from; `tools/assemble_db.py` turns it into
 the SQLite file both the app and the generator read, and a second beside it with the
