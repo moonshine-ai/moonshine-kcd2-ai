@@ -12,7 +12,8 @@
 #
 #   Moonshine\
 #     moonshine_app.exe + DLLs      app\build-release\RelWithDebInfo\ (CPU-only build)
-#     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, README.txt, VERSION.txt, LICENSES\
+#     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, VERSION.txt, LICENSES\
+#     README.txt                    the player's guide: README.md up to "## The repository"
 #     setting.txt, manifest.json
 #     data\kcd2\npcs.sqlite         a vacuumed copy of the assembled database...
 #     data\kcd2\npcs-vectors.sqlite ...and of the knowledge base's vectors beside it
@@ -178,7 +179,17 @@ Get-ChildItem -LiteralPath $pkg -File | Where-Object { $_.Extension -in '.dll', 
 foreach ($name in @('Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1')) {
     Copy-Same (Join-Path $installerSrc $name) (Join-Path $pkg $name)
 }
-Copy-Same (Join-Path $Repo 'TESTERS.md') (Join-Path $pkg 'README.txt')
+# README.txt is the player's guide: README.md up to its first developer heading, "## The
+# repository" (the installer shows it before installing and from the Start Menu). Written
+# only when it differs, so the stamp-and-size copies stay quiet.
+$readmeLines = Get-Content -LiteralPath (Join-Path $Repo 'README.md')
+$cutAt = [array]::IndexOf($readmeLines, '## The repository')
+if ($cutAt -lt 0) { Fail 'README.md has no "## The repository" heading to cut the player''s guide at' }
+$readme = ($readmeLines[0..($cutAt - 1)] -join "`r`n").TrimEnd() + "`r`n"
+$readmeOut = Join-Path $pkg 'README.txt'
+if (-not (Test-Path -LiteralPath $readmeOut) -or ((Get-Content -LiteralPath $readmeOut -Raw) -ne $readme)) {
+    [IO.File]::WriteAllText($readmeOut, $readme, (New-Object Text.UTF8Encoding $false))
+}
 Mirror (Join-Path $installerSrc 'LICENSES') (Join-Path $pkg 'LICENSES')
 Set-Content -LiteralPath (Join-Path $pkg 'VERSION.txt') -Value $Version -NoNewline
 Copy-Same (Join-Path $Repo 'setting.txt') (Join-Path $pkg 'setting.txt')

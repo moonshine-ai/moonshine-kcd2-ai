@@ -9,7 +9,7 @@
 #
 # What it does, in order, stopping at the first thing that fails:
 #
-#   1. Bumps VERSION, and the installer link in INSTALL.md, in the working tree. The
+#   1. Bumps VERSION, and the installer link in README.md, in the working tree. The
 #      tree has to be clean apart from that (--dirty to release uncommitted work anyway),
 #      so the tag at the end names what was shipped.
 #   2. Copies the tracked files of this repository (not the submodules, which the build
@@ -28,10 +28,10 @@
 #      CLOUDFLARE_SECRET_ACCESS_KEY, or S3_ENDPOINT / AWS_ACCESS_KEY_ID /
 #      AWS_SECRET_ACCESS_KEY) and handed to the script on its standard input, over the
 #      ssh connection; they are never on a command line or on the build machine's disk.
-#   5. Commits VERSION and INSTALL.md as "Release <version>" and tags it v<version>.
+#   5. Commits VERSION and README.md as "Release <version>" and tags it v<version>.
 #      Nothing is pushed; that is yours to do when you have seen it work.
 #
-# If anything fails before the upload, VERSION and INSTALL.md are put back so the next
+# If anything fails before the upload, VERSION and README.md are put back so the next
 # attempt gets the same number; after the upload has started the number is spent and the
 # files are left bumped for you to finish with --publish-only.
 #
@@ -94,10 +94,10 @@ if (( publish_only )); then
     publish
     echo
     echo "published: $base/$version/Moonshine-$version-setup.exe"
-    if git diff --quiet -- VERSION INSTALL.md; then
-        echo "VERSION and INSTALL.md are committed already"
+    if git diff --quiet -- VERSION README.md; then
+        echo "VERSION and README.md are committed already"
     else
-        git commit -q -m "Release $version" -- VERSION INSTALL.md && git tag -a "v$version" -m "Moonshine $version" && echo "committed and tagged v$version (not pushed)"
+        git commit -q -m "Release $version" -- VERSION README.md && git tag -a "v$version" -m "Moonshine $version" && echo "committed and tagged v$version (not pushed)"
     fi
     exit 0
 fi
@@ -124,15 +124,15 @@ fi
 if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then echo "v$version is tagged already" >&2; exit 1; fi
 echo "  $current -> $version"
 printf '%s\n' "$version" > VERSION
-# INSTALL.md's one link to the installer, whatever version it named.
-sed -E "s#kcd2/[0-9.]+/Moonshine-[0-9.]+-setup\.exe#kcd2/$version/Moonshine-$version-setup.exe#g" INSTALL.md > INSTALL.md.tmp && mv INSTALL.md.tmp INSTALL.md
+# README.md's one link to the installer (Step 1 of the player's guide), whatever version it named.
+sed -E "s#kcd2/[0-9.]+/Moonshine-[0-9.]+-setup\.exe#kcd2/$version/Moonshine-$version-setup.exe#g" README.md > README.md.tmp && mv README.md.tmp README.md
 spent=0
 restore() {
     if (( ! spent )); then
-        git checkout -q -- VERSION INSTALL.md
-        echo "VERSION and INSTALL.md put back to $current" >&2
+        git checkout -q -- VERSION README.md
+        echo "VERSION and README.md put back to $current" >&2
     else
-        echo "the upload of $version had begun; VERSION and INSTALL.md are left at $version -- finish with: scripts/release.sh --publish-only --version $version" >&2
+        echo "the upload of $version had begun; VERSION and README.md are left at $version -- finish with: scripts/release.sh --publish-only --version $version" >&2
     fi
 }
 trap 'restore' ERR
@@ -170,7 +170,7 @@ if (( stage_only )); then
     trap - ERR
     echo
     echo "staged, not published. On $host: $checkout\\release\\out\\$version\\Moonshine-$version-setup.exe,"
-    echo "with $checkout\\release\\stage\\Moonshine as /MIRROR for the verifiers. VERSION and INSTALL.md are"
+    echo "with $checkout\\release\\stage\\Moonshine as /MIRROR for the verifiers. VERSION and README.md are"
     echo "left at $version, uncommitted; when it is good:  scripts/release.sh --publish-only --version $version"
     exit 0
 fi
@@ -180,7 +180,7 @@ spent=1
 publish
 trap - ERR
 step 'commit'
-git commit -q -m "Release $version" -- VERSION INSTALL.md
+git commit -q -m "Release $version" -- VERSION README.md
 git tag -a "v$version" -m "Moonshine $version"
 echo "  Release $version, tagged v$version (not pushed)"
 echo
