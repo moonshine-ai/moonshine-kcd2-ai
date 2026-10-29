@@ -80,7 +80,9 @@ std::string actor_abbr(int voice_id);
 //
 // Henry is not a soul in the database, so his lines name kHenryVoice themselves; it is
 // his alone, so that the player's own voice is never also the man he is talking to.
-inline constexpr std::string_view kHenryVoice = "teddy";
+// Spencer, since 28 Oct 2026: heard on a carter in Kuttenberg and wanted for Henry, so
+// the two were swapped, and teddy took spencer's places among the souls.
+inline constexpr std::string_view kHenryVoice = "spencer";
 // The voice a line is spoken in when it is nobody's in particular: a woman's when asked
 // for one (the mod's female intent, a soul the database only knows the gender of), a man's
 // otherwise, including for a soul with no gender.

@@ -26,3 +26,5 @@ __pycache__/
 
 # The installer's staging tree and output (installer/Stage.ps1).
 /release/
+
+bugs.txt

@@ -132,6 +132,17 @@ Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; here and not as a silent app on the first evening.
 Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Check"; WorkingDir: "{app}"; Description: "Check the installation now (recommended)"; Flags: postinstall nowait skipifsilent
 
+[InstallDelete]
+; What an earlier version put here and this one does not: the Qwen3-TTS voice engine
+; (to 0.9.96) with its 2.5 GB model, its OpenBLAS, its cloned recordings, and the lines
+; spoken ahead in those voices, which would be heard in the wrong voice if they were ever
+; asked for. Deleted before the files are copied, so this version's own phrases\ then
+; lands clean. Setup does not otherwise touch a file it did not install.
+Type: files; Name: "{app}\libopenblas.dll"
+Type: filesandordirs; Name: "{app}\models\qwen3-tts-0.6b"
+Type: filesandordirs; Name: "{app}\data\kcd2\voices\clones"
+Type: filesandordirs; Name: "{app}\data\kcd2\voices\phrases"
+
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\moonshine.cfg"

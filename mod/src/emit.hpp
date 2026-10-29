@@ -177,6 +177,21 @@ std::string hail_node(const std::string& quest_id);
 std::string hail_alias(const std::string& modid, const std::string& quest_id);
 std::string emit_hail_dialogue(const std::string& modid, const Quest& quest);
 
+// A street night's marker (has_follow; bugs.txt 28 Oct 2026: "Ernest's map quest marker
+// only active when he's walking home to his love nest and for the night he's in bed, and
+// disable it if he discovers he's being followed"). The objective's marker is the one on
+// its current log state and nothing else can move it, so the fetch objective of such a
+// quest gains two marker-only Updated states, Shown (Marker="target") and Hidden (none; the
+// shipped graphs write 21 such -- klaster's GoOutside, strasidlo's Updated_DrinkingAvailable
+// -- with no journal text), and two tokens of the hail's shape flip between them from the
+// Lua (WatchMarker): shown in his hours, from his homecoming (routine_home_at, else the
+// street watch's start) to the night window's end, and not while his night is `followed`;
+// hidden otherwise. Its Started and Followed states carry no marker of their own.
+std::string mark_shown_class(const Quest& quest);
+std::string mark_shown_name(const Quest& quest);
+std::string mark_hidden_class(const Quest& quest);
+std::string mark_hidden_name(const Quest& quest);
+
 // Libs/Tables/item/item__<modid>.xml -- the mod's own item classes, for the things a
 // favour is about that the shipped tables have no carriable row for (a saw). Empty when
 // no quest names one, and then no file is written. The rows the inventory shows for them
@@ -371,6 +386,27 @@ constexpr int kFollowClearHours = 6;
 // The engine is asked for the holder's Talk this long after the Lua's verdict: time for him
 // to turn and the token to land.
 constexpr int kFollowTalkMs = 1500;
+// RequestDialog only queues; his behaviour tree runs it or sleeps through it (28 Oct 2026,
+// the user's log: `RequestDialog -> true` and no Talk, no line, no word to the player, and
+// the night lost all the same). If no dialogue is up this long after the request, the mod
+// says the row itself: his `followed` line in his voice on the narrative line, Henry's
+// reply, then `follow_over`, so a sighting is never silent.
+constexpr int kFollowTalkWaitMs = 4000;
+// A sighting wants the holder *on his walk*: moved at least kFollowStepMetres since the
+// last tick (a man standing about catches nobody behind him), and not teleported -- a step
+// of kFollowJumpMetres or more between ticks is the engine re-placing him, after a clock
+// jump or a stream-in, and the tick after it is for settling, not judging. And for
+// kFollowGraceSeconds of real time after the giver's carrying, or after any jump of the
+// world clock of kClockJumpSeconds or more between ticks (the game's own wait or sleep),
+// no sighting at all: every carry in the user's logs (26-28 Oct 2026) set Henry down at
+// the gate with Ernest 10-23 m off, re-placed by the clock's winding, and on 28 Oct he was
+// "ahead" at 10.7 m on the first tick, before the player could move. Henry's warning to
+// himself is still said in the grace, so the player knows to step back.
+constexpr double kFollowStepMetres = 0.5;
+constexpr int kFollowStillSeconds = 6;  // a step within this long ago is still a walk
+constexpr double kFollowJumpMetres = 15.0;
+constexpr int kFollowGraceSeconds = 30;
+constexpr int kClockJumpSeconds = 900;
 // How near Henry is before a travel target's face (seen_mood) is put on: an idle mood is
 // subtle and reads at conversation distance, so it is on well before he is there.
 constexpr int kTravelMoodMetres = 40;

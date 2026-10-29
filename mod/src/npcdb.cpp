@@ -702,6 +702,14 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                     throw std::runtime_error("quest " + q.id + " fast_travel_at wants hh:mm, got '" + words + "'");
                 }
                 q.fast_travel_at = hh + mm / 60.0;
+            } else if (field == "routine_home_at") {
+                // The holder's homecoming, "hh:mm": the scheduler script's spec, and the
+                // hour the street night's marker comes on (has_follow). Anything else is
+                // the script's to complain about; the marker falls back to the watch's start.
+                int hh = -1, mm = 0;
+                if (std::sscanf(words.c_str(), "%d:%d", &hh, &mm) >= 1 && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+                    q.home_at = hh + mm / 60.0;
+                }
             } else if (field == "fast_travel_hours" || field == "fast_travel" || field == "fast_travel_reply" ||
                        field == "fast_travel_later" || field == "fast_travel_later_reply") {
                 // The app's: the rows, the answers and the hours Henry can ask it in.

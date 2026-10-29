@@ -822,6 +822,27 @@ std::string follow_class(const Quest& quest) {
 
 std::string follow_name(const Quest& quest) { return "follow_" + quest_node(quest.id); }
 
+std::string mark_shown_class(const Quest& quest) {
+    // The street night's marker tokens (emit.hpp): the same shape under 4d (the letter M)
+    // for the marker put on him and 6d (m) for it taken off. Made by the Lua's WatchMarker
+    // as his hours come and go, for the graph's two triggers on the fetch objective.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4d00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string mark_shown_name(const Quest& quest) { return "shown_" + quest_node(quest.id); }
+
+std::string mark_hidden_class(const Quest& quest) {
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-6d00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string mark_hidden_name(const Quest& quest) { return "hidden_" + quest_node(quest.id); }
+
 std::string hail_node(const std::string& quest_id) { return quest_node(quest_id) + "_hail"; }
 
 std::string paper_class(const Quest& quest) {
@@ -1582,6 +1603,13 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // log_followed, the marker staying on him.
     const bool followed = quest.has_follow();
     if (followed) s += t(5) + "<Edge From=\"followed.OnAcquire\" To=\"SetFollowed\" />\r\n";
+    // The street night's marker on him and off again (emit.hpp mark_shown_class): the two
+    // tokens the Lua makes as his hours come and go (WatchMarker), through the triggers
+    // below, live while there is a night still to be caught (marking).
+    if (followed) {
+        s += t(5) + "<Edge From=\"markShown.OnAcquire\" To=\"SetShown\" />\r\n";
+        s += t(5) + "<Edge From=\"markHidden.OnAcquire\" To=\"SetHidden\" />\r\n";
+    }
     // The bedside's denouncing (the holder menu's `denounced` port): Henry walked out with
     // nothing, and the giver is to be told so (Updated, log_denounced, the marker on her).
     const bool bedside = quest.has_bedside();
@@ -1986,6 +2014,39 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(alert_tag(modid, quest.id)) + "\" />\r\n";
             s += t(5) + "<Edge From=\"alerted.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</SchedulerLinkActivation>\r\n";
+            // The street night's marker (emit.hpp mark_shown_class; bugs.txt 28 Oct 2026):
+            // the Lua's WatchMarker makes the shown token as his homecoming hour comes and
+            // the hidden one as his night's window closes or the night is `followed`, and
+            // each moves the objective to its marker-only state. Live from the accept until
+            // the night is caught or given up (the catching, the handover, the denouncing,
+            // his death), after which the objective's own states carry the marker.
+            s += t(4) + "<State Name=\"marking\" TypeT=\"bool\">\r\n";
+            s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
+            s += t(5) + "<Edge From=\"caught.OnAcquire\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"holder.handover\" To=\"SetFalse\" />\r\n";
+            if (quest.has_bedside()) s += t(5) + "<Edge From=\"holder.denounced\" To=\"SetFalse\" />\r\n";
+            if (!quest.log_target_dead.empty()) s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
+            s += t(4) + "</State>\r\n";
+            s += t(4) + "<Function Name=\"markShownClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(mark_shown_class(quest)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"markShown\">\r\n";
+            s += t(5) + "<Edge From=\"markShownClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"marking.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            s += t(4) + "<Function Name=\"markHiddenClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(mark_hidden_class(quest)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"markHidden\">\r\n";
+            s += t(5) + "<Edge From=\"markHiddenClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"marking.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
         }
         if (written) {
             // Live from the accept until the token arrives, so a second writing (none is
@@ -2336,6 +2397,8 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (written) s += state("Written", "Updated");
     if (caught) s += state("Caught", "Updated");
     if (followed) s += state("Followed", "Updated");
+    if (followed) s += state("Shown", "Updated");
+    if (followed) s += state("Hidden", "Updated");
     if (bedside) s += state("Denouncing", "Updated");
     for (int i = 1; i <= checks; ++i) {
         s += state(("Check" + std::to_string(i)).c_str(), i == checks ? mid : "Updated");
@@ -2393,7 +2456,10 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
          xml_escape(quest.objective) + "\" />\r\n";
     s += t(5) + "<Logs>\r\n";
     s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
-    s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"" + std::string(marker) + "\">\r\n";
+    // A street night's (has_follow) Started carries no marker: the holder's is the Lua's to
+    // put on and take off with his hours (Shown/Hidden below; emit.hpp mark_shown_class).
+    s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\"" +
+         std::string(followed ? "" : " Marker=\"" + std::string(marker) + "\"") + ">\r\n";
     s += t(7) + "<Log StringName=\"" + key("log_started") + "\" Text=\"" +
          xml_escape(quest.log_started) + "\" />\r\n";
     s += t(6) + "</EnumLog>\r\n";
@@ -2471,13 +2537,18 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
              xml_escape(quest.log_caught) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
     }
-    // The holder has caught Henry following him: he sleeps at home tonight, and is still
-    // the one to be watched.
+    // The holder has caught Henry following him: he sleeps at home tonight, and the marker
+    // comes off him for the night (bugs.txt 28 Oct 2026) -- the Lua takes `marked` down
+    // with the sighting, and this state carries none of its own. Shown and Hidden are the
+    // marker's own states, written by the Lua's tokens as his hours come and go: marker-only
+    // Updated lines without journal text, as 21 shipped objectives write theirs.
     if (followed) {
-        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Followed\" Marker=\"target\">\r\n";
+        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Followed\">\r\n";
         s += t(7) + "<Log StringName=\"" + key("log_followed") + "\" Text=\"" +
              xml_escape(quest.log_followed) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
+        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Shown\" Marker=\"target\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Hidden\" />\r\n";
     }
     // Denounced at the bedside: the thing stays his, and the giver is to be told.
     if (bedside) {
@@ -4680,6 +4751,17 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
              "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
              "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
              xml_escape(follow_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + name) + "\" />\r\n";
+        // And the night's marker on him and off again (emit.hpp, mark_shown_class): two more
+        // of the same row, made by the Lua as his hours come and go.
+        for (int i = 0; i < 2; ++i) {
+            const std::string mname = i == 0 ? mark_shown_name(*q) : mark_hidden_name(*q);
+            const std::string mclass = i == 0 ? mark_shown_class(*q) : mark_hidden_class(*q);
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, mname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, mname)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
+                 xml_escape(mclass) + "\" Name=\"" + xml_escape(modid + "_" + mname) + "\" />\r\n";
+        }
     }
     // A chest's paper: a Document of the letters' shape (a loose sheet rather than a folded
     // one), laid in the chest beside the thing by the watch, and worth nothing.
@@ -4766,6 +4848,10 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         if (!q.has_follow()) continue;
         rows.emplace_back(item_ui_key(modid, follow_name(q)), "A glance back");
         rows.emplace_back(item_info_key(modid, follow_name(q)), q.target_name + " turned and saw Henry behind him.");
+        rows.emplace_back(item_ui_key(modid, mark_shown_name(q)), "A night's watch");
+        rows.emplace_back(item_info_key(modid, mark_shown_name(q)), q.target_name + " is on his way for the night.");
+        rows.emplace_back(item_ui_key(modid, mark_hidden_name(q)), "A night's end");
+        rows.emplace_back(item_info_key(modid, mark_hidden_name(q)), q.target_name + "'s night is not to be watched.");
     }
     for (const Quest& q : quests) {
         if (!q.has_chest()) continue;
@@ -5617,8 +5703,15 @@ std::string state_lua(const std::string& g) {
     // The street's night (WatchFollow): the holder has caught Henry behind him, until the
     // morning clears it (no letter: the app has no part in it, and it is gone by day). The
     // clock of the sighting goes with it, for FollowMorning to measure the night by.
-    s += "\tif command == \"followed\" then facts.followed = true; facts.followedAt = " + g + ".WorldTime() end\n";
-    s += "\tif command == \"unfollowed\" then facts.followed = nil; facts.followedAt = nil end\n";
+    // The night's marker comes off him with the sighting (the graph's Followed state carries
+    // none), so the store says so without a token (WatchMarker); the row said by the mod
+    // itself when his Talk never opened (FollowSaid) takes the global down.
+    s += "\tif command == \"followed\" then facts.followed = true; facts.followedAt = " + g + ".WorldTime(); facts.marked = false end\n";
+    s += "\tif command == \"followed_said\" then facts.followedSaid = true end\n";
+    s += "\tif command == \"unfollowed\" then facts.followed = nil; facts.followedAt = nil; facts.followedSaid = nil end\n";
+    // The street night's marker on him or off (WatchMarker; bugs.txt 28 Oct 2026).
+    s += "\tif command == \"marked\" then facts.marked = true end\n";
+    s += "\tif command == \"unmarked\" then facts.marked = false end\n";
     s += "\tif command == \"named\" then facts.accepted = true; facts.named = true end\n";
     s += "\tif command == \"letin\" then facts.letin = true end\n";
     s += "\tif command == \"keyed\" then facts.keyed = true end\n";
@@ -5751,7 +5844,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.denouncedVar, f.denounced and 1 or 0) end)\n";
     s += "\t\tend\n";
     s += "\t\tif q.followedVar ~= nil then\n";
-    s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, f.followed and 1 or 0) end)\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, (f.followed and not f.followedSaid) and 1 or 0) end)\n";
     s += "\t\tend\n";
     s += "\t\tif q.letterOf ~= nil then\n";
     s += "\t\t\tlocal of, off = " + g + ".quests[q.letterOf], quests[q.letterOf] or {}\n";
@@ -6961,6 +7054,17 @@ std::string emit_conversation_lua(const std::string& modid,
                 // Henry to himself: the holder near on his walk, and the night lost.
                 if (!q.holder_follow_warn.empty()) s += ", followWarn = \"" + lua_escape(q.holder_follow_warn) + "\"";
                 if (!q.holder_follow_over.empty()) s += ", followOver = \"" + lua_escape(q.holder_follow_over) + "\"";
+                // His own row for when his Talk never opens on the request (FollowSaid): his
+                // line and Henry's answer, with his name and voice for the narrative line.
+                s += ", followedLine = \"" + lua_escape(q.holder_followed) + "\", followedReply = \"" +
+                     lua_escape(q.holder_followed_reply) + "\", holderName = \"" + lua_escape(q.target_name) +
+                     "\", holderVoice = \"" + (q.target_gender == "female" ? "female" : "male") + "\"";
+                // The night's marker (WatchMarker): on him from his homecoming (routine_home_at,
+                // else the street watch's start) to the night window's end, off otherwise and
+                // for a `followed` night; the two tokens for the graph's markShown/markHidden.
+                const double home = q.home_at >= 0 ? q.home_at : from;
+                s += ", markHours = { " + health_text(home) + ", " + std::to_string(q.hour_to) + " }, markShown = \"" +
+                     lua_escape(mark_shown_class(q)) + "\", markHidden = \"" + lua_escape(mark_hidden_class(q)) + "\"";
             }
         }
         if (q.has_fast_travel()) {
@@ -8549,6 +8653,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif type(ground) == \"number\" and ground > to.z and ground - to.z <= 5 then to.z = ground end\n";
     s += "\t\tend)\n";
     s += "\t\tpcall(function() me:SetWorldPos(to) end)\n";
+    // The street watch is told (WatchFollow's grace): the holder is re-placed by the clock's
+    // winding and stands wherever the engine put him, often beside the gate.
+    s += "\t\t" + g + ".followGraceAt = " + g + ".Now()\n";
     s += "\t\tpcall(function() Script.SetTimer(1000, function()\n";
     s += "\t\t\tlocal pp = me:GetWorldPos()\n";
     s += "\t\t\tlocal read = nil\n";
@@ -9488,6 +9595,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".LipStop, \"conversation over\")\n";
     s += "\t" + g + ".lipKey = nil\n";
     s += "\t" + g + ".menuHeld = false\n";
+    // A hail's line still on the narrative subtitle (put up in the breath before the
+    // conversation opened) goes with it (HailShow, 28 Oct 2026).
+    s += "\tpcall(" + g + ".HailHide)\n";
     // A beat still waiting to play is not going to now, and a code left up would gate
     // every face of the next conversation.
     s += "\tif " + g + ".questCode ~= 0 or #" + g + ".questQueue > 0 then\n";
@@ -11392,23 +11502,39 @@ std::string emit_conversation_lua(const std::string& modid,
     // for eight seconds, taken down or not first, gone at the same moment; the mod's
     // earlier loop, gone a little sooner), so hailSeconds is what the widget gives and the
     // hide is for tidiness. The delay is for the bark: its opening wipes the line (WatchHail
-    // above). A conversation opening meanwhile leaves the HUD to the dialogue. A UI without
-    // the function (an older HUD) is left alone: the pcall fails quietly and the voice is
-    // all there is.
+    // above). A UI without the function (an older HUD) is left alone: the pcall fails
+    // quietly and the voice is all there is.
+    //
+    // The hide is owed whether or not a conversation is open by then: until 28 Oct 2026 it
+    // stood down when one was (`active`, so as to leave the HUD to the dialogue), and
+    // Christine's shout stayed on the screen through the whole talk that followed it and
+    // for minutes after (bugs.txt), since the widget's own five seconds do not run while a
+    // dialogue holds the HUD and nothing else ever took the line down. HideNarrativeSubtitles
+    // touches the narrative line alone, not the dialogue's captions. hailUp notes a line on
+    // the screen, and Leave takes it down too if the timer has not (HailHide), for a line put
+    // up in the last breath before the conversation opened.
+    s += g + ".hailUp = false\n";
+    s += "function " + g + ".HailHide()\n";
+    s += "\tif not " + g + ".hailUp then return end\n";
+    s += "\t" + g + ".hailUp = false\n";
+    s += "\tfor _, i in ipairs(" + g + ".hudIds) do\n";
+    s += "\t\tpcall(function() UIAction.CallFunction(\"hud\", i, \"HideNarrativeSubtitles\", 0.3) end)\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".HailShow(text, above, delay)\n";
     s += "\t" + g + ".hailGen = " + g + ".hailGen + 1\n";
     s += "\tlocal gen = " + g + ".hailGen\n";
     s += "\tlocal line = (above ~= \"\" and (above .. \": \") or \"\") .. text\n";
     s += "\tlocal function show()\n";
     s += "\t\tif gen ~= " + g + ".hailGen or " + g + ".active then return end\n";
+    s += "\t\t" + g + ".hailUp = true\n";
     s += "\t\tfor _, i in ipairs(" + g + ".hudIds) do\n";
     s += "\t\t\tpcall(function() UIAction.CallFunction(\"hud\", i, \"SetNarrativeSubtitles\", line, 0, 0.2) end)\n";
     s += "\t\tend\n";
     s += "\t\tpcall(function() Script.SetTimer(" + g + ".hailSeconds * 1000, function()\n";
-    s += "\t\t\tif gen ~= " + g + ".hailGen or " + g + ".active then return end\n";
-    s += "\t\t\tfor _, i in ipairs(" + g + ".hudIds) do\n";
-    s += "\t\t\t\tpcall(function() UIAction.CallFunction(\"hud\", i, \"HideNarrativeSubtitles\", 0.3) end)\n";
-    s += "\t\t\tend\n";
+    s += "\t\t\tif gen ~= " + g + ".hailGen then return end\n";
+    s += "\t\t\t" + g + ".HailHide()\n";
     s += "\t\tend) end)\n";
     s += "\tend\n";
     s += "\tif (delay or 0) > 0 then\n";
@@ -11693,6 +11819,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".WatchEnters, id, q, pp, tp, wp)\n";
     s += "\tif q.followHours ~= nil then\n";
     s += "\t\tpcall(" + g + ".FollowMorning, id, q)\n";
+    s += "\t\tpcall(" + g + ".WatchMarker, id, q)\n";
     s += "\t\tpcall(" + g + ".WatchFollow, id, q, pp, tp, wp)\n";
     s += "\tend\n";
     s += "\tif not " + g + ".HourIn(q.hours) then return end\n";
@@ -11752,6 +11879,20 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".followClearSeconds = " + std::to_string(kFollowClearHours * 3600) + "\n";
     s += g + ".followWarned = {}\n";
     s += g + ".followNight = {}\n";
+    // The walk (emit.hpp kFollowStepMetres, kFollowJumpMetres, kFollowGraceSeconds,
+    // kClockJumpSeconds; bugs.txt 28 Oct 2026): where the holder stood last tick and the
+    // world clock's reading then, per quest, and the real moment of the last carry or clock
+    // jump, for the grace.
+    s += g + ".followStepMetres = " + health_text(kFollowStepMetres) + "\n";
+    s += g + ".followJumpMetres = " + health_text(kFollowJumpMetres) + "\n";
+    s += g + ".followGraceSeconds = " + std::to_string(kFollowGraceSeconds) + "\n";
+    s += g + ".clockJumpSeconds = " + std::to_string(kClockJumpSeconds) + "\n";
+    s += g + ".followStillSeconds = " + std::to_string(kFollowStillSeconds) + "\n";
+    s += g + ".followTalkWaitMs = " + std::to_string(kFollowTalkWaitMs) + "\n";
+    s += g + ".followLast = {}\n";
+    s += g + ".followHeld = {}\n";
+    s += g + ".followClock = nil\n";
+    s += g + ".followGraceAt = nil\n";
     s += "function " + g + ".GraphSaid(kind, id, word)\n";
     s += "\tkind, id, word = tostring(kind), tostring(id), tostring(word)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
@@ -11807,9 +11948,51 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif not clear then return false, \"hidden\" end\n";
     s += "\treturn true, \"in view\"\n";
     s += "end\n";
+    // The walk (bugs.txt 28 Oct 2026; emit.hpp kFollowStepMetres and after). Where the
+    // holder stood last tick, per quest, and when he last moved a step: a sighting wants a
+    // man walking (moved within followStillSeconds), not one the engine has just set down
+    // -- a step of followJumpMetres or more between ticks is a re-placing, and he must walk
+    // again from there. The world clock between ticks too: a jump of clockJumpSeconds or
+    // more (the game's wait or sleep, the giver's carrying) opens the grace, as the carry
+    // itself does (FastTravelGo), and for followGraceSeconds of real time no sighting is
+    // judged. Returns nil for a walk that counts, else the word for why not.
+    s += "function " + g + ".FollowStill(id, tp)\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    s += "\tlocal clock = " + g + ".WorldTime()\n";
+    s += "\tif clock ~= nil and " + g + ".followClock ~= nil and math.abs(clock - " + g + ".followClock) >= " + g +
+         ".clockJumpSeconds then\n";
+    s += "\t\t" + g + ".followGraceAt = now\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest follow grace, the clock jumped %.0f minutes\", (clock - " + g +
+         ".followClock) / 60))\n";
+    s += "\tend\n";
+    s += "\tif clock ~= nil then " + g + ".followClock = clock end\n";
+    s += "\tlocal last = " + g + ".followLast[id]\n";
+    s += "\tlocal here = { x = tp.x, y = tp.y, movedAt = last ~= nil and last.movedAt or nil }\n";
+    s += "\tlocal why = nil\n";
+    s += "\tif last == nil then\n";
+    s += "\t\twhy = \"first seen\"\n";
+    s += "\telse\n";
+    s += "\t\tlocal step = math.sqrt((tp.x - last.x) ^ 2 + (tp.y - last.y) ^ 2)\n";
+    s += "\t\tif step >= " + g + ".followJumpMetres then\n";
+    s += "\t\t\there.movedAt = nil\n";
+    s += "\t\t\twhy = string.format(\"set down %.0fm off\", step)\n";
+    s += "\t\telseif step >= " + g + ".followStepMetres then\n";
+    s += "\t\t\there.movedAt = now\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\t" + g + ".followLast[id] = here\n";
+    s += "\tif why == nil and (here.movedAt == nil or now - here.movedAt > " + g + ".followStillSeconds) then why = \"standing\" end\n";
+    s += "\tif " + g + ".followGraceAt ~= nil and now - " + g + ".followGraceAt < " + g + ".followGraceSeconds then\n";
+    s += "\t\twhy = \"in the grace\"\n";
+    s += "\tend\n";
+    s += "\treturn why\n";
+    s += "end\n";
     s += "function " + g + ".WatchFollow(id, q, pp, tp, wp)\n";
     s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
     s += "\tif not f.accepted or f.done or f.handed or f.seen or f.followed then return end\n";
+    // His steps and the clock are kept every tick, indoors or out, so the first tick of his
+    // walk out of a door is measured from where he was and not from nothing.
+    s += "\tlocal still = " + g + ".FollowStill(id, tp)\n";
     s += "\tif not " + g + ".HourIn(q.followHours) then return end\n";
     s += "\tif " + g + ".entered[id] then return end\n";
     s += "\tif " + g + ".Indoors(tp) == true then return end\n";
@@ -11843,6 +12026,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tif not seen then return end\n";
+    // Henry in his sight, but the man not on his walk (FollowStill): no night lost. Said
+    // once per reason, so the log tells why and does not fill with it.
+    s += "\tif still ~= nil then\n";
+    s += "\t\tif " + g + ".followHeld[id] ~= still then\n";
+    s += "\t\t\t" + g + ".followHeld[id] = still\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" follow held, \" .. q.target .. \" at \" .. string.format(\"%.1f\", d)\n";
+    s += "\t\t\t\t.. \"m, \" .. how .. \", \" .. still)\n";
+    s += "\t\tend\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".followHeld[id] = nil\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" followed \" .. q.target .. \" at \" .. string.format(\"%.1f\", d)\n";
     s += "\t\t.. \"m, \" .. how)\n";
     s += "\t" + g + ".followNight[id] = " + g + ".WorldTime()\n";
@@ -11856,7 +12050,56 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif e == nil or e.actor == nil then return end\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" asks for the holder's Talk in the street\")\n";
     s += "\t\t" + g + ".Attempt(e, " + g + ".Player())\n";
+    // The request only queues (emit.hpp kFollowTalkWaitMs): if no dialogue is up by then,
+    // the mod says the row itself (FollowSaid).
+    s += "\t\tpcall(function() Script.SetTimer(" + g + ".followTalkWaitMs, function()\n";
+    s += "\t\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
+    s += "\t\t\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\t\t\tif not f.followed or f.followedSaid then return end\n";
+    s += "\t\t\t" + g + ".FollowSaid(id, q)\n";
+    s += "\t\tend) end)\n";
     s += "\tend) end)\n";
+    s += "end\n";
+    // The row said without his Talk (bugs.txt 28 Oct 2026: the sighting judged, the request
+    // made and answered true, and no dialogue, no line, nothing on the screen; the night
+    // lost in silence). His line in his voice and on the narrative line as a hail is, with
+    // his name before it; Henry's answer once it has been read; then the night given up
+    // (FollowOver), as his Talk's exit would have. The store notes the row said
+    // (followed_said), which takes the global down (QuestFlags) so a later press of Talk on
+    // him opens his day's menu and not the row again; the night itself stands until morning.
+    s += "function " + g + ".FollowSaid(id, q)\n";
+    s += "\tif q.followedLine == nil or q.followedLine == \"\" then return end\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" holder's Talk never opened, the row said in the street\")\n";
+    s += "\tpcall(" + g + ".StateQuest, id, \"followed_said\")\n";
+    s += "\t" + g + ".Voice(q.holderVoice or \"male\", q.followedLine, q.target)\n";
+    s += "\t" + g + ".HailShow(q.followedLine, q.holderName or \"\", 0)\n";
+    s += "\tlocal wait = " + g + ".Reading(q.followedLine) * 1000\n";
+    s += "\tpcall(function() Script.SetTimer(wait, function()\n";
+    s += "\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
+    s += "\t\tif q.followedReply ~= nil and q.followedReply ~= \"\" then\n";
+    s += "\t\t\t" + g + ".Voice(\"henry\", q.followedReply)\n";
+    s += "\t\t\t" + g + ".HailShow(q.followedReply, \"Henry\", 0)\n";
+    s += "\t\tend\n";
+    s += "\t\t" + g + ".FollowOver(id)\n";
+    s += "\tend) end)\n";
+    s += "end\n";
+    // The night's marker on him (bugs.txt 28 Oct 2026; emit.hpp mark_shown_class): wanted
+    // in markHours -- from his homecoming (routine_home_at) to the night window's end --
+    // and not for a night already `followed`; the store's `marked` says what the map has,
+    // and when the two differ the token for the graph's markShown or markHidden trigger is
+    // made and the store told. Nothing while the night is still to be accepted or is over
+    // (caught, handed, done): the objective's own states carry the marker then. A night
+    // carried across a save keeps `marked` in the store, so a load in his hours puts no
+    // second token where the map already has him.
+    s += "function " + g + ".WatchMarker(id, q)\n";
+    s += "\tif q.markHours == nil or q.markShown == nil or q.markHidden == nil then return end\n";
+    s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\tif not f.accepted or f.done or f.handed or f.seen then return end\n";
+    s += "\tlocal want = " + g + ".HourIn(q.markHours) and not f.followed\n";
+    s += "\tif (f.marked == true) == want then return end\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" marker \" .. (want and \"on\" or \"off\") .. \" \" .. q.target)\n";
+    s += "\tpcall(" + g + ".StateQuest, id, want and \"marked\" or \"unmarked\")\n";
+    s += "\t" + g + ".Token(q, want and q.markShown or q.markHidden)\n";
     s += "end\n";
     // The morning: the hour past the window's end, and the world clock kFollowClearHours
     // on from the night's last word (the warning or the sighting; the store's followedAt
@@ -11971,13 +12214,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\t" + g + ".Log(\"BRIDGE quest token made, have=\" .. " + g + ".Count(p, class))\n";
     s += "\t" + g + ".tokenClass = class\n";
-    s += "\tScript.SetTimer(1500, " + g + ".TokenGone)\n";
+    // Each token's own hide, by class: two in the same breath (the street's followed and the
+    // night's marker, 28 Oct 2026) would otherwise leave the first in his pocket for good.
+    s += "\tScript.SetTimer(1500, function() " + g + ".TokenGone(class) end)\n";
     s += "end\n";
     s += "\n";
-    s += "function " + g + ".TokenGone()\n";
-    s += "\tlocal class = " + g + ".tokenClass\n";
+    s += "function " + g + ".TokenGone(class)\n";
+    s += "\tclass = class or " + g + ".tokenClass\n";
     s += "\tif class == nil then return end\n";
-    s += "\t" + g + ".tokenClass = nil\n";
+    s += "\tif " + g + ".tokenClass == class then " + g + ".tokenClass = nil end\n";
     s += "\tlocal p = " + g + ".Player()\n";
     s += "\tlocal have = " + g + ".Count(p, class)\n";
     s += "\tif have > 0 then pcall(function() p.inventory:DeleteItemOfClass(class, have) end) end\n";

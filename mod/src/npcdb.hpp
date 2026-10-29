@@ -186,6 +186,11 @@ struct Quest {
     std::string holder_followed;      // holder: are you following me
     std::string holder_followed_reply;  // Henry: only walking
     std::string log_followed;
+    // The holder's homecoming (`routine_home_at`, "HH:MM"; the scheduler script's spec,
+    // build_scheduler.py, read here too): the hour his day links end and he sets off for
+    // the witness's. The street night's marker (emit.hpp mark_shown_class) comes on at it;
+    // -1 when none is written, and the street watch's start stands in.
+    double home_at = -1.0;  // hours of the day, decimal
     // Henry to himself about the street (notes.md 25 Oct 2026), optional on a `followed`:
     // `follow_warn` when the walking holder first comes near enough in the walk's hours
     // that the next tick could be the sighting (emit.hpp kFollowWarnMetres), once a night,

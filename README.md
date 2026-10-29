@@ -100,8 +100,19 @@ gives byte-identical paks on any machine.
 
 ### The installer (Windows)
 
-With the release build, the drop, the models and a mod folder under `release\mod\moonshine_names`
-in place:
+A release is one command from this checkout, with ssh to the Windows build machine
+(`wl1`, its copy of the tree under `kcd2ai`) and the R2 token in `CLOUDFLARE_*`:
+
+```sh
+scripts/release.sh              # the next number; --version 1.0.0 for a particular one
+scripts/release.sh --stage-only # build and stage, run the verifiers, then --publish-only
+```
+
+It bumps `VERSION` (and INSTALL.md's link), copies the tracked files over, runs
+`scripts\build_windows.bat release` and `installer\Stage.ps1` there, uploads with
+`installer\publish.py`, and commits the bump as `Release <version>`, tagged. The pieces
+run on their own too. With the release build, the drop, the models and a mod folder
+under `release\mod\moonshine_names` in place on the build machine:
 
 ```bat
 powershell -ExecutionPolicy Bypass -File installer\Stage.ps1 -Version 0.9.123 -DownloadBase https://download.moonshine.ai/kcd2
@@ -114,16 +125,19 @@ the database, the voices and the mod it downloads itself while installing, from 
 entries Stage.ps1 generates (`release\stage\download_files.iss`) out of
 `release\stage\Moonshine\manifest.json`. The models come from where `scripts/models.tsv`
 pins them (Hugging Face, download.moonshine.ai); the database, voices and mod from
-`<DownloadBase>/<version>/...`, and Stage.ps1 lays those out under
-`release\publish\<version>\` for uploading, with the installer and the manifest beside
-them, plus `release\publish\latest\manifest.json`, which the installed
-`Moonshine.ps1 -Update` reads to find a newer build. `installer/Publish.sh <version>`
-(run on a machine with the aws CLI and the R2 token in `CLOUDFLARE_*`) hash-checks that
-tree and puts it in the R2 bucket behind https://download.moonshine.ai/kcd2/, `latest`
-last. The same manifest
-drives `Fetch-Package.ps1`, the Start Menu's "Download or repair" and the update; an
-in-app Update would read it too. `scripts/release_version.sh` prints the version a build
-carries, `0.9.<commit count>` unless `MOONSHINE_VERSION` says otherwise.
+`<DownloadBase>/blobs/<sha256>/<name>`, each file addressed by its own hash. So a file
+that has not changed since the last release is the same URL and is never uploaded
+twice, a changed one lands beside the old rather than over it, and every installer ever
+handed out keeps finding exactly the bytes its manifest names; nothing is deleted. Per
+release there are only `<DownloadBase>/<version>/manifest.json` and the installer beside
+it, and `<DownloadBase>/latest/manifest.json`, which the installed `Moonshine.ps1 -Update`
+reads to find a newer build. `py -3 installer\publish.py --version <version>` (standard
+library only; the credentials from the environment, or on stdin from release.sh)
+hash-checks the stage against the manifest, uploads the blobs the bucket lacks, then the
+installer and manifest, then `latest`; `--check` reports what it would move. The same
+manifest drives `Fetch-Package.ps1`, the Start Menu's "Download or repair" and the
+update; an in-app Update would read it too. `scripts/release_version.sh` prints the
+version a build carries: `VERSION` at the root, unless `MOONSHINE_VERSION` says otherwise.
 `installer\Verify-Clean.ps1` runs the installer as a fresh local account and talks to the
 result, with `/MIRROR=release\stage\Moonshine` so nothing is fetched (`-Download` to test
 the hosting too); `installer\Verify-Install.ps1` does the same from a tester's link.
@@ -178,12 +192,13 @@ Three details are easy to get wrong and hard to debug:
 ```
 app/            the companion app: src/, tests/, vendor/ (llama.cpp and xn-ptts submodules, qwen3-tts, opus, headers)
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
-installer/      Stage.ps1, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
-scripts/        fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
+installer/      Stage.ps1, publish.py, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
+scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
 tools/          assemble_db.py, fetch_drop.py, s3_sign.py
 data/           schema.sql (the shipped database's schema), DROP (the pin), kcd2/voices/ (catalogues)
 third_party/    sqlite3 (shared by app and mod); moonshine/ when fetched
 setting.txt     the world setting every conversation's prompt opens with
+VERSION         the version the next release will follow on from (scripts/release.sh bumps it)
 ```
 
 Not here: the generators, the probes, the design journal and the benchmarks, which live

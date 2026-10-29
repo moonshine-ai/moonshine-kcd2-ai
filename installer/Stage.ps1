@@ -15,7 +15,7 @@
 #     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, README.txt, VERSION.txt, LICENSES\
 #     setting.txt, manifest.json
 #     data\kcd2\npcs.sqlite         a vacuumed copy of the assembled database
-#     data\kcd2\voices\             phrases\, voices.txt, facials.txt, lexicon.tsv
+#     data\kcd2\voices\             phrases\ (the lines in voices this package has), voices.txt, facials.txt, lexicon.tsv
 #     models\embeddinggemma-300m-q8_0.gguf
 #     models\phonon-31m-en\         the voice: model, tokenizer, voices\*.safetensors
 #     models\llm\<name>.gguf        the one GGUF under models\llm
@@ -27,14 +27,16 @@
 # models\, mod\, about 3 GB) Setup downloads itself on the tester's machine, from [Files]
 # entries this script writes to release\stage\download_files.iss out of the manifest: the
 # models from where scripts\models.tsv pins them (Hugging Face, download.moonshine.ai), the
-# database, voices and mod from <DownloadBase>/<Version>/<path>. Fetch-Package.ps1 reads
-# the same manifest afterwards, for repairs and for Moonshine.ps1 -Update. What has to go
-# up at <DownloadBase> is written to <Repo>\release\publish\:
-#
-#   <Version>\data\..., mod\...     the files the manifest points at
-#   <Version>\manifest.json         the same manifest, with the installer's hash added
-#   <Version>\Moonshine-<Version>-setup.exe
-#   latest\manifest.json            what Moonshine.ps1 -Update reads; copy it up last
+# database, voices and mod from <DownloadBase>/blobs/<sha256>/<name>. The files are named
+# by their bytes, not by the version, so one that has not changed since the last release
+# is the same URL and is never uploaded twice, and one that has changed lands beside the
+# old one rather than over it: every installer ever handed out keeps finding exactly the
+# bytes its manifest names. Fetch-Package.ps1 reads the same manifest afterwards, for
+# repairs and for Moonshine.ps1 -Update. Under <Repo>\release\publish\<Version>\ go the
+# manifest (with the installer's hash added) and the installer; installer\publish.py (or
+# scripts/release.sh, which runs all of this from the repository) puts those and the
+# blobs the manifest names up at <DownloadBase>, then <DownloadBase>/latest/manifest.json,
+# which is what an installed Moonshine.ps1 -Update reads.
 #
 # The installer, its uninstaller and moonshine_app.exe are Authenticode-signed through Azure
 # Artifact Signing when installer\signing.json is present (the account, certificate profile
@@ -215,7 +217,35 @@ $voicesOut = Join-Path $pkg 'data\kcd2\voices'
 # The clones\ folder of .qvoice recordings was the Qwen3-TTS engine's and is not shipped;
 # one left in the stage by an earlier build goes.
 if (Test-Path -LiteralPath (Join-Path $voicesOut 'clones')) { Remove-Item -LiteralPath (Join-Path $voicesOut 'clones') -Recurse -Force }
-Mirror (Join-Path $voices 'phrases') (Join-Path $voicesOut 'phrases')
+# The lines spoken ahead (phrases\index.tsv: hash, voice, words; the audio beside it as
+# <hash>.opus), but only those in a voice this package carries. A line baked in a voice
+# that is gone -- the drop's are still in the Qwen3-TTS recordings, pete-male and the
+# rest -- would never be asked for and would be heard in the wrong voice if it were, so
+# it stays behind; the folder ships with its index and whatever lines pass, or empty.
+$phrasesIn = Join-Path $voices 'phrases'
+$phrasesOut = Join-Path $voicesOut 'phrases'
+$voiceNames = @(Get-ChildItem -LiteralPath (Join-Path $Repo 'models\phonon-31m-en\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
+if (Test-Path -LiteralPath $phrasesOut) { Remove-Item -LiteralPath $phrasesOut -Recurse -Force }
+Ensure-Dir $phrasesOut
+$kept = New-Object System.Collections.Generic.List[string]
+$kept.Add('# hash, actor, words. Opus at 16 kbit/s beside this file, one line each.')
+$dropped = 0
+if (Test-Path -LiteralPath (Join-Path $phrasesIn 'index.tsv')) {
+    foreach ($line in Get-Content -LiteralPath (Join-Path $phrasesIn 'index.tsv')) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $cols = $line.Split("`t")
+        if ($cols.Count -lt 3) { continue }
+        $opus = Join-Path $phrasesIn ($cols[0] + '.opus')
+        if ($voiceNames -contains $cols[1] -and (Test-Path -LiteralPath $opus)) {
+            Copy-Same $opus (Join-Path $phrasesOut ($cols[0] + '.opus'))
+            $kept.Add($line)
+        } else {
+            $dropped++
+        }
+    }
+}
+Write-Utf8 (Join-Path $phrasesOut 'index.tsv') (($kept -join "`n") + "`n")
+Write-Output ("  phrases: " + ($kept.Count - 1) + " line(s) spoken ahead" + $(if ($dropped) { ", $dropped left behind (not in a voice this package carries)" } else { '' }))
 foreach ($name in @('facials.txt', 'lexicon.tsv')) {
     Copy-Same (Join-Path $voices $name) (Join-Path $voicesOut $name)
 }
@@ -280,12 +310,27 @@ if (-not (Test-Path -LiteralPath (Join-Path $modSrc 'mod.manifest'))) { Fail "no
 Mirror $modSrc (Join-Path $pkg 'mod\moonshine_names')
 # Where an earlier Stage.ps1 put it.
 if (Test-Path -LiteralPath (Join-Path $stage 'mod')) { Remove-Item -LiteralPath (Join-Path $stage 'mod') -Recurse -Force }
+# The mod's manifest says which build it is, and release\mod was built whenever it was
+# (scripts/build_mod.sh stamps it with the version of that day). The staged copy is
+# stamped with this release's: its <version>, and the "tester build N" its description
+# names, so the mod a tester sees in the game's mod list and the app beside it agree.
+# Only the manifest; the paks are the same bytes and keep their URLs.
+$modManifest = Join-Path $pkg 'mod\moonshine_names\mod.manifest'
+$modXml = [IO.File]::ReadAllText($modManifest)
+$stamped = $modXml -replace '<version>[^<]*</version>', "<version>$Version</version>" -replace 'tester build \d+(\.\d+)+', "tester build $Version"
+if ($stamped -ne $modXml) {
+    Write-Utf8 $modManifest $stamped
+    Write-Output "  mod.manifest stamped $Version"
+}
 
 # --- the manifest --------------------------------------------------------------------------
 # Every file under data\, models\ and mod\: path, size, sha256, and where Fetch-Package.ps1
 # gets it. The models' URLs are the pins in scripts\models.tsv (and the staged bytes must
-# match the pins); everything else is <DownloadBase>/<Version>/<path>. Hashing 8 GB is a
-# minute, so hashes are kept beside the stage, keyed by size and time.
+# match the pins); everything else is <DownloadBase>/blobs/<sha256>/<name>, the file's own
+# hash, so a release re-uses what an earlier one uploaded and never overwrites it (the
+# name on the end is for whoever reads a log or a bucket listing; the hash is the
+# address). Hashing 8 GB is a minute, so hashes are kept beside the stage, keyed by size
+# and time.
 Step 'manifest'
 $hashCache = Join-Path $stage 'sha256-cache.json'
 $cache = @{}
@@ -329,7 +374,7 @@ foreach ($top in @('data', 'mod', 'models')) {
             $url = $pin.url
         } else {
             $sha = Sha256-Cached $file.FullName $rel
-            $url = $DownloadBase + '/' + $Version + '/' + (($rel -split '/' | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/')
+            $url = $DownloadBase + '/blobs/' + $sha + '/' + [Uri]::EscapeDataString($file.Name)
         }
         [void]$entries.Add([ordered]@{ path = $rel; bytes = $file.Length; sha256 = $sha; url = $url })
         $payload += $file.Length
@@ -350,7 +395,7 @@ $manifest = [ordered]@{
 }
 $manifestPath = Join-Path $pkg 'manifest.json'
 Write-Utf8 $manifestPath ($manifest | ConvertTo-Json -Depth 4)
-Write-Output ("  " + $entries.Count + " files, " + [math]::Round($payload / 1GB, 2) + " GB to download; models from their pins, the rest from $DownloadBase/$Version/")
+Write-Output ("  " + $entries.Count + " files, " + [math]::Round($payload / 1GB, 2) + " GB to download; models from their pins, the rest from $DownloadBase/blobs/")
 
 # The same list as [Files] entries for moonshine.iss, which includes this file: Setup
 # downloads each file itself, inside its own progress bar, and checks the sha256. Two
@@ -400,12 +445,18 @@ $total = (Get-ChildItem -LiteralPath $pkg -Recurse -File | Measure-Object Length
 Write-Output ("package: " + [math]::Round($total / 1GB, 2) + " GB in " + $pkg)
 
 # --- what goes up --------------------------------------------------------------------------
-# The files the manifest points at under <DownloadBase>, in the layout the URLs expect;
-# the manifest itself; the installer, once built, with its hash in the published manifest
-# (the one inside the installer cannot carry its own hash).
+# The manifest, and the installer once built, with its hash in the published manifest (the
+# one inside the installer cannot carry its own hash). The files the manifest points at
+# are not copied here: publish.py reads them out of the stage, by the paths and hashes the
+# manifest gives, and uploads only those the bucket does not have.
 Step 'publish tree'
 $publish = Join-Path $Repo "release\publish\$Version"
-foreach ($top in @('data', 'mod')) { Mirror (Join-Path $pkg $top) (Join-Path $publish $top) @() @('*.from') }
+Ensure-Dir $publish
+# The copies of data\ and mod\ an earlier Stage.ps1 (to 0.9.97) laid out here for upload.
+foreach ($top in @('data', 'mod')) {
+    if (Test-Path -LiteralPath (Join-Path $publish $top)) { Write-Output "  removing $top\ (served from blobs\ now)"; Remove-Item -LiteralPath (Join-Path $publish $top) -Recurse -Force }
+}
+if (Test-Path -LiteralPath (Join-Path $Repo 'release\publish\latest')) { Remove-Item -LiteralPath (Join-Path $Repo 'release\publish\latest') -Recurse -Force }
 Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $publish 'manifest.json') -Force
 Write-Output "  $publish"
 
@@ -440,9 +491,9 @@ if ($signCmd) {
 }
 Write-Output "installer: $out"
 
-# The installer into the publish tree, and its hash into the published manifests. The
-# latest\ copy is what an installed Moonshine.ps1 -Update compares itself against, so it
-# is the last thing to upload, after everything it names is there.
+# The installer into the publish tree, and its hash into the published manifest. The same
+# bytes become <DownloadBase>/latest/manifest.json when publish.py has put up everything
+# they name; that is what an installed Moonshine.ps1 -Update compares itself against.
 $setupOut = Join-Path $out $setupName
 if (-not (Test-Path -LiteralPath $setupOut)) { Fail "ISCC did not write $setupOut" }
 Copy-Same $setupOut (Join-Path $publish $setupName)
@@ -451,8 +502,5 @@ $manifest.setup = [ordered]@{
     bytes  = (Get-Item -LiteralPath $setupOut).Length
     sha256 = (Get-FileHash -LiteralPath $setupOut -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-$published = $manifest | ConvertTo-Json -Depth 4
-Write-Utf8 (Join-Path $publish 'manifest.json') $published
-Ensure-Dir (Join-Path $Repo 'release\publish\latest')
-Write-Utf8 (Join-Path $Repo 'release\publish\latest\manifest.json') $published
-Write-Output "upload: release\publish\$Version\ to $DownloadBase/$Version/, then release\publish\latest\manifest.json to $DownloadBase/latest/"
+Write-Utf8 (Join-Path $publish 'manifest.json') ($manifest | ConvertTo-Json -Depth 4)
+Write-Output "publish: py -3 installer\publish.py --version $Version   (the R2 credentials in the environment, or scripts/release.sh from the repository)"

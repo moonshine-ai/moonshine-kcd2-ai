@@ -132,12 +132,14 @@ std::string stand_in_voice(std::string_view gender) {
 namespace {
 
 // The catalogue's twelve British voices, by the age the game gives a soul. Henry's
-// (kHenryVoice, teddy) is in no pool. Within a pool the choice is a hash of the soul, so
+// (kHenryVoice, spencer) is in no pool. Within a pool the choice is a hash of the soul, so
 // the biggest group, adult men, is spread across four voices rather than one.
 //
 // The ages are voice.xml's: a young man is alfie (the catalogue's young adult) or toby;
-// a middle-aged or elderly one is hugh, edwin or spencer (its middle-aged men; spencer's
-// slow, patient delivery suits the old). The women the same way: freya and elodie-rose
+// a middle-aged or elderly one is hugh, edwin or teddy. Teddy is the catalogue's young
+// adult, and sits in the older men's places because he took them from spencer when
+// spencer became Henry (28 Oct 2026); his pitch drops low for a clause, which carries it
+// better than the description suggests. The women the same way: freya and elodie-rose
 // are the catalogue's young voices, lottie its young adult, maeve, pippa and imogen its
 // adults. A soul with no age is any of their gender's.
 //
@@ -151,10 +153,10 @@ struct VoicePool {
 
 constexpr VoicePool kMen[] = {
     {"young", 2, {"alfie", "toby"}},
-    {"adult", 4, {"toby", "edwin", "hugh", "spencer"}},
-    {"middle-aged", 3, {"hugh", "edwin", "spencer"}},
-    {"elderly", 2, {"spencer", "hugh"}},
-    {"", 5, {"toby", "alfie", "edwin", "hugh", "spencer"}},
+    {"adult", 4, {"toby", "edwin", "hugh", "teddy"}},
+    {"middle-aged", 3, {"hugh", "edwin", "teddy"}},
+    {"elderly", 2, {"teddy", "hugh"}},
+    {"", 5, {"toby", "alfie", "edwin", "hugh", "teddy"}},
 };
 
 constexpr VoicePool kWomen[] = {

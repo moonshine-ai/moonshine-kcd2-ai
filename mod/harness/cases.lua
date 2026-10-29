@@ -2611,6 +2611,43 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not hailed once accepted")
 end)
 
+-- The shout's line taken down though a conversation opened on it (bugs.txt 28 Oct 2026:
+-- Christine's greeting stayed on the screen for minutes after the talk it opened): the
+-- hide runs with a dialogue up, and Leave takes down a line the timer has not.
+case("Hail hide: the narrative line comes down after hailSeconds though a conversation has opened meanwhile, and a conversation's end takes down one still up", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil or q.hail == nil then check(true, "no hail in this data"); return end
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
+    M.WatchArm("world")
+    local mark = E.mark()
+    E.advance(2100)
+    check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed")
+    local function hides(from)
+        local n = 0
+        for i = from + 1, #E.hud.calls do
+            if E.hud.calls[i] == "HideNarrativeSubtitles" then n = n + 1 end
+        end
+        return n
+    end
+    local hudMark = #E.hud.calls
+    E.advance(M.hailWordsMs + 100)
+    check(M.hailUp == true, "the line up")
+    -- Henry presses Talk on him with the line up: a conversation is open when the hide
+    -- comes due, and it hides all the same.
+    M.active = true
+    E.advance(M.hailSeconds * 1000 + 500)
+    check(hides(hudMark) == #M.hudIds and M.hailUp == false, "hidden on time with a conversation open")
+    -- A line still up at a conversation's end goes with it.
+    hudMark = #E.hud.calls
+    M.hailUp = true
+    M.Leave("the case")
+    check(M.active == false and hides(hudMark) == #M.hudIds and M.hailUp == false, "Leave takes a line still up down")
+    hudMark = #E.hud.calls
+    M.HailHide()
+    check(hides(hudMark) == 0, "and nothing twice")
+end)
+
 case("Hail hours: a giver with a day written is not hailed outside it (asleep, at her supper), and is within it", function(E, M, check)
     -- Christine's hours (hail_hours 8-20; notes.md 25 Oct 2026): the hail only in them, as
     -- her marker is only on the map in them (the graph's giverDay). Benesh has no hours and
@@ -2847,7 +2884,7 @@ case("Expose: the holder caught at the bedside in the night hours makes the toke
     local f = M.state.quests[id]
     check(f.seen == true and string.find(M.QuestFlagLetters(f), "s", 1, true) ~= nil, "seen in the store, the letter s")
     check(E.gvar(q.seenVar) == 1, "the seen global up for the menu's expose row")
-    check(E.count("BRIDGE quest token made", mark) == 1, "the caught token for the graph")
+    check(M.Count(player, q.token) == 1, "the caught token for the graph")
     E.advance(4100)
     check(E.count("BRIDGE quest " .. id .. " caught", mark) == 1, "and not caught again: the watch is done with it")
     check(M.Count(player, q.token) == 0, "the token gone a moment later")
@@ -2938,14 +2975,26 @@ end)
 -- The street (notes.md 23 Oct 2026, n8; 24 Oct 2026): the watch looks for Henry through the
 -- holder's eyes each tick of the walk home -- the hours, the street, his facing, the
 -- distance, the ray between their eyes -- and a sighting is his night.
-case("Followed: the holder catching sight of Henry in the walk's hours in the street is his night: the store, the global, the token, his Talk asked for; not by day, not far, not behind him, not through a wall, not at her side; close counts from any side; over by morning; Henry's own words as the man first comes near and once he has turned on him", function(E, M, check)
+case("Followed: the holder catching sight of Henry in the walk's hours in the street is his night: the store, the global, the token, his Talk asked for; not by day, not far, not behind him, not through a wall, not at her side, not standing still nor the tick after the engine set him down, not in the grace after the clock jumped; close counts from any side; over by morning; Henry's own words as the man first comes near and once he has turned on him", function(E, M, check)
     local id, q = byExposure(M)
     if id == nil or q.followHours == nil then check(true, "no followed lines in this data"); return end
     check(q.followedVar ~= nil and q.followToken ~= nil and #q.followHours == 2, "the global, the token and the hours")
     local giver = E.soul(q.giver)
-    -- The holder in the street facing +y, the witness a hundred metres off.
-    local priest = E.soul(q.target, { pos = { x = 400, y = 300, z = 10 } })
+    -- The holder in the street facing +y, the witness a hundred metres off. He walks a
+    -- metre up the street each tick (walk), Henry keeping his place behind or before him,
+    -- since a sighting wants a man on his walk (bugs.txt 28 Oct 2026): py is where he is,
+    -- and henry() puts Henry about him.
+    local py = 300
+    local priest = E.soul(q.target, { pos = { x = 400, y = py, z = 10 } })
     local matilda = E.soul(q.seenWith, { pos = { x = 300, y = 301, z = 10 } })
+    local function henry(dx, dy) player:SetWorldPos({ x = 400 + dx, y = py + dy, z = 10 }) end
+    local function walk(ms)
+        local h = player:GetWorldPos()
+        py = py + 1
+        priest:SetWorldPos({ x = 400, y = py, z = 10 })
+        player:SetWorldPos({ x = h.x, y = h.y + 1, z = h.z })
+        E.advance(ms)
+    end
     M.npc = giver
     M.QuestCommand(q.letterOf, "accept")
     M.QuestCommand(q.letterOf, "wrote_200")
@@ -2959,67 +3008,89 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
           "the graph's console command still registered for the probes: " .. tostring((E.commands["mn_graph"] or {}).body))
     local said = "BRIDGE quest " .. id .. " followed " .. q.target
     local warned = "BRIDGE quest " .. id .. " follow warn"
+    local held = "BRIDGE quest " .. id .. " follow held"
     check(M.followSeeMetres == 12 and M.followWarnMetres == 25, "twelve metres to be seen, twenty-five to be warned")
+    check(M.followStepMetres == 0.5 and M.followJumpMetres == 15 and M.followGraceSeconds == 30 and M.clockJumpSeconds == 900,
+          "half a metre is a step, fifteen a re-placing, thirty seconds of grace after a clock jump of fifteen minutes")
     -- By day, Henry before him: nothing, not even the warning.
     E.hour = 12
-    player:SetWorldPos({ x = 400, y = 310, z = 10 })
+    henry(0, 10)
     local mark = E.mark()
-    E.advance(2100)
+    walk(2100)
+    walk(2100)
     check(not E.find(said, mark) and not E.find(warned, mark), "not by day")
     -- The walk's hour, Henry too far up the street for either.
     E.hour = 20
-    player:SetWorldPos({ x = 400, y = 300 + M.followWarnMetres + 5, z = 10 })
-    E.advance(2100)
+    henry(0, M.followWarnMetres + 5)
+    walk(2100)
     check(not E.find(said, mark) and not E.find(warned, mark), "not out of sight, not yet near")
     -- Twenty metres before him, but Henry looking the other way (the man out of the
     -- camera's frame), then a wall between their eyes: near enough for Henry's word to
     -- himself, not to be seen, and the word waits on the view (notes.md 25 Oct 2026).
-    player:SetWorldPos({ x = 400, y = 320, z = 10 })
+    henry(0, 20)
     E.framed = false
-    E.advance(2100)
+    walk(2100)
     check(not E.find(said, mark), "twenty metres is out of his sight")
     check(not E.find(warned, mark), "no warning with the man out of Henry's frame")
     check(#E.framedAsked > 0 and E.framedAsked[#E.framedAsked].z == 10 + M.followEyeMetres, "the frame asked for his head")
     E.framed = true
     E.walled = true
-    E.advance(2100)
+    walk(2100)
     check(not E.find(warned, mark), "no warning through a wall")
     E.walled = false
-    E.advance(2100)
+    walk(2100)
     if q.followWarn ~= nil then
         check(E.find(warned, mark) and E.find("in view", mark) and E.find("BRIDGE voice henry " .. q.followWarn, mark),
               "Henry's warning to himself once the man is before his eyes, in his voice")
-        E.advance(2100)
+        walk(2100)
         check(E.count(warned, mark) == 1, "the warning once")
     else
         check(not E.find(warned, mark), "no warning written")
     end
     -- Ten metres behind him: not seen.
-    player:SetWorldPos({ x = 400, y = 290, z = 10 })
-    E.advance(2100)
+    henry(0, -10)
+    walk(2100)
     check(not E.find(said, mark), "not behind him")
     -- Ten metres before him but a wall between: not seen, and the ray was asked for
     -- from eye height, past the two of them.
     E.walled = true
-    player:SetWorldPos({ x = 400, y = 310, z = 10 })
+    henry(0, 10)
     local rays = #E.rays
-    E.advance(2100)
+    walk(2100)
     check(not E.find(said, mark), "not through a wall")
     local ray = E.rays[#E.rays]
     check(#E.rays > rays and ray ~= nil and ray.from.z == 10 + M.followEyeMetres and ray.to.z == 10 + M.followEyeMetres
           and ray.skip1 == priest.id and ray.skip2 == player.id, "the ray between their eyes, the two of them passed over")
     E.walled = false
+    -- The man stops in the street, Henry behind him, for longer than a pause in a walk
+    -- (followStillSeconds); then Henry steps before him, in his sight: no night lost with
+    -- the man standing, and the log says why, once.
+    henry(0, -10)
+    check(M.followStillSeconds == 6, "six seconds of standing is no longer a walk")
+    E.advance(M.followStillSeconds * 1000 + 2100)
+    check(not E.find(said, mark) and not E.find(held, mark), "nothing said of a man standing with Henry behind him")
+    henry(0, 10)
+    E.advance(2100)
+    E.advance(2100)
+    check(not E.find(said, mark), "not with the man standing")
+    check(E.count(held, mark) == 1 and E.find(held .. ", " .. q.target .. " at 10.0m, ahead, standing", mark),
+          "held for his standing, said once")
     -- At the witness's side: the door's and the bedside's business, not the street's.
     priest:SetWorldPos({ x = 300, y = 300, z = 10 })
     player:SetWorldPos({ x = 300, y = 305, z = 10 })
     E.advance(2100)
     check(not E.find(said, mark), "not at the witness's side")
-    -- The street, in the walk's hour, Henry ten metres before him: followed, within the
-    -- second since the watch is on its quick tick with the holder near Henry.
-    priest:SetWorldPos({ x = 400, y = 300, z = 10 })
-    player:SetWorldPos({ x = 400, y = 310, z = 10 })
+    -- Back in the street a hundred metres off, Henry ten metres before him: the engine has
+    -- set him down, and the tick after that is for settling, not judging.
+    priest:SetWorldPos({ x = 400, y = py, z = 10 })
+    henry(0, 10)
     check(M.watchQuick == true, "the quick tick, the holder having been near Henry")
-    E.advance(1100)
+    walk(1100)
+    check(not E.find(said, mark), "not the tick after he was set down")
+    check(E.find(held .. ", " .. q.target .. " at 10.0m, ahead, set down ", mark), "held for the re-placing")
+    -- The street, in the walk's hour, Henry ten metres before him, the man walking:
+    -- followed, within the second since the watch is on its quick tick.
+    walk(1100)
     check(E.find(said, mark), "followed in the street in the walk's hour, within the second")
     check(E.find("10.0m, ahead", mark), "the distance and the sighting in the log")
     check(M.state.quests[id].followed == true, "in the store")
@@ -3032,13 +3103,29 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     check(M.Count(player, q.followToken) == 0, "the token gone again")
     check(not E.find("BRIDGE quest " .. id .. " caught", mark), "and no catching")
     -- Seen again the same night: nothing more.
-    E.advance(2100)
+    walk(2100)
     check(E.count(said, mark) == 1, "once a night")
-    -- His Talk closes on the followed row (its exit script): Henry's word on the night, a
-    -- moment on, once the dialogue is gone.
+    -- The request only queued and no Talk opened (the harness's RequestDialog, like his
+    -- behaviour tree on 28 Oct 2026, opens nothing): the mod says the row itself, his line
+    -- in his voice with his mouth, Henry's answer once it has been read, then the night
+    -- given up; and the global comes down so a later Talk on him is his day's.
+    local rowSaid = "BRIDGE quest " .. id .. " holder's Talk never opened, the row said in the street"
+    check(not E.find(rowSaid, mark), "the request given its time first")
+    E.advance(M.followTalkWaitMs)
+    check(E.find(rowSaid, mark), "the row said by the mod after the request went unanswered")
+    check(E.find("BRIDGE voice " .. q.holderVoice .. " soul=" .. q.target .. " " .. q.followedLine, mark),
+          "his line in his voice, his mouth")
+    check(M.state.quests[id].followedSaid == true and E.gvar(q.followedVar) == 0, "the row noted, the global down")
+    check(not E.find("BRIDGE voice henry " .. q.followedReply, mark), "Henry's answer not in the same breath")
+    local waited = 0
+    while not E.find("BRIDGE voice henry " .. q.followedReply, mark) and waited < 20000 do
+        E.advance(500)
+        waited = waited + 500
+    end
+    check(E.find("BRIDGE voice henry " .. q.followedReply, mark) and waited >= (M.Reading(q.followedLine) - 5) * 1000,
+          "Henry's answer once his line has been read")
     local over = "BRIDGE quest " .. id .. " follow over"
-    M.QuestStage(id, "open followed")
-    check(not E.find(over, mark), "not in the same breath")
+    check(not E.find(over, mark), "the night not given up in the same breath")
     E.advance(M.followOverMillis + 100)
     if q.followOver ~= nil then
         check(E.find(over, mark) and E.find("BRIDGE voice henry " .. q.followOver, mark), "Henry gives the night up, in his voice")
@@ -3052,21 +3139,29 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     -- this time Henry is behind him but close enough to hear.
     check(type(M.state.quests[id].followedAt) == "number", "the sighting's clock in the store")
     E.hour = 12
-    E.advance(2100)
+    walk(2100)
     check(not E.find("BRIDGE quest " .. id .. " followed night over", mark), "a daytime reading minutes on clears nothing")
     check(M.state.quests[id].followed == true and (q.followWarn == nil or M.followWarned[id] ~= nil),
           "the night and the warning stand")
     E.hour = 9
     E.worldBase = E.worldBase + M.followClearSeconds + 60
-    E.advance(2100)
+    walk(2100)
     check(E.find("BRIDGE quest " .. id .. " followed night over", mark), "over in the morning")
-    check(E.gvar(q.followedVar) == 0 and M.state.quests[id].followed == nil and M.state.quests[id].followedAt == nil,
-          "the global down, the store cleared")
+    check(E.gvar(q.followedVar) == 0 and M.state.quests[id].followed == nil and M.state.quests[id].followedAt == nil
+          and M.state.quests[id].followedSaid == nil, "the global down, the store cleared")
     check(M.followWarned[id] == nil, "the warning cleared for the next night")
+    -- The clock's jump (the morning's six hours) opened the grace: for thirty seconds no
+    -- sighting, though Henry is close behind him on his walk; then the next night is
+    -- another.
+    check(E.find("BRIDGE quest follow grace, the clock jumped", mark), "the clock's jump noted")
     E.hour = 20
-    player:SetWorldPos({ x = 400, y = 297, z = 10 })
-    E.advance(2100)
-    check(E.count(said, mark) == 2, "the next night is another")
+    henry(0, -3)
+    walk(2100)
+    check(E.count(said, mark) == 1, "not in the grace after the clock jumped")
+    check(E.find(held .. ", " .. q.target .. " at 3.0m, close, in the grace", mark), "held for the grace")
+    E.advance(M.followGraceSeconds * 1000)
+    walk(2100)
+    check(E.count(said, mark) == 2, "the next night is another, the grace over")
     check(E.find("3.0m, close", mark), "close behind him counts")
     if q.followWarn ~= nil then
         check(E.count(warned, mark) == 1 and E.count("BRIDGE voice henry " .. q.followWarn, mark) == 1,
@@ -3078,6 +3173,75 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     check(E.find("BRIDGE graph said seen of unknown quest nobody", mark), "an unknown quest is said and dropped")
     M.GraphSaid("seen", id, "short")
     check(E.find("BRIDGE graph said seen " .. id .. " short", mark) and E.count(said, mark) == 0, "a graph's word is logged and judges nothing")
+end)
+
+-- The street night's marker (bugs.txt 28 Oct 2026): on the holder from his homecoming to
+-- the night window's end, off otherwise and for a night he has caught Henry behind him;
+-- each change one token for the graph's markShown or markHidden trigger, the store
+-- remembering which the map has.
+case("Marker: a followed holder's marker goes on him at his homecoming hour and off at the night's end, by one token each way, and comes off for a night he has caught Henry following him", function(E, M, check)
+    local id, q = byExposure(M)
+    if id == nil or q.followHours == nil then check(true, "no followed lines in this data"); return end
+    check(q.markHours ~= nil and q.markHours[1] == 21 and q.markHours[2] == q.hours[2],
+          "the marker's hours run from his homecoming (routine_home_at 21:00) to the night window's end")
+    check(q.markShown == "6d6f6f6e-7368-4d00-8000-" .. id and q.markHidden == "6d6f6f6e-7368-6d00-8000-" .. id,
+          "the two tokens are the quest's own class under the M and m prefixes")
+    local giver = E.soul(q.giver)
+    E.soul(q.target, { pos = { x = 400, y = 300, z = 10 } })
+    E.soul(q.seenWith, { pos = { x = 300, y = 301, z = 10 } })
+    player:SetWorldPos({ x = 0, y = 0, z = 0 })
+    M.npc = giver
+    M.QuestCommand(q.letterOf, "accept")
+    M.QuestCommand(q.letterOf, "wrote_200")
+    E.delivered(q.letterOf, "cursed")
+    M.QuestCommand(q.letterOf, "complete")
+    M.npc = giver
+    E.hour = 12
+    local mark = E.mark()
+    M.QuestCommand(id, "accept")
+    E.advance(2100)
+    local on, off = "BRIDGE quest " .. id .. " marker on " .. q.target, "BRIDGE quest " .. id .. " marker off " .. q.target
+    check(not E.find(on, mark) and not E.find(off, mark) and M.state.quests[id].marked == nil,
+          "nothing by day at the accept: the objective's Started line carries no marker of its own")
+    -- His homecoming hour: on, once.
+    E.hour = 21.2
+    E.advance(2100)
+    check(E.count(on, mark) == 1 and M.state.quests[id].marked == true, "on at his homecoming, in the store")
+    check(M.Count(player, q.markShown) == 1 and M.Count(player, q.markHidden) == 0, "the shown token in Henry's pocket")
+    E.advance(2100)
+    check(M.Count(player, q.markShown) == 0, "and gone a moment later")
+    E.hour = 2
+    E.advance(2100)
+    check(E.count(on, mark) == 1 and not E.find(off, mark), "still on in the small hours, no second token")
+    -- The night's end: off, once.
+    E.hour = q.hours[2] + 0.5
+    E.advance(2100)
+    check(E.count(off, mark) == 1 and M.state.quests[id].marked == false, "off at the night's end")
+    check(M.Count(player, q.markHidden) == 1, "the hidden token in Henry's pocket")
+    E.advance(2100)
+    check(M.Count(player, q.markHidden) == 0, "and gone")
+    E.hour = 12
+    E.advance(2100)
+    check(E.count(off, mark) == 1, "no second token by day")
+    -- The next evening he catches Henry behind him: the graph's Followed state carries no
+    -- marker, so the store alone comes down, with no token; and his marker is not put back
+    -- while the night is his. The morning's clearing and the evening after put it back.
+    E.hour = 21.5
+    E.advance(2100)
+    check(E.count(on, mark) == 2, "on again the next evening")
+    local tokens = E.count("BRIDGE quest token made", mark)
+    M.StateQuest(id, "followed")
+    check(M.state.quests[id].marked == false, "the store's marker down with the sighting")
+    E.advance(2100)
+    check(E.count(on, mark) == 2 and E.count(off, mark) == 1 and E.count("BRIDGE quest token made", mark) == tokens,
+          "no token for it, and not put back for the night")
+    M.StateQuest(id, "unfollowed")
+    E.hour = 9
+    E.advance(2100)
+    check(E.count(on, mark) == 2, "nor in the morning")
+    E.hour = 21.5
+    E.advance(2100)
+    check(E.count(on, mark) == 3 and M.state.quests[id].marked == true, "on again the evening after")
 end)
 
 -- The bedside on top of the catching (notes.md 22 Oct 2026): the catching itself says
@@ -3198,6 +3362,8 @@ case("Carried: the fast_travel directive waits for the Talk to close, then winds
     E.advance(1100)
     check(E.find("BRIDGE quest " .. id .. " carried Henry to", mark) and E.find("0.0m off", mark), "and said so in the log, with how far off")
     check(M.state.quests[id].accepted == before and M.state.quests[id].done ~= true, "nothing in the store for it")
+    check(type(M.followGraceAt) == "number" and M.Now() - M.followGraceAt < 5,
+          "the street watch told of the carry, for its grace (bugs.txt 28 Oct 2026)")
     -- Past the hour already: tomorrow's, so the clock goes forward, never back.
     E.hour = q.fastTravel.at + 1
     M.QuestCommand(id, "fast_travel")
