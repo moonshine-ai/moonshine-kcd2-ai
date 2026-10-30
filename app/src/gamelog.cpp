@@ -25,8 +25,11 @@ constexpr std::string_view kQuit = "CSystem::Quit invoked";
 constexpr std::string_view kHook = "BRIDGE hook ";
 constexpr std::string_view kConsole = "BRIDGE console ";
 constexpr std::string_view kConsoleLine = "BRIDGE console line ";
-// The menu's say row went live, and stopped being: "BRIDGE say start", "BRIDGE say stop --
-// sent" (or back, moved, conversation over). The line itself, once sent, is a said line.
+// The menu's say row went live, and stopped being: "BRIDGE say start voice" (the talk
+// button, the microphone) or "BRIDGE say start typed" (the row picked, the keyboard), then
+// "BRIDGE say stop -- sent" (or back, moved, conversation over). A mod from before the two
+// ways were told apart writes the start bare, which is read as voice: that mod's row took
+// both. The line itself, once sent, is a said line.
 constexpr std::string_view kSayStart = "BRIDGE say start";
 constexpr std::string_view kSayStop = "BRIDGE say stop";
 constexpr std::string_view kNpc = "npc=";
@@ -194,9 +197,12 @@ Event classify(std::string_view line) {
     if (line.find(kLeft) != std::string_view::npos) {
         return {Marker::Left, 0, {}};
     }
-    // The say row: the app listens between these two.
-    if (line.find(kSayStart) != std::string_view::npos) {
-        return {Marker::SayStart, 0, {}};
+    // The say slot: "voice" or "typed" after the start; bare is an older mod's, and voice.
+    if (const std::size_t at = line.find(kSayStart); at != std::string_view::npos) {
+        Event event{Marker::SayStart, 0, {}};
+        const std::string_view rest = trim(line.substr(at + kSayStart.size()));
+        event.said = rest == "typed" ? "typed" : "voice";
+        return event;
     }
     if (const std::size_t at = line.find(kSayStop); at != std::string_view::npos) {
         Event event{Marker::SayStop, 0, {}};

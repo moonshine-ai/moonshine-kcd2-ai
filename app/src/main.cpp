@@ -253,8 +253,8 @@ struct Args {
     std::string voice = std::string(kDefaultVoice);
     std::filesystem::path voices_path = "data/kcd2/voices";
     std::filesystem::path tts_root;
-    // The microphone, for the menu's say row (listen.h). On unless --no-mic, with the
-    // Moonshine speech model named by --stt-model, or tiny-streaming-en from the cache.
+    // The microphone, for the menu's talk button (listen.h). On unless --no-mic, with the
+    // Moonshine speech model named by --stt-model, or medium-streaming-en from the cache.
     bool mic = true;
     std::filesystem::path stt_model;
     // Listen for this many seconds and print what was heard, then exit (--hear).
@@ -445,10 +445,10 @@ void usage() {
         "  --tts-root DIR  Moonshine Voice assets, the directory that holds kokoro/\n"
         "                  and en_gb/ (default: the moonshine_voice cache, then a\n"
         "                  sibling moonshine checkout)\n"
-        "  --no-mic        do not listen; the menu's \"(Say something else)\" row is\n"
-        "                  typed into only\n"
+        "  --no-mic        do not listen; the talk button does nothing and the menu's\n"
+        "                  \"(Say something else)\" row is typed into only\n"
         "  --stt-model M   the Moonshine speech model to listen with: a model name in\n"
-        "                  the moonshine_voice cache (default tiny-streaming-en) or a\n"
+        "                  the moonshine_voice cache (default medium-streaming-en) or a\n"
         "                  directory holding one\n"
         "  --hear N        listen on the microphone for N seconds, printing the words\n"
         "                  as they are heard, and exit; the ear's --speak\n"
@@ -875,7 +875,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 try {
                     ear = std::make_unique<Ear>(model);
                     std::cout << "ear: " << model.parent_path().filename().string()
-                              << " listens while the say row is up\n";
+                              << " listens while the talk button is held\n";
                 } catch (const std::exception& why) {
                     std::cerr << "ear: " << why.what() << "\n";
                 }
@@ -1025,18 +1025,23 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         std::cout << "   " << option.row << ". [" << option.intent << "] " << option.text
                   << "\n" << std::flush;
     };
-    // The say row going live and stopping: the microphone with it. A microphone that will
-    // not open is reported and the row is left to the keyboard.
-    listener.on_listen = [&ear](bool on) {
-        if (!ear) return;
+    // The talk button going down and coming up: the microphone with it, told the
+    // conversation so far first so the names in it are the ones it expects to hear. A
+    // microphone that will not open is reported, and the session hands the slot to the
+    // keyboard.
+    listener.on_listen = [&ear](bool on, std::string_view context) {
+        if (!ear) return false;
         try {
             if (on) {
+                ear->set_context(context);
                 ear->start();
-            } else {
-                ear->stop();
+                return true;
             }
+            ear->stop();
+            return false;
         } catch (const std::exception& why) {
             std::cerr << "ear: " << why.what() << "\n";
+            return false;
         }
     };
     listener.on_timing = [&args, rate](const Timing& timing) {
@@ -1227,12 +1232,14 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             }
             // What the ear has heard so far, offered to the session on every pass; it sends
             // the words on to the slot when they have changed and the mod has had time to
-            // show the last (Session::heard). Under the lock, like the voice above.
+            // show the last, and the moment the transcriber calls the line finished
+            // (Session::heard). Under the lock, like the voice above.
             if (ear && ear->listening()) {
                 const Held since = std::chrono::steady_clock::now();
+                const Heard heard = ear->heard();
                 std::lock_guard<std::mutex> held(lock);
                 if (quit) return;
-                session.heard(ear->text());
+                session.heard(heard.text, heard.complete);
                 held_by(since, "the words heard so far");
             }
 
@@ -1699,14 +1706,17 @@ int main(int argc, char** argv) try {
             ear.start();
             const auto started = std::chrono::steady_clock::now();
             std::string last;
+            bool last_done = false;
             while (std::chrono::steady_clock::now() - started < std::chrono::seconds(args.hear_seconds)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                const std::string now = ear.text();
-                if (now == last) continue;
-                last = now;
-                printed("[%.1fs] %s\n",
+                const Heard now = ear.heard();
+                if (now.text == last && now.complete == last_done) continue;
+                last = now.text;
+                last_done = now.complete;
+                // The marker is the pause the game sends a spoken line on.
+                printed("[%.1fs]%s %s\n",
                         std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
-                        now.c_str());
+                        now.complete ? " (done)" : "", now.text.c_str());
                 std::fflush(stdout);
             }
             ear.stop();

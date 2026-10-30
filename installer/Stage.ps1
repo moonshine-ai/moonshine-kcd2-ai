@@ -21,7 +21,7 @@
 #     models\embeddinggemma-300m-q8_0.gguf
 #     models\phonon-31m-en\         the voice: model, tokenizer, voices\*.safetensors
 #     models\llm\<name>.gguf        the one GGUF under models\llm
-#     models\stt\tiny-streaming-en\ the one folder under models\stt
+#     models\stt\medium-streaming-en\ the one folder under models\stt
 #     mod\moonshine_names\          from release\mod; Fetch-Package copies it into the game
 #   extra\vc_redist.x64.exe         run by the installer, not installed
 #

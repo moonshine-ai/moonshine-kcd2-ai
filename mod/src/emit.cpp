@@ -6742,14 +6742,37 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".menuOptionRows = " + std::to_string(kMenuOptionRows) + "\n";
     s += g + ".menuLeave = \"(End dialog)\"\n";
     s += "-- The row above the way out: picked, the menu goes and the keyboard opens for a\n";
-    s += "-- line of Henry's own, typed on the mod's keyboard or spoken into the app's\n";
-    s += "-- microphone (say-mode, SayOpen).\n";
+    s += "-- line of Henry's own, typed on the mod's keyboard (say-mode, SayOpen). The same\n";
+    s += "-- line spoken is the talk button (SayTalk), held on a menu that has this row.\n";
     s += g + ".menuSay = \"(Say something else)\"\n";
-    s += "-- Say-mode: the keyboard open from the menu rather than from F9. The line so far is\n";
-    s += "-- `typed`, as it is for the keyboard -- keys append, the app's transcript (SayHeard)\n";
-    s += "-- replaces -- and what differs is Enter (the words, or nothing on an empty line),\n";
-    s += "-- escape and B (the line cleared, or with nothing in it the menu brought back).\n";
+    s += "-- What the say row reads while the microphone has it: the words show in the caption.\n";
+    s += g + ".menuSayListening = \"(Listening...)\"\n";
+    s += "-- Say-mode: a line of Henry's own, from the menu. The line so far is `typed`, as it\n";
+    s += "-- is for the F9 keyboard. Two ways in, told apart by sayMode: \"typed\" is the say\n";
+    s += "-- row picked -- the menu resolved, the keyboard open in its place, keys append,\n";
+    s += "-- Enter sends, escape and B clear the line or with nothing in it bring the menu\n";
+    s += "-- back; \"voice\" is the talk button held on the menu -- the engine's list stays up,\n";
+    s += "-- the app's transcript (SayHeard) replaces the line as it is heard, and the line\n";
+    s += "-- goes by itself once the app hears the pause that ends it and the button is up.\n";
+    s += "-- Neither takes the other's input: keys are nothing to the voice slot and the\n";
+    s += "-- transcript nothing to the typed one, which is what made a slot that took both\n";
+    s += "-- unusable (30 Oct 2026: a word typed into a line being replaced by the ear).\n";
     s += g + ".saying = false\n";
+    s += g + ".sayMode = nil\n";
+    s += "-- The voice slot: the talk button is down; the app's last transcript was a finished\n";
+    s += "-- line (and goes the moment the button is up); a token for the release grace, so a\n";
+    s += "-- press after a release cancels the grace it armed.\n";
+    s += g + ".talkDown = false\n";
+    s += g + ".sayDone = false\n";
+    s += g + ".sayToken = 0\n";
+    s += "-- How long after the button is up, with words heard but no pause yet, before they\n";
+    s += "-- go as heard; and with nothing heard at all, before the slot closes. The app's\n";
+    s += "-- pause is about a second, its hooks land one a pump tick.\n";
+    s += g + ".sayReleaseMillis = 3000\n";
+    s += "-- A voice line went while the engine's decision was still up (it cannot be resolved\n";
+    s += "-- from here): the list is redrawn as the line that went, and the next round's rows\n";
+    s += "-- are drawn over the same decision when they land (MenuSpoken, Choose).\n";
+    s += g + ".menuSpoken = false\n";
     s += "-- Where the say row was drawn at the last draw (SayRow), like menuLeaveRow.\n";
     s += g + ".menuSayRow = " + std::to_string(kMenuRows - 1) + "\n";
     s += "-- Off, and Henry answers on the keyboard as before: for a writer that sends no\n";
@@ -7413,9 +7436,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     s += "-- Typing a reply, for testing a conversation without a microphone. The keyboard is\n";
     s += "-- two actionmaps in the XML named below, loaded at start-up: one that holds F9 and\n";
-    s += "-- is on for the length of a conversation, and an exclusive one that binds every\n";
-    s += "-- key a line could need and is on only while typing, so the game sees none of\n";
-    s += "-- them. Each key arrives at Player:OnAction as mtype_<key>.\n";
+    s += "-- the talk button (RT, or V) and is on for the length of a conversation, and an\n";
+    s += "-- exclusive one that binds every key a line could need and is on only while\n";
+    s += "-- typing, so the game sees none of them. Each key arrives at Player:OnAction as\n";
+    s += "-- mtype_<key>; the talk button as mtalk, both edges.\n";
     s += "--\n";
     s += "-- It is Henry's turn once a line of the other party's has been played and nothing\n";
     s += "-- is owed: typing opens by itself then, Enter prints the line as BRIDGE said for\n";
@@ -9594,6 +9618,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // to the app (say stop), which stops listening.
     s += "\tif " + g + ".saying then " + g + ".SayStop(\"conversation over\") end\n";
     s += "\t" + g + ".SayReset()\n";
+    s += "\t" + g + ".menuSpoken = false\n";
     s += "\t" + g + ".choosing = false\n";
     s += "\t" + g + ".menuWait = false\n";
     s += "\t" + g + ".menuUp = false\n";
@@ -9661,11 +9686,18 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif string.sub(tostring(action), 1, 6) == \"mtype_\" then\n";
     s += "\t\treturn " + g + ".Typed(action, activation)\n";
     s += "\tend\n";
+    // The talk button, from the same toggle map: ours by name too.
+    s += "\tif action == \"mtalk\" then\n";
+    s += "\t\treturn " + g + ".SayTalk(activation)\n";
+    s += "\tend\n";
     s += "\tif not " + g + ".active then return false end\n";
     s += "\t" + g + ".Log(\"action \" .. tostring(action) .. \" \" .. tostring(activation))\n";
     // The pad's A (or the mouse button) with the keyboard open from the menu: the line
     // goes, as Enter sends it. The typing map binds it under the engine's own name, since
     // the engine's map is silenced while ours is up; outside say-mode it is nobody's.
+    // With the voice slot open the engine's own A is also the row under the highlight,
+    // which resolves the decision a moment after this: the words heard go first, and the
+    // pick that follows finds the round over (Picked, menuSpoken).
     s += "\tif action == \"dialog_confirm\" then\n";
     s += "\t\tif " + g + ".saying and activation == \"press\" then pcall(" + g + ".SaySend) end\n";
     s += "\t\treturn false\n";
@@ -9822,7 +9854,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     s += "function " + g + ".Blink()\n";
     s += "\t" + g + ".blinkArmed = false\n";
-    s += "\tif not " + g + ".typing or not " + g + ".active then return end\n";
+    s += "\tif not (" + g + ".typing or " + g + ".SayVoice()) or not " + g + ".active then return end\n";
     s += "\t" + g + ".cursorOn = not " + g + ".cursorOn\n";
     s += "\t" + g + ".Refresh()\n";
     s += "\t" + g + ".BlinkArm()\n";
@@ -9962,8 +9994,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Refresh()\n";
     s += "end\n";
     s += "\n";
+    // The voice slot shows the same way, the words heard where the typed ones would be.
     s += "function " + g + ".Display()\n";
-    s += "\tif not " + g + ".typing then return " + g + ".Page(), " + g + ".above end\n";
+    s += "\tif not " + g + ".typing and not " + g + ".SayVoice() then return " + g + ".Page(), " + g + ".above end\n";
     s += "\tlocal over = \"\"\n";
     s += "\tif " + g + ".words ~= nil then over = " + g + ".Named(" + g + ".words) end\n";
     s += "\treturn " + g + ".playerName .. \": \" .. " + g + ".typed ..\n";
@@ -10666,7 +10699,35 @@ std::string emit_conversation_lua(const std::string& modid,
     // so the menu is up within one beat of the call, and the Beat() of that boundary is
     // the last one until the player picks.
     s += "function " + g + ".Choose()\n";
-    s += "\tif not " + g + ".active or " + g + ".choosing then return end\n";
+    s += "\tif not " + g + ".active then return end\n";
+    // The round after a spoken line: the engine's decision from the last round is still
+    // presented (MenuSpoken), so there is no code to set and no boundary to wait for. The
+    // round's bookkeeping, and the rows drawn over the standing list as they land
+    // (Option -> MenuMaybeDraw, since menuUp holds). Not held for the voice: the camera is
+    // already the menu's, so there is no cut to spare the line.
+    s += "\tif " + g + ".choosing and " + g + ".menuSpoken then\n";
+    s += "\t\t" + g + ".menuSpoken = false\n";
+    s += "\t\t" + g + ".options = {}\n";
+    s += "\t\t" + g + ".menuWait = false\n";
+    s += "\t\t" + g + ".menuUp = true\n";
+    s += "\t\t" + g + ".menuDrawn = 0\n";
+    s += "\t\t" + g + ".menuLeaveRow = " + g + ".menuRows\n";
+    s += "\t\t" + g + ".menuSayRow = " + g + ".menuRows - 1\n";
+    s += "\t\t" + g + ".optionsTotal = nil\n";
+    s += "\t\t" + g + ".menuClosed = false\n";
+    s += "\t\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
+    s += "\t\t" + g + ".SayReset()\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE choose over the standing menu\")\n";
+    // And the grace the entered menu has (MenuEntered): rows that never come whole are
+    // drawn as they are, so the list is not left as the spoken line for good.
+    s += "\t\tlocal token = " + g + ".menuToken\n";
+    s += "\t\tpcall(function() Script.SetTimer(" + g + ".menuGraceMillis, function()\n";
+    s += "\t\t\tif token ~= " + g + ".menuToken or not " + g + ".choosing then return end\n";
+    s += "\t\t\tif " + g + ".menuDrawn == 0 then " + g + ".MenuDraw() end\n";
+    s += "\t\tend) end)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif " + g + ".choosing then return end\n";
     s += "\t" + g + ".speakUntil = 0\n";
     s += "\t" + g + ".choosing = true\n";
     s += "\t" + g + ".options = {}\n";
@@ -10821,7 +10882,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // has to be one of the ways written for the part (notes.md 20 Oct 2026). A closed
     // list with no rows at all is drawn open, since a menu with nothing on it needs its
     // way out.
-    s += "function " + g + ".MenuDraw()\n";
+    //
+    // `sayText` is what the say row reads instead of its usual words: "(Listening...)"
+    // while the talk button has the slot (SayVoiceOpen), and the words again when it lets
+    // go. Each is a draw, with the widget's fade; the words heard themselves go to the
+    // caption, not here, since a draw a transcript would be a flicker a transcript.
+    s += "function " + g + ".MenuDraw(sayText)\n";
     s += "\tif not " + g + ".choosing then return end\n";
     s += "\tlocal values = {}\n";
     s += "\tlocal have = 0\n";
@@ -10840,7 +10906,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal opt = " + g + ".options[row]\n";
     s += "\t\t\tif opt ~= nil then text = opt.text; have = have + 1 else text = \"\"; empty[#empty + 1] = row end\n";
     s += "\t\telseif row == last + 1 then\n";
-    s += "\t\t\ttext = " + g + ".menuSay\n";
+    s += "\t\t\ttext = sayText or " + g + ".menuSay\n";
     s += "\t\tend\n";
     s += "\t\tvalues[#values + 1] = text\n";
     s += "\t\tvalues[#values + 1] = false\n";
@@ -10878,11 +10944,23 @@ std::string emit_conversation_lua(const std::string& modid,
     // and opens the keyboard in its place (SayOpen; Say-mode below). Its pick is logged
     // with the intent `say` and no words, so the app knows to take the said line that
     // follows as Henry's own rather than a row's.
+    //
+    // With the voice slot open the engine's list was live under it, so a pick can land
+    // while the microphone has the line. The say row with words heard is those words sent
+    // (A as Enter, for a pick that got here before OnAction's confirm did); any other row
+    // is that row, and the slot closes unsent. And a pick on the list left standing after
+    // a spoken line (MenuSpoken) is nothing to answer: the round is over, the graph goes
+    // round, and the menu is asked for again by the next rows as ever.
     s += "function " + g + ".Picked(row)\n";
     s += "\tlocal opt = " + g + ".options[row]\n";
     // The way out is the last row of the graph, or wherever the short list drew it.
     s += "\tlocal leaving = row == " + g + ".menuRows or (opt == nil and row == " + g + ".menuLeaveRow)\n";
     s += "\tlocal saying = not leaving and opt == nil and row == " + g + ".menuSayRow\n";
+    s += "\tlocal heard = nil\n";
+    s += "\tif " + g + ".SayVoice() then\n";
+    s += "\t\tif saying and " + g + ".typed ~= \"\" then heard = " + g + ".typed end\n";
+    s += "\t\t" + g + ".SayStop(heard and \"sent\" or \"picked\")\n";
+    s += "\tend\n";
     s += "\t" + g + ".choosing = false\n";
     s += "\t" + g + ".menuUp = false\n";
     s += "\t" + g + ".menuWait = false\n";
@@ -10894,7 +10972,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif " + g + ".face == " + g + ".chooseCode then " + g + ".SetFaceCode(" + g + ".restFace) end\n";
+    s += "\tif " + g + ".menuSpoken then\n";
+    s += "\t\t" + g + ".menuSpoken = false\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE picked \" .. row .. \" wait -- (the list after a spoken line)\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     s += "\tif saying then\n";
+    s += "\t\tif heard ~= nil then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE picked \" .. row .. \" say -- \" .. heard)\n";
+    s += "\t\t\t" + g + ".Said(heard)\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
     s += "\t\t" + g + ".Log(\"BRIDGE picked \" .. row .. \" say -- \")\n";
     s += "\t\t" + g + ".SayOpen()\n";
     s += "\t\treturn\n";
@@ -10910,14 +10998,34 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // ---- Say-mode: a line of Henry's own, from the menu -------------------------------
     //
-    // "(Say something else)" sits above the way out on every list. Confirmed, the decision
-    // resolves as any row's does, and in the menu's place the mod's keyboard opens (the
-    // same one F9 opens, with its exclusive map and its "Henry: _" caption), the app is
-    // told to listen (BRIDGE say start) and sends the running transcript back as hooks
-    // (SayHeard), which replace the line as the keys append to it. Enter, the pad's A or
-    // the mouse button sends the line (SaySend); escape or B clears it, and with nothing
-    // in it brings the menu back with the rows it had (SayBack -> ChooseAgain). F9 is
-    // the same way back.
+    // "(Say something else)" sits above the way out on every list, and there are two ways
+    // into the slot it names.
+    //
+    // Typed: the row confirmed. The decision resolves as any row's does, and in the
+    // menu's place the mod's keyboard opens (the same one F9 opens, with its exclusive map
+    // and its "Henry: _" caption); the app is told (BRIDGE say start typed) and does
+    // nothing, since the keys are the whole of the input. Enter, the pad's A or the mouse
+    // button sends the line (SaySend); escape or B clears it, and with nothing in it
+    // brings the menu back with the rows it had (SayBack -> ChooseAgain). F9 is the same
+    // way back.
+    //
+    // Voice: the talk button (RT, or V) pressed on the menu. The engine's list stays
+    // where it is -- only the engine resolves a decision, and only from its own map (see
+    // below) -- with its say row reading "(Listening...)", and the caption takes the
+    // slot: the app is told (BRIDGE say start voice), opens its microphone and sends the
+    // transcript back as hooks (SayHeard(words, done)) that replace the line as they
+    // come. `done` is the app's transcriber hearing the pause that ends a line: with the
+    // button up by then the line goes at once (SaySend); held, the player is still
+    // talking, and the line goes on the release -- or, with the pause not yet heard,
+    // when it is, or after a grace (SayReleased). Keys are nothing to this slot. B or
+    // F9 closes it with the menu as it was (SayVoiceCancel); A sends what has been heard.
+    //
+    // A voice line leaves the decision presented. The round is over all the same: the
+    // list is redrawn as the line that went (MenuSpoken), the reply plays on the caption
+    // through the pump as any line does, and the next round's rows are drawn over the
+    // same decision when they land (Choose). The camera stays the menu's through the
+    // reply, since nothing but a pick moves the graph; a pick on the standing list is a
+    // pick on nothing (Picked, menuSpoken) and only lets the graph go round.
     //
     // Why not the row itself as the slot, the words replacing "(Say something else)"
     // under the menu as they are typed: that was built and measured first (14 Oct 2026).
@@ -10928,31 +11036,125 @@ std::string emit_conversation_lua(const std::string& modid,
     // (under the dialog map, E confirms, W and S move the cursor, space skips and
     // backspace opens the pause menu), and an exclusive map silences the dialog map's
     // Enter and A with the rest. So there was no way to send. The menu-less keyboard is
-    // the design the engine allows.
+    // the design the engine allows for typing; the voice slot needs no keys, so it can
+    // live under the standing menu.
     s += "function " + g + ".SayReset()\n";
     s += "\t" + g + ".saying = false\n";
+    s += "\t" + g + ".sayMode = nil\n";
+    s += "\t" + g + ".talkDown = false\n";
+    s += "\t" + g + ".sayDone = false\n";
+    s += "\t" + g + ".sayToken = " + g + ".sayToken + 1\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".SayVoice()\n";
+    s += "\treturn " + g + ".saying and " + g + ".sayMode == \"voice\"\n";
     s += "end\n";
     s += "\n";
     // The say row picked: the keyboard, in say-mode. The pick has already resolved the
     // menu and put the rest face back; the camera is the conversation's.
     s += "function " + g + ".SayOpen()\n";
     s += "\tif not " + g + ".active then return end\n";
+    s += "\t" + g + ".SayReset()\n";
     s += "\t" + g + ".saying = true\n";
+    s += "\t" + g + ".sayMode = \"typed\"\n";
     s += "\t" + g + ".typingDismissed = false\n";
-    s += "\t" + g + ".Log(\"BRIDGE say start\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE say start typed\")\n";
     s += "\t" + g + ".SetTyping(true)\n";
+    s += "end\n";
+    s += "\n";
+    // The talk button, both edges, from the toggle map: live the length of a conversation,
+    // and the slot's only when a menu with the say row is presented. Pressed again while a
+    // heard line is waiting on its pause, the player has more to say: the release grace is
+    // cancelled and the line waits for the next release. In the typed slot, and anywhere
+    // else, the button is nothing.
+    s += "function " + g + ".SayTalk(activation)\n";
+    s += "\tif not " + g + ".active then return true end\n";
+    s += "\tif activation == \"press\" then\n";
+    s += "\t\tif " + g + ".SayVoice() then\n";
+    s += "\t\t\t" + g + ".talkDown = true\n";
+    s += "\t\t\t" + g + ".sayToken = " + g + ".sayToken + 1\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE talk pressed again\")\n";
+    s += "\t\t\treturn true\n";
+    s += "\t\tend\n";
+    s += "\t\tif " + g + ".saying then return true end\n";
+    s += "\t\tif not " + g + ".choosing or not " + g + ".menuUp or " + g + ".menuSayRow <= 0 then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE talk pressed with no say row to take it\")\n";
+    s += "\t\t\treturn true\n";
+    s += "\t\tend\n";
+    s += "\t\t" + g + ".SayVoiceOpen()\n";
+    s += "\telseif activation == \"release\" then\n";
+    s += "\t\tif not " + g + ".SayVoice() or not " + g + ".talkDown then return true end\n";
+    s += "\t\t" + g + ".talkDown = false\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE talk released\" .. (" + g + ".sayDone and \" on a finished line\" or \"\"))\n";
+    s += "\t\tif " + g + ".sayDone then\n";
+    s += "\t\t\t" + g + ".SaySend()\n";
+    s += "\t\telse\n";
+    s += "\t\t\tlocal token = " + g + ".sayToken\n";
+    s += "\t\t\tpcall(function() Script.SetTimer(" + g + ".sayReleaseMillis, function() " + g + ".SayReleased(token) end) end)\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "\n";
+    // The voice slot opened under the standing menu: the say row says so, the caption
+    // takes the line, and the app is told to listen.
+    s += "function " + g + ".SayVoiceOpen()\n";
+    s += "\t" + g + ".SayReset()\n";
+    s += "\t" + g + ".saying = true\n";
+    s += "\t" + g + ".sayMode = \"voice\"\n";
+    s += "\t" + g + ".talkDown = true\n";
+    s += "\t" + g + ".typed = \"\"\n";
+    s += "\t" + g + ".cursorOn = true\n";
+    s += "\t" + g + ".typingDismissed = false\n";
+    s += "\t" + g + ".Log(\"BRIDGE say start voice\")\n";
+    s += "\t" + g + ".MenuDraw(" + g + ".menuSayListening)\n";
+    s += "\t" + g + ".BlinkArm()\n";
+    s += "\t" + g + ".Refresh()\n";
+    s += "end\n";
+    s += "\n";
+    // The grace after a release ran out: the words heard go as they are, since a pause
+    // the app has not called in this long is not coming; nothing heard, and the slot
+    // closes as B would close it.
+    s += "function " + g + ".SayReleased(token)\n";
+    s += "\tif token ~= " + g + ".sayToken or not " + g + ".SayVoice() or " + g + ".talkDown then return end\n";
+    s += "\tif " + g + ".typed ~= \"\" then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE say release grace ran out, sent as heard\")\n";
+    s += "\t\t" + g + ".SaySend()\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".SayVoiceCancel(\"nothing heard\")\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // The voice slot closed unsent: the caption back to the line, the say row back to its
+    // words, the app told. The menu never went anywhere.
+    s += "function " + g + ".SayVoiceCancel(why)\n";
+    s += "\tif not " + g + ".SayVoice() then return end\n";
+    s += "\t" + g + ".SayStop(why)\n";
+    s += "\t" + g + ".typed = \"\"\n";
+    s += "\t" + g + ".Refresh()\n";
+    s += "\tif " + g + ".choosing and " + g + ".menuUp then " + g + ".MenuDraw() end\n";
+    s += "end\n";
+    s += "\n";
+    // The app has no ear to open (a build without one, no microphone): the voice slot
+    // cannot be filled, so it closes, and the say row is there to pick for the keyboard.
+    s += "function " + g + ".SayDeaf()\n";
+    s += "\tif not " + g + ".active then return end\n";
+    s += "\t" + g + ".Log(\"BRIDGE say deaf -- the app cannot listen; the say row types\")\n";
+    s += "\t" + g + ".SayVoiceCancel(\"deaf\")\n";
     s += "end\n";
     s += "\n";
     // Say-mode over, and the app told to stop listening. The keyboard is the caller's to
     // close or keep: Said closes it, SayLeave closes it, a conversation ending wipes it.
     s += "function " + g + ".SayStop(why)\n";
     s += "\tif not " + g + ".saying then return end\n";
-    s += "\t" + g + ".saying = false\n";
+    s += "\t" + g + ".SayReset()\n";
     s += "\t" + g + ".Log(\"BRIDGE say stop -- \" .. why)\n";
     s += "end\n";
     s += "\n";
-    // Enter, A or the mouse button: the line goes as a typed one does. Nothing in it,
-    // nothing happens -- an empty line is not a thing to say.
+    // The line goes as a typed one does: Enter, A or the mouse button in the typed slot;
+    // the pause, the release, A or the grace in the voice one, where the pick the app
+    // knows the typed slot by is logged alongside, since no row was picked to open it.
+    // Nothing in the line, nothing happens -- an empty line is not a thing to say.
     s += "function " + g + ".SaySend()\n";
     s += "\tif not " + g + ".saying then return end\n";
     s += "\tlocal line = " + g + ".typed\n";
@@ -10960,13 +11162,48 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"BRIDGE say enter on an empty line\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    s += "\tlocal voice = " + g + ".SayVoice()\n";
     s += "\t" + g + ".SayStop(\"sent\")\n";
+    s += "\tif voice then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE picked \" .. " + g + ".menuSayRow .. \" say -- \" .. line)\n";
+    s += "\t\tif " + g + ".choosing and " + g + ".menuUp then " + g + ".MenuSpoken(line) end\n";
+    s += "\tend\n";
     s += "\t" + g + ".Said(line)\n";
     s += "end\n";
     s += "\n";
-    // Escape or B: the line cleared, or with nothing to clear the menu brought back.
+    // The engine's decision left presented by a spoken line. The round's rows are dropped
+    // and the list redrawn as the line that went, dimmed, with the way out under it, so
+    // the player reads what was heard and can still leave while the reply comes; the
+    // next rows draw over it (Choose).
+    s += "function " + g + ".MenuSpoken(line)\n";
+    s += "\t" + g + ".menuSpoken = true\n";
+    s += "\t" + g + ".options = {}\n";
+    s += "\t" + g + ".menuDrawn = 0\n";
+    s += "\t" + g + ".optionsTotal = nil\n";
+    s += "\t" + g + ".menuClosed = false\n";
+    s += "\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
+    s += "\t" + g + ".menuSayRow = 0\n";
+    s += "\t" + g + ".menuLeaveRow = 2\n";
+    s += "\tlocal values = { " + g + ".playerName .. \": \" .. line, false, \"\", 0, 0, " + g + ".menuLeave, false, \"\", 0, 0 }\n";
+    s += "\tlocal ok, err = pcall(function()\n";
+    s += "\t\tfor _, id in ipairs(" + g + ".hudIds) do\n";
+    s += "\t\t\tUIAction.SetArray(\"hud\", id, \"SequenceList\", values)\n";
+    s += "\t\t\tUIAction.CallFunction(\"hud\", id, \"SetDialogSequences\", false)\n";
+    s += "\t\t\tUIAction.CallFunction(\"hud\", id, \"SetEnableSequenceChanged\", 0, false)\n";
+    s += "\t\tend\n";
+    s += "\tend)\n";
+    s += "\tif ok then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE menu drawn as the spoken line, leave=2\")\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE menu draw raised \" .. tostring(err))\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // Escape or B. Typed: the line cleared, or with nothing to clear the menu brought
+    // back. Voice: the slot closed, the menu as it was.
     s += "function " + g + ".SayBack()\n";
     s += "\tif not " + g + ".saying then return end\n";
+    s += "\tif " + g + ".SayVoice() then " + g + ".SayVoiceCancel(\"back\") return end\n";
     s += "\tif " + g + ".typed ~= \"\" then\n";
     s += "\t\t" + g + ".typed = \"\"\n";
     s += "\t\t" + g + ".cursorOn = true\n";
@@ -10978,26 +11215,32 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "\n";
     // Out of say-mode and back to the menu: the keyboard down, and the choose code up
-    // again with the rows the round already has (ChooseAgain).
+    // again with the rows the round already has (ChooseAgain). The voice slot has the
+    // menu still, so for it this is the cancel.
     s += "function " + g + ".SayLeave(why)\n";
     s += "\tif not " + g + ".saying then return end\n";
+    s += "\tif " + g + ".SayVoice() then " + g + ".SayVoiceCancel(why) return end\n";
     s += "\t" + g + ".SayStop(why)\n";
     s += "\t" + g + ".SetTyping(false)\n";
     s += "\t" + g + ".typingDismissed = true\n";
     s += "\t" + g + ".ChooseAgain()\n";
     s += "end\n";
     s += "\n";
-    // The app's running transcript of what the microphone hears while say-mode is on
-    // (a hook, Moonshine.SayHeard("...")). It replaces the line, since each transcript is
-    // the whole utterance so far, and the caption follows. Nothing is sent: the player
-    // reads it and presses Enter, or clears it and tries again.
-    s += "function " + g + ".SayHeard(text)\n";
-    s += "\tif not " + g + ".saying or not " + g + ".typing or not " + g + ".active then return end\n";
+    // The app's running transcript of what the microphone hears while the voice slot is
+    // open (a hook, Moonshine.SayHeard("...", done)). It replaces the line, since each
+    // transcript is the whole utterance so far, and the caption follows. `done` is the
+    // transcriber's word that the line is finished: with the talk button up the line goes
+    // now; held, it waits for the release, and more words after the pause are the same
+    // line growing. Nothing to the typed slot, whose line is the keys'.
+    s += "function " + g + ".SayHeard(text, done)\n";
+    s += "\tif not " + g + ".SayVoice() or not " + g + ".active then return end\n";
     s += "\tif type(text) ~= \"string\" then return end\n";
     s += "\t" + g + ".typed = text\n";
+    s += "\t" + g + ".sayDone = (done == true) and text ~= \"\"\n";
     s += "\t" + g + ".cursorOn = true\n";
-    s += "\t" + g + ".Log(\"BRIDGE say heard \" .. text)\n";
+    s += "\t" + g + ".Log(\"BRIDGE say heard \" .. text .. (" + g + ".sayDone and \" (done)\" or \"\"))\n";
     s += "\t" + g + ".Refresh()\n";
+    s += "\tif " + g + ".sayDone and not " + g + ".talkDown then " + g + ".SaySend() end\n";
     s += "end\n";
     s += "\n";
     // The menu asked for again with the rows the round already has: the say row picked
@@ -14001,10 +14244,15 @@ std::string emit_typing_actionmaps(const std::string& modid) {
     s += "  menu's say row the pad's A and B and the mouse button are bound here again under\n";
     s += "  the dialogue's own action names: A or the button sends the line as Enter does, B\n";
     s += "  clears it or brings the menu back as escape does. The names reach the mod's\n";
-    s += "  OnAction only; the engine's dialogue does not listen to a map that is not its own. -->\n";
+    s += "  OnAction only; the engine's dialogue does not listen to a map that is not its own.\n";
+    s += "  The talk button (mtalk) sits in the toggle map beside F9, both edges, since the\n";
+    s += "  line is spoken for as long as it is held: the right trigger on the pad, which no\n";
+    s += "  dialogue binding uses, and V on the keyboard. While the typing map is up it is\n";
+    s += "  silenced with everything else under it, which is the typed slot taking keys only. -->\n";
     s += "<profile version=\"0\">\n";
     s += "\t<actionmap name=\"" + toggle + "\" priority=\"cheats\" exclusivity=\"0\">\n";
     s += "\t\t<action name=\"mtype_toggle\" onPress=\"1\" keyboard=\"f9\" />\n";
+    s += "\t\t<action name=\"mtalk\" onPress=\"1\" onRelease=\"1\" keyboard=\"v\" xboxpad=\"xi_triggerr_btn\" />\n";
     s += "\t</actionmap>\n";
     s += "\t<actionmap name=\"" + keys + "\" priority=\"cheats_haste\" exclusivity=\"1\">\n";
     s += "\t\t<action name=\"mtype_toggle\" onPress=\"1\" keyboard=\"f9\" />\n";

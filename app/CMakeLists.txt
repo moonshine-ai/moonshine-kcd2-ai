@@ -318,7 +318,7 @@ if(MOONSHINE_GPU_CLONE AND MOONSHINE_LLAMA AND TARGET mtmd)
 endif()
 
 # Moonshine Voice, through its C++ binding: Kokoro for the replies (MOONSHINE_TTS) and the
-# transcriber for the player's own line at the menu's say row (MOONSHINE_STT; src/listen.cpp).
+# transcriber for the player's own line while the talk button is held (MOONSHINE_STT; src/listen.cpp).
 # Optional in the same way as llama.cpp: a checkout without the library still builds and
 # still talks, it just does not speak, or hear. The binding is a header in the moonshine
 # tree; the library is whatever that tree last built. scripts/fetch_moonshine.sh (.ps1 on
@@ -331,7 +331,7 @@ endif()
 # because a machine can want one without the other: the Windows release speaks the clones
 # through the Qwen3-TTS engine and never needed Kokoro, but hears through this library.
 option(MOONSHINE_TTS "speak replies with Kokoro through Moonshine Voice" ON)
-option(MOONSHINE_STT "hear the player through Moonshine Voice while the say row is up" ON)
+option(MOONSHINE_STT "hear the player through Moonshine Voice while the talk button is held" ON)
 set(MOONSHINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/moonshine" CACHE PATH
     "moonshine checkout, for the Voice library and headers (scripts/fetch_moonshine.*)")
 if(MOONSHINE_TTS OR MOONSHINE_STT)

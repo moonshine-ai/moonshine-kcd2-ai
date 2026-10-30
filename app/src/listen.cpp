@@ -150,9 +150,12 @@ struct Ear::Impl {
     std::thread worker;
     std::atomic<bool> running{false};
 
-    // The transcript as last read, for text().
+    // The transcript as last read, for heard().
     mutable std::mutex text_lock;
-    std::string text;
+    Heard text;
+    // Whether this model takes a context passage at all (the streaming architectures do),
+    // learned from the first call that is refused so the log is not told every time.
+    bool context_refused = false;
 
 #if defined(__APPLE__)
     AudioQueueRef queue = nullptr;
@@ -165,8 +168,12 @@ struct Ear::Impl {
 #endif
 
     explicit Impl(const fs::path& dir, ModelArch arch)
-        // No automatic update: the worker reads the transcript on its own clock.
-        : transcriber(dir.string(), arch, 1.0e9) {}
+        // No automatic update: the worker reads the transcript on its own clock. No
+        // spelling model. The boost is a load-time option; the terms it applies to come
+        // and go with set_context.
+        : transcriber(dir.string(), arch, 1.0e9, "",
+                      {{"keyterm_boost", std::to_string(kContextBoost)},
+                       {"context_max_terms", std::to_string(kContextMaxTerms)}}) {}
 
     void push(std::vector<float>&& chunk) {
         {
@@ -176,9 +183,34 @@ struct Ear::Impl {
         audio_ready.notify_one();
     }
 
-    void set_text(std::string words) {
+    void set_text(Heard words) {
         std::lock_guard<std::mutex> held(text_lock);
         text = std::move(words);
+    }
+
+    // The transcript's lines as one string, and whether they are all finished. A line
+    // with no words in it is left out of both: the transcriber opens one for a breath and
+    // closes it empty, and that is not something to wait on or to send.
+    static Heard flatten(const Transcript& transcript) {
+        Heard out;
+        bool any = false;
+        bool open = false;
+        for (const TranscriptLine& line : transcript.lines) {
+            std::string_view piece = line.text;
+            while (!piece.empty() && std::isspace(static_cast<unsigned char>(piece.front()))) {
+                piece.remove_prefix(1);
+            }
+            while (!piece.empty() && std::isspace(static_cast<unsigned char>(piece.back()))) {
+                piece.remove_suffix(1);
+            }
+            if (piece.empty()) continue;
+            any = true;
+            if (!line.isComplete) open = true;
+            if (!out.text.empty()) out.text += ' ';
+            out.text += piece;
+        }
+        out.complete = any && !open;
+        return out;
     }
 
     // Feeds the stream and reads it every kReadEvery seconds of audio.
@@ -200,21 +232,7 @@ struct Ear::Impl {
                 fed += static_cast<double>(chunk.size()) / kRate;
                 if (fed - read_at >= kReadEvery) {
                     read_at = fed;
-                    const Transcript transcript = stream->updateTranscription(0);
-                    std::string words;
-                    for (const TranscriptLine& line : transcript.lines) {
-                        std::string_view piece = line.text;
-                        while (!piece.empty() && std::isspace(static_cast<unsigned char>(piece.front()))) {
-                            piece.remove_prefix(1);
-                        }
-                        while (!piece.empty() && std::isspace(static_cast<unsigned char>(piece.back()))) {
-                            piece.remove_suffix(1);
-                        }
-                        if (piece.empty()) continue;
-                        if (!words.empty()) words += ' ';
-                        words += piece;
-                    }
-                    set_text(std::move(words));
+                    set_text(flatten(stream->updateTranscription(0)));
                 }
             } catch (const std::exception&) {
                 // A stream that fails stays quiet; the player can still type.
@@ -349,7 +367,7 @@ Ear::Ear(fs::path model_dir) : model_dir_(std::move(model_dir)) {
     const int arch = stt_arch_for(model_dir_);
     if (arch < 0) {
         throw std::runtime_error("cannot tell which Moonshine model " + model_dir_.string() +
-                                 " is from its name (tiny-streaming-en and the like)");
+                                 " is from its name (medium-streaming-en and the like)");
     }
     impl_ = std::make_unique<Impl>(model_dir_, static_cast<ModelArch>(arch));
 }
@@ -402,9 +420,23 @@ void Ear::stop() {
 
 bool Ear::listening() const { return impl_->running.load(); }
 
-std::string Ear::text() const {
+Heard Ear::heard() const {
     std::lock_guard<std::mutex> held(impl_->text_lock);
     return impl_->text;
+}
+
+void Ear::set_context(std::string_view passage) {
+    if (impl_->context_refused) return;
+    // The C++ wrapper has no call for this; the C API's takes the transcriber's handle.
+    // The library picks the terms itself and copies what it keeps, so the passage need
+    // not outlive the call.
+    const std::string text(passage);
+    const int32_t error = moonshine_transcriber_set_context(impl_->transcriber.getHandle(),
+                                                            text.c_str(), kContextMaxTerms);
+    if (error != MOONSHINE_ERROR_NONE) {
+        // A model that cannot be biased (the older non-streaming ones) says so once.
+        impl_->context_refused = true;
+    }
 }
 
 #else  // !MOONSHINE_CAN_LISTEN
@@ -421,7 +453,8 @@ Ear::~Ear() = default;
 void Ear::start() {}
 void Ear::stop() {}
 bool Ear::listening() const { return false; }
-std::string Ear::text() const { return {}; }
+Heard Ear::heard() const { return {}; }
+void Ear::set_context(std::string_view) {}
 
 #endif
 

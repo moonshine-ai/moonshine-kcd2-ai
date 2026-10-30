@@ -85,11 +85,15 @@ enum class Marker {
     // A line is on the screen and should be spoken. `intent` is who: henry, male,
     // female, or npc (whoever the conversation is open with). `said` is the words.
     Voice,
-    // The menu's "(Say something else)" row went live: the player may type into it on the
-    // mod's keyboard or speak, and the app listens on its microphone between this and the
-    // stop, sending the transcript so far back as hooks (Moonshine.Heard). SayStop's `said`
-    // is the mod's reason: "sent" when the line went on as a Said line, else "back",
-    // "moved ...", "conversation over".
+    // The menu's "(Say something else)" slot went live. `said` is how: "voice" when the
+    // player pressed the talk button on a menu with the row (and holds it while
+    // speaking), "typed" when they picked the row and have the mod's keyboard. For voice
+    // the app listens on its microphone between this and the stop, sending the
+    // transcript so far back as hooks (Moonshine.SayHeard) with a flag for the line being
+    // finished, on which the mod sends it once the button is up; for typed it does
+    // nothing at all, since the mod takes only keys. SayStop's `said` is the mod's reason:
+    // "sent" when the line went on as a Said line, else "back", "moved ...", "conversation
+    // over".
     SayStart,
     SayStop,
 };

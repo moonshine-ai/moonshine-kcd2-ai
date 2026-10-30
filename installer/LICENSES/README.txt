@@ -25,9 +25,9 @@ Model weights
                           under voices\, twelve speaker embeddings from the Phonon voice
                           catalogue, https://huggingface.co/gradium/phonon-voices (Apache 2.0),
                           each renamed from its catalogue id to a first name
-  models\stt\tiny-streaming-en
+  models\stt\medium-streaming-en
                           Moonshine streaming STT (Moonshine AI)   MIT     moonshine-voice.txt
-                          https://download.moonshine.ai (tiny-streaming-en)
+                          https://download.moonshine.ai (medium-streaming-en)
   models\embeddinggemma-300m-q8_0.gguf
                           EmbeddingGemma (Google)            Gemma Terms of Use
                           https://ai.google.dev/gemma/terms

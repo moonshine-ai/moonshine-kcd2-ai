@@ -10,7 +10,9 @@
 #                   embeddings under voices/, each renamed from its catalogue id to the name
 #                   the app speaks it by (voice.h, voice_for)
 #   llm             Apache-2.0 (Qwen3-4B-Instruct-2507, unsloth's Q4_K_M GGUF) -- the talker
-#   stt             MIT (Moonshine tiny-streaming-en, 2026-08-21 export) -- the ear
+#   stt             MIT (Moonshine medium-streaming-en, 2026-08-21 export) -- the ear. The
+#                   export's decoder_kv_with_attention.ort (140 MB) is left out: the app
+#                   asks for no word timestamps, which is all that file serves.
 #
 # dest	url	bytes	sha256
 embeddinggemma-300m-q8_0.gguf	https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf	333590944	b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
@@ -31,12 +33,11 @@ phonon-31m-en/voices/elodie-rose.safetensors	https://huggingface.co/gradium/phon
 phonon-31m-en/voices/imogen.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/gDT1nz7Ie36ZhL-C.safetensors	256136	1980ab3c35fa98a25b5f3b5e643fd852e14ca8a12a4a26b06aaf1abf2a8c68b1
 phonon-31m-en/voices/lottie.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/m9MxpY6IUGXtWp76.safetensors	256136	a906ebf17e43fded12b3d6bd077abb2df33bc86eff51c1beeb82e5d416527db3
 llm/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	2497281120	3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597
-stt/tiny-streaming-en/adapter.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/adapter.ort	1319664	22ecc949e146c49667fda28d102d4e30749a107dc88a396292aa8f277ef1347c
-stt/tiny-streaming-en/cross_kv.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/cross_kv.ort	1287544	143a36667b8d05fd9d04e8c337b7ee121f37ef299aea6b3d82bdb3d3401950b4
-stt/tiny-streaming-en/decoder_kv.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/decoder_kv.ort	32583720	8852553f312adb6c9aa4d17418015049b30f412209ee569d336548c0044627de
-stt/tiny-streaming-en/decoder_kv_with_attention.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/decoder_kv_with_attention.ort	32515016	c1b41adca4ef75ad8dfdfc71875b5d0ae9be959865a14498da01cbddab8c02b8
-stt/tiny-streaming-en/encoder.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/encoder.ort	7675440	a8414e1a5dedf9f2093d7680601dd8a9b0433e7020260eafe0e370ead91134ca
-stt/tiny-streaming-en/frontend.model.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/frontend.model.ort	23344	5121b561417b638afce0c6c31b760e37c93cf97f80d9b0031aad1fe7b6f25d61
-stt/tiny-streaming-en/frontend.weights.ort	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/frontend.weights.ort	2093464	217da24ac6f522ebf02da8ef288e77d1ac68d50d4a6821433182e4fbf4204bbd
-stt/tiny-streaming-en/streaming_config.json	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/streaming_config.json	509	74fe5ddebd63b17caf59e8a3b18c17547ff7bce1642050edbb1c3962674f8950
-stt/tiny-streaming-en/tokenizer.bin	https://download.moonshine.ai/model/tiny-streaming-en/quantized_26_08_21/tokenizer.bin	249974	6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d
+stt/medium-streaming-en/adapter.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/adapter.ort	3651296	3f2a287def57cc094367a0eec3c4f5fc36a32ec420e86764b696920991b20281
+stt/medium-streaming-en/cross_kv.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/cross_kv.ort	11643776	642f6e21cd305be79342207c6f9e6b681d469d55bc48c72b27b84846fb71fd1e
+stt/medium-streaming-en/decoder_kv.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/decoder_kv.ort	146972408	193bb366492b74fc4ad338c6778e8d8eb916aaa11b5aa264f9057f4db7759486
+stt/medium-streaming-en/encoder.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/encoder.ort	94705376	12915e76ebac7dd287c5ea63965d06103a53ba1ce242a4a34f318f3958c60c37
+stt/medium-streaming-en/frontend.model.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/frontend.model.ort	28720	95768855c70c8251eeecc05fedf69999da1b8ab16f605c9f457fd3354b0ad6b5
+stt/medium-streaming-en/frontend.weights.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/frontend.weights.ort	11889560	5ac941f490cbe035b335b99a414cc393d62d4c6f9f2423495b286870d271d709
+stt/medium-streaming-en/streaming_config.json	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/streaming_config.json	513	28e83b7a28e91472692a035e0dae3116422ae43aeb2bef5ed822c44ce89b88af
+stt/medium-streaming-en/tokenizer.bin	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/tokenizer.bin	249974	6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d

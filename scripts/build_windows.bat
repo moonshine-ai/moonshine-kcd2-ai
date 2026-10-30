@@ -89,7 +89,7 @@ if exist %BUILD%\CMakeCache.txt (
         rmdir /s /q %BUILD%
     )
 )
-rem The Moonshine Voice library, for the ear at the menu's say row (app/src/listen.cpp):
+rem The Moonshine Voice library, for the ear behind the talk button (app/src/listen.cpp):
 rem third_party\moonshine, built as a DLL by scripts\fetch_moonshine.ps1, or MOONSHINE_ROOT.
 rem Kokoro stays off: this build speaks through Phonon (app\vendor\xn-ptts, built by cargo
 rem at configure time; rustup.rs puts cargo on the PATH), and the Kokoro build would ask for

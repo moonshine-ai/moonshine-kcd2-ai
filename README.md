@@ -130,11 +130,14 @@ in the interaction menu. Choose it.
   five seconds.
 - A menu follows with a few things Henry might say, then **(Say something else)** and
   **(End dialog)**.
-- **(Say something else)** opens a line to type into. With a microphone, just speak:
-  what the app hears appears in the line. Read it, fix it if you like, and press
-  **Enter** (or **A** on a controller) to send. **Escape** (or **B**) clears the line;
-  Escape on an empty line brings the menu back.
-- **F9** opens the same line at any time during a conversation.
+- To speak, **hold the right trigger** (or **V** on the keyboard) while the menu is up
+  and say your line. The words appear on screen as they are heard; let go when you are
+  done and the line is sent as soon as the app hears you have finished. Keep holding to
+  carry on talking. **B** (or **Escape**) cancels and leaves the menu as it was.
+- To type instead, choose **(Say something else)**: a line opens for the keyboard, and
+  only the keyboard. Press **Enter** (or **A** on a controller) to send. **Escape** (or
+  **B**) clears the line; Escape on an empty line brings the menu back.
+- **F9** opens the same typed line at any time during a conversation.
 - Tap the skip button to cut a line short. **(End dialog)**, or holding skip, leaves.
 
 Some people offer work. Take it or not; they remember either way, and they remember what
@@ -195,8 +198,9 @@ start it from the Moonshine shortcut instead.
 
 **They do not hear me.**
 Windows may be blocking the microphone. Settings > Privacy & security > Microphone: turn
-on *Microphone access* and *Let desktop apps access your microphone*. You can always type
-instead.
+on *Microphone access* and *Let desktop apps access your microphone*. If the app cannot
+open the microphone at all, the trigger does nothing and the Moonshine window says so;
+you can always type instead through **(Say something else)**.
 
 **The Moonshine window says the app keeps stopping.**
 It restarts the app automatically and gives up after five quick failures. Collect the

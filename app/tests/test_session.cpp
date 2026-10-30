@@ -197,61 +197,89 @@ TEST_CASE("a line that asks after Jews or Romani is turned aside without the mod
     CHECK(f.game.play() == "A fine ring, that.");
 }
 
-TEST_CASE("the say row opens the ear, and what it hears goes to the slot as hooks") {
+namespace {
+
+// What the session asked of the microphone: each open or close, and the passage the open
+// was handed as context.
+struct Listens {
+    std::vector<bool> ons;
+    std::vector<std::string> contexts;
+    bool open = true;  // what the ear answers: whether it opened
+    std::function<bool(bool, std::string_view)> hook() {
+        return [this](bool on, std::string_view context) {
+            ons.push_back(on);
+            contexts.emplace_back(context);
+            return on && open;
+        };
+    }
+};
+
+}  // namespace
+
+TEST_CASE("the talk button opens the ear on the conversation so far, and what it hears goes to the slot") {
     Fixture f;
     LogTailer tailer(f.game.log());
-    std::vector<bool> listens;
+    Listens listens;
     {
         Listener listener;
         listener.on_say = [&f](std::string_view piece) { f.spoken.emplace_back(piece); };
         listener.on_status = [&f](std::string_view text) { f.statuses.emplace_back(text); };
-        listener.on_listen = [&listens](bool on) { listens.push_back(on); };
+        listener.on_listen = listens.hook();
         f.session.set_listener(std::move(listener));
     }
-    f.llm.replies.push_back("God be with you.");
+    f.llm.replies.push_back("God be with you. I am Bartel, of Kuttenberg.");
     f.llm.replies.push_back("The mill is down by the river.");
     f.game.begin(kBartel);
     f.drain(tailer);
-    REQUIRE(f.game.play() == "God be with you.");
+    REQUIRE(f.game.play() == "God be with you. I am Bartel, of Kuttenberg.");
     f.drain(tailer);
 
-    // Nothing heard before the row is live reaches the game.
+    // Nothing heard before the button is down reaches the game.
     f.session.heard("where");
     CHECK(f.game.hook(1).empty());
     CHECK_FALSE(f.session.listening());
 
-    // The player picked the say row: the mod logs the pick with no words, then the start.
-    f.game.say("<12:04:41> [moonshine_names] BRIDGE picked 4 say -- ");
-    f.game.say("<12:04:41> [moonshine_names] BRIDGE say start");
+    // The player pressed the talk button on a menu with the say row: the mod logs a voice
+    // start. The ear opens with the names said so far to lean towards.
+    f.game.say("<12:04:41> [moonshine_names] BRIDGE say start voice");
     f.drain(tailer);
     CHECK(f.session.listening());
-    REQUIRE(listens.size() == 1);
-    CHECK(listens.back());
+    REQUIRE(listens.ons.size() == 1);
+    CHECK(listens.ons.back());
+    CHECK(listens.contexts.back().find("Bartel") != std::string::npos);
+    CHECK(listens.contexts.back().find("Kuttenberg") != std::string::npos);
     // No guessing at the rows while the ear has the cores.
     CHECK_FALSE(f.session.has_speculation());
 
-    // The words so far go to the slot, escaped for Lua, and only as they change: the
-    // same words again are not a hook, and nothing is sent again within the mod's beat.
+    // The words so far go to the slot, escaped for Lua and flagged unfinished, and only
+    // as they change: the same words again are not a hook, and nothing is sent again
+    // within the mod's beat.
     f.session.heard("where is");
-    CHECK(f.game.hook(1) == "Moonshine.SayHeard(\"where is\")\n");
+    CHECK(f.game.hook(1) == "Moonshine.SayHeard(\"where is\", false)\n");
     f.session.heard("where is");
     CHECK(f.game.hook(2).empty());
     f.session.heard("where is the \"miller\"");
     CHECK(f.game.hook(2).empty());  // too soon after the last
     std::this_thread::sleep_for(std::chrono::milliseconds(450));
     f.session.heard("where is the \"miller\"");
-    CHECK(f.game.hook(2) == "Moonshine.SayHeard(\"where is the \\\"miller\\\"\")\n");
+    CHECK(f.game.hook(2) == "Moonshine.SayHeard(\"where is the \\\"miller\\\"\", false)\n");
+    // The transcriber calling the line finished goes at once, beat or no beat, since it
+    // is what the player is waiting on; and it is not said twice.
+    f.session.heard("where is the \"miller\"", true);
+    CHECK(f.game.hook(3) == "Moonshine.SayHeard(\"where is the \\\"miller\\\"\", true)\n");
+    f.session.heard("where is the \"miller\"", true);
+    CHECK(f.game.hook(4).empty());
 
-    // The player's A sent it: the pick carries the words, the stop closes the ear, and
-    // the said line that follows is answered as a typed line, judge and all -- the say
-    // intent is nobody's row.
+    // The mod sent it on the button coming up: the pick carries the words, the stop closes
+    // the ear, and the said line that follows is answered as a typed line, judge and all
+    // -- the say intent is nobody's row.
     f.game.say("<12:04:45> [moonshine_names] BRIDGE picked 1 say -- Where is the miller?");
     f.game.say("<12:04:45> [moonshine_names] BRIDGE say stop -- sent");
     f.game.typed("Where is the miller?");
     f.drain(tailer);
     CHECK_FALSE(f.session.listening());
-    REQUIRE(listens.size() == 2);
-    CHECK_FALSE(listens.back());
+    REQUIRE(listens.ons.size() == 2);
+    CHECK_FALSE(listens.ons.back());
     CHECK(f.game.play() == "The mill is down by the river.");
     const std::vector<Message>& sent = f.llm.last().messages;
     const auto asked = std::find_if(sent.begin(), sent.end(), [](const Message& message) {
@@ -265,33 +293,95 @@ TEST_CASE("the say row opens the ear, and what it hears goes to the slot as hook
 
     // Heard after the stop is nothing; a second stop is nothing.
     std::this_thread::sleep_for(std::chrono::milliseconds(450));
-    f.session.heard("more words");
-    CHECK(f.game.hook(3).empty());
+    f.session.heard("more words", true);
+    CHECK(f.game.hook(4).empty());
     f.game.say("<12:04:46> BRIDGE say stop -- back");
     f.drain(tailer);
-    CHECK(listens.size() == 2);
+    CHECK(listens.ons.size() == 2);
+
+    // The next press hears the whole exchange, the player's line included.
+    f.game.say("<12:04:50> [moonshine_names] BRIDGE say start voice");
+    f.drain(tailer);
+    REQUIRE(listens.ons.size() == 3);
+    CHECK(listens.contexts.back().find("Where is the miller?") != std::string::npos);
+    CHECK(listens.contexts.back().find("down by the river") != std::string::npos);
 }
 
-TEST_CASE("the conversation ending closes the ear") {
+TEST_CASE("the say row picked is typed into, and the ear stays shut") {
     Fixture f;
-    std::vector<bool> listens;
+    LogTailer tailer(f.game.log());
+    Listens listens;
     {
         Listener listener;
-        listener.on_listen = [&listens](bool on) { listens.push_back(on); };
+        listener.on_status = [&f](std::string_view text) { f.statuses.emplace_back(text); };
+        listener.on_listen = listens.hook();
+        f.session.set_listener(std::move(listener));
+    }
+    f.with_greeting("What is it?");
+    f.game.begin(kBartel);
+    f.drain(tailer);
+    REQUIRE(f.game.play() == "What is it?");
+    f.drain(tailer);
+
+    f.game.say("<12:04:41> [moonshine_names] BRIDGE picked 4 say -- ");
+    f.game.say("<12:04:41> [moonshine_names] BRIDGE say start typed");
+    f.drain(tailer);
+    CHECK_FALSE(f.session.listening());
+    CHECK(listens.ons.empty());
+    // The model is free to guess at the rows meanwhile: nobody has the cores.
+    CHECK(f.session.has_speculation());
+    // And nothing heard goes anywhere, since nothing is being heard.
+    f.session.heard("where is", true);
+    CHECK(f.game.hook(1).empty());
+    f.game.say("<12:04:46> BRIDGE say stop -- back");
+    f.drain(tailer);
+    CHECK(listens.ons.empty());
+}
+
+TEST_CASE("a build with no ear hands the slot to the keyboard") {
+    Fixture f;
+    Listens listens;
+    listens.open = false;
+    {
+        Listener listener;
+        listener.on_status = [&f](std::string_view text) { f.statuses.emplace_back(text); };
+        listener.on_listen = listens.hook();
         f.session.set_listener(std::move(listener));
     }
     f.with_greeting("What is it?");
     f.session.handle({Marker::Begin, 0, kBartel});
-    f.session.handle({Marker::SayStart, 0, {}});
+    f.session.handle({Marker::SayStart, 0, {}, {}, {}, "voice"});
+    CHECK_FALSE(f.session.listening());
+    CHECK(f.game.hook(1) == "Moonshine.SayDeaf()\n");
+    // And so does a session with nobody on the other end of on_listen at all.
+    Fixture g;
+    g.with_greeting("What is it?");
+    g.session.handle({Marker::Begin, 0, kBartel});
+    g.session.handle({Marker::SayStart, 0, {}, {}, {}, "voice"});
+    CHECK_FALSE(g.session.listening());
+    CHECK(g.game.hook(1) == "Moonshine.SayDeaf()\n");
+}
+
+TEST_CASE("the conversation ending closes the ear") {
+    Fixture f;
+    Listens listens;
+    {
+        Listener listener;
+        listener.on_listen = listens.hook();
+        f.session.set_listener(std::move(listener));
+    }
+    f.with_greeting("What is it?");
+    f.session.handle({Marker::Begin, 0, kBartel});
+    f.session.handle({Marker::SayStart, 0, {}, {}, {}, "voice"});
     REQUIRE(f.session.listening());
     f.session.handle({Marker::Left, 0, {}});
     CHECK_FALSE(f.session.listening());
-    REQUIRE(listens.size() == 2);
-    CHECK_FALSE(listens.back());
+    REQUIRE(listens.ons.size() == 2);
+    CHECK_FALSE(listens.ons.back());
     // And a start with nobody to talk to is not a start.
-    f.session.handle({Marker::SayStart, 0, {}});
+    f.session.handle({Marker::SayStart, 0, {}, {}, {}, "voice"});
     CHECK_FALSE(f.session.listening());
-    CHECK(listens.size() == 2);
+    CHECK(listens.ons.size() == 2);
 }
 
 TEST_CASE("a line typed at a closed conversation is reported, not answered") {

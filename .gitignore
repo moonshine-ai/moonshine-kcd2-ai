@@ -28,4 +28,7 @@ __pycache__/
 # The installer's staging tree and output (installer/Stage.ps1).
 /release/
 
+# The development deploy onto one particular laptop (its hostname is in the name).
+/scripts/deploy_wl1.sh
+
 bugs.txt

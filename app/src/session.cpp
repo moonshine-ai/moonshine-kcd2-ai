@@ -139,7 +139,12 @@ void Session::handle(const Event& event) {
             break;
         case Marker::SayStart:
             if (!talking_) break;
-            set_listening(true, "the say row is live");
+            if (event.said == "typed") {
+                // The row picked: the mod has the keyboard and wants nothing from here.
+                status("the say row is live for typing");
+                break;
+            }
+            set_listening(true, "the talk button is down");
             break;
         case Marker::SayStop:
             set_listening(false, event.said);
@@ -829,12 +834,50 @@ std::string Session::flat_words(std::string_view text) {
 
 void Session::set_listening(bool on, std::string_view why) {
     if (listening_ == on) return;
-    listening_ = on;
     heard_text_.clear();
+    heard_complete_ = false;
     heard_at_ = {};
-    status(on ? std::string("listening: ") + std::string(why)
-              : std::string("stopped listening: ") + std::string(why));
-    if (listener_.on_listen) listener_.on_listen(on);
+    if (!on) {
+        listening_ = false;
+        status("stopped listening: " + std::string(why));
+        if (listener_.on_listen) listener_.on_listen(false, {});
+        return;
+    }
+    // The microphone opens with the conversation so far as its context, or does not open
+    // at all -- a build without an ear, no microphone -- in which case the mod is told, so
+    // the slot it has just shown takes the keyboard rather than wait on words that will
+    // never come.
+    const bool open = listener_.on_listen && listener_.on_listen(true, listen_context());
+    if (!open) {
+        status("cannot listen: no ear; the say slot takes the keyboard");
+        hook("Moonshine.SayDeaf()", "no ear");
+        return;
+    }
+    listening_ = true;
+    status("listening: " + std::string(why));
+}
+
+std::string Session::listen_context() const {
+    // The soul's name first, said twice over so a one-word passage still has a term in it
+    // to find, then the lines in the order they were said. The transcriber picks the
+    // unusual words out itself (the proper nouns, in effect), so the ordinary words
+    // around them cost nothing but the read.
+    std::string passage;
+    if (!persona_.name.empty()) passage = persona_.name + ". " + persona_.name + ".";
+    for (const Message& message : history_) {
+        if (message.role != "assistant" && message.role != "user") continue;
+        if (message.content.empty()) continue;
+        if (!passage.empty()) passage += '\n';
+        passage += message.content;
+    }
+    // And the rows on offer, which are the lines the player is most likely to be
+    // paraphrasing out loud.
+    for (const MenuOption& row : rows_) {
+        if (row.text.empty()) continue;
+        if (!passage.empty()) passage += '\n';
+        passage += row.text;
+    }
+    return passage;
 }
 
 // Lua's reading of the words, between double quotes: the backslash, the quotes and the
@@ -854,15 +897,25 @@ static std::string lua_quoted(std::string_view text) {
     return out + "\"";
 }
 
-void Session::heard(std::string_view text) {
+void Session::heard(std::string_view text, bool complete) {
     if (!listening_ || !talking_) return;
     const std::string flat = flat_words(text);
-    if (flat == heard_text_) return;
+    // Nothing heard is nothing to send, finished or not.
+    if (flat.empty()) complete = false;
+    if (flat == heard_text_ && complete == heard_complete_) return;
+    // The flag turning true is the player's line going on, and is not held back; the words
+    // changing is kept to the mod's pace.
+    const bool finishing = complete && !heard_complete_;
     const auto now = std::chrono::steady_clock::now();
-    if (heard_at_ != std::chrono::steady_clock::time_point{} && now - heard_at_ < kHeardEvery) return;
+    if (!finishing && heard_at_ != std::chrono::steady_clock::time_point{} &&
+        now - heard_at_ < kHeardEvery) {
+        return;
+    }
     heard_text_ = flat;
+    heard_complete_ = complete;
     heard_at_ = now;
-    hook("Moonshine.SayHeard(" + lua_quoted(flat) + ")", "heard: " + flat);
+    hook("Moonshine.SayHeard(" + lua_quoted(flat) + (complete ? ", true)" : ", false)"),
+         std::string(complete ? "heard (done): " : "heard: ") + flat);
 }
 
 void Session::spoken(std::string_view text) {

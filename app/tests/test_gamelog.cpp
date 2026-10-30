@@ -32,8 +32,18 @@ TEST_CASE("the markers the mod prints are recognised in the lines it prints them
     CHECK(classify("<12:05:02> [moonshine_names] BRIDGE played turn=3 -- Quit? Not I.").marker == Marker::Played);
 }
 
-TEST_CASE("the say row going live and stopping are markers, with the mod's reason") {
-    CHECK(classify("<12:05:02> [moonshine_names] BRIDGE say start").marker == Marker::SayStart);
+TEST_CASE("the say slot going live and stopping are markers, with how and the mod's reason") {
+    // The talk button is voice; the row picked is typed; a mod from before the two were
+    // told apart wrote the start bare, and that row took both, so it is read as voice.
+    const Event voice = classify("<12:05:02> [moonshine_names] BRIDGE say start voice");
+    CHECK(voice.marker == Marker::SayStart);
+    CHECK(voice.said == "voice");
+    const Event typed = classify("<12:05:02> [moonshine_names] BRIDGE say start typed");
+    CHECK(typed.marker == Marker::SayStart);
+    CHECK(typed.said == "typed");
+    const Event bare = classify("<12:05:02> [moonshine_names] BRIDGE say start");
+    CHECK(bare.marker == Marker::SayStart);
+    CHECK(bare.said == "voice");
     const Event sent = classify("<12:05:09> [moonshine_names] BRIDGE say stop -- sent");
     CHECK(sent.marker == Marker::SayStop);
     CHECK(sent.said == "sent");

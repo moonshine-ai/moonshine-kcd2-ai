@@ -74,9 +74,14 @@ struct Listener {
     // A row of the reply menu, as it is accepted and sent to the game. The rows of one
     // round arrive in order, row 1 first; a new round starts at row 1 again.
     std::function<void(const MenuOption&)> on_option;
-    // The menu's say row went live (true) or stopped being (false): where the microphone
-    // opens and closes. What it hears comes back through Session::heard().
-    std::function<void(bool)> on_listen;
+    // The player is speaking into the say slot (true) or has stopped (false): where the
+    // microphone opens and closes. `context` is the conversation so far -- the soul's
+    // name, their lines and the player's -- for the transcriber to lean towards the names
+    // in (listen.h, Ear::set_context); empty on the stop. Returns whether the microphone
+    // is open: a build without an ear, or one that could not open it, says false, and the
+    // session tells the mod to take the keyboard instead (Moonshine.SayDeaf). What it hears
+    // comes back through Session::heard().
+    std::function<bool(bool on, std::string_view context)> on_listen;
 };
 
 class Session {
@@ -106,15 +111,24 @@ public:
     // hook calling Moonshine.Spoken("henry") or ("npc"), once. Any other line is nothing to
     // it. Matched with whitespace flattened, as the voice marker carries them.
     void spoken(std::string_view text);
-    // The microphone's transcript so far while the say row is live, as the transcriber has
-    // it (the whole line, replaced each time). Sent to the mod as a hook calling
-    // Moonshine.SayHeard, which puts it in the slot; not more often than every kHeardEvery,
-    // since the mod runs one hook a tick, and only when the words have changed. The
-    // player's A on the slot is what sends it on -- it comes back as a Said line -- so
-    // nothing here answers anything. Ignored when the row is not live.
-    void heard(std::string_view text);
-    // Whether the say row is live: between SayStart and SayStop.
+    // The microphone's transcript so far while the player is speaking into the say slot,
+    // as the transcriber has it (the whole line, replaced each time), and whether the
+    // transcriber has finished with it -- heard a pause after the last word. Sent to the
+    // mod as a hook calling Moonshine.SayHeard(words, done), which puts the words in the
+    // slot and, once done and the talk button is up, sends them on; not more often than
+    // every kHeardEvery, since the mod runs one hook a tick, and only when the words or
+    // the flag have changed -- except that the flag turning true goes at once, since it is
+    // what the player is waiting on. The line comes back as a Said line, so nothing here
+    // answers anything. Ignored when the microphone is not open.
+    void heard(std::string_view text, bool complete = false);
+    // Whether the microphone is open: between a voice SayStart and the SayStop. A typed
+    // say (the row picked) is not listening; the mod takes keys and the model is free to
+    // guess at the rows meanwhile.
     bool listening() const { return listening_; }
+    // The passage on_listen is handed as context: the soul's name and every line said
+    // this conversation, theirs and the player's, oldest first, so the names the player
+    // has just heard are the ones the transcriber expects back.
+    std::string listen_context() const;
     // What the soul knows, for the lines the menu did not offer (knowledge.h). With one, a
     // typed or spoken line is scored against the soul's items and the model is told what
     // they know of it, or that they know nothing, or that they will not say yet; and a line
@@ -460,10 +474,12 @@ private:
     // line that follows the pick, where the director reads it instead of asking the judge.
     // Empty when the last words were typed rather than picked.
     std::string picked_intent_;
-    // The say row: live between the mod's say start and say stop, the words last sent to
-    // the slot, and when, so the hooks keep to the mod's pace (heard()).
+    // The say slot: whether the microphone is open (a voice start, until the stop), the
+    // words and flag last sent to the slot, and when, so the hooks keep to the mod's pace
+    // (heard()).
     bool listening_ = false;
     std::string heard_text_;
+    bool heard_complete_ = false;
     std::chrono::steady_clock::time_point heard_at_{};
     static constexpr std::chrono::milliseconds kHeardEvery{400};
     void set_listening(bool on, std::string_view why);
