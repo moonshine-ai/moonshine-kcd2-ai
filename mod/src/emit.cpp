@@ -42,6 +42,13 @@ constexpr int kAliveBucketSeconds = 300;
 constexpr const char* kAppDownLine =
     "[Moonshine] The conversation app is not running, so nobody here can answer you. "
     "Start moonshine_app and talk to them again.";
+// And when it is running (its heartbeat was there) but has not sent a first line in the
+// time the pump gives it: busy, or stuck, which the player cannot tell apart and need not.
+// Seen 29 Oct 2026, the app folding a long memory on the loop that answers the game, and
+// the player held in the camera by Christine for as long as they cared to wait.
+constexpr const char* kAppBusyLine =
+    "[Moonshine] The conversation app did not answer in time. Give it a moment and talk to "
+    "them again.";
 
 // Apostrophes are left alone: every attribute written here is double-quoted, so
 // they need no escaping, and the shipped files never write &apos; -- 3420 raw
@@ -7330,13 +7337,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".aliveBucket = " + std::to_string(kAliveBucketSeconds) + "\n";
     s += "-- And the backstop for an app that was up when the conversation opened and has died\n";
     s += "-- since, or is up and not answering: no first line this many pump ticks of 400ms\n";
-    s += "-- after the session opened is the same message. A model's opening line takes a few\n";
-    s += "-- seconds, a cold prefill ten or so; this is well past both.\n";
-    s += g + ".appTicks = 50\n";
+    s += "-- after the session opened, and the player is told the app did not answer (appBusyLine)\n";
+    s += "-- rather than left standing in the camera. A written greeting is on disk before the\n";
+    s += "-- press; a model's opening line takes a few seconds, a cold prefill ten or so; this is\n";
+    s += "-- past those and short of the point where the player gives up and holds to leave,\n";
+    s += "-- which on the Windows laptop was about five seconds (29 Oct 2026).\n";
+    s += g + ".appTicks = 30\n";
     s += g + ".appChecked = false\n";
     s += g + ".appDown = false\n";
     s += g + ".turnAtOpen = 0\n";
     s += g + ".appDownLine = \"" + lua_escape(kAppDownLine) + "\"\n";
+    s += g + ".appBusyLine = \"" + lua_escape(kAppBusyLine) + "\"\n";
     s += "-- Set for a line that is the mod's own and not the other party's: shown bare, with\n";
     s += "-- no speaker's name in front (Named).\n";
     s += g + ".bare = false\n";
@@ -8383,11 +8394,13 @@ std::string emit_conversation_lua(const std::string& modid,
     // conversation once the line has been read (@end, through Heard and EndWhenRead). The
     // turn counter moves as for any line, so an app started afterwards, which reads the
     // count off the log, carries on from the right number.
-    s += "function " + g + ".AppDown(why)\n";
+    // `line` is what the player reads; appDownLine unless the caller knows better (the
+    // backstop, with the heartbeat seen, says appBusyLine).
+    s += "function " + g + ".AppDown(why, line)\n";
     s += "\tif " + g + ".appDown then return end\n";
     s += "\t" + g + ".appDown = true\n";
     s += "\t" + g + ".Log(\"BRIDGE app down -- \" .. tostring(why))\n";
-    s += "\t" + g + ".Say(" + g + ".turn + 1, \"@end \" .. " + g + ".appDownLine, true)\n";
+    s += "\t" + g + ".Say(" + g + ".turn + 1, \"@end \" .. (line or " + g + ".appDownLine), true)\n";
     s += "end\n";
     s += "\n";
     // A development hook: Lua run from hook_N.txt beside the turn files, N counting up
@@ -9384,9 +9397,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // Whether anybody is going to answer. The app's heartbeat is looked for once, a
     // couple of ticks in so the caption road is up to carry the answer; and if it was
-    // there and no first line comes all the same, the backstop says the same thing. Either
-    // way the mod's own line is said in the other party's place and closes the
-    // conversation when read (@end), so the player is never held by somebody silent.
+    // there and no first line comes all the same, the backstop says the app did not answer
+    // in time. Either way the mod's own line is said in the other party's place and closes
+    // the conversation when read (@end), so the player is never held by somebody silent.
     s += "\tif " + g + ".appDown then return end\n";
     s += "\tif not " + g + ".appChecked and " + g + ".ticks - " + g + ".openedAt >= 2 then\n";
     s += "\t\t" + g + ".appChecked = true\n";
@@ -9397,7 +9410,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif " + g + ".turn == " + g + ".turnAtOpen and not " + g + ".streaming and\n";
     s += "\t\t\t" + g + ".ticks - " + g + ".openedAt > " + g + ".appTicks then\n";
-    s += "\t\t" + g + ".AppDown(\"no first line in \" .. (" + g + ".appTicks * 0.4) .. \"s\")\n";
+    s += "\t\t" + g + ".AppDown(\"no first line in \" .. (" + g + ".appTicks * 0.4) .. \"s\", " + g + ".appBusyLine)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\n";

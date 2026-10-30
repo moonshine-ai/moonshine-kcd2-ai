@@ -839,10 +839,14 @@ TEST_CASE("a grown record is folded after the conversation, and the fold rides t
     f.drain(tailer);
     CHECK(f.session.pending().empty());
 
-    // The player walks away: now the model is asked to fold, cold and briefly, and the
-    // directive waits for a turn file to carry it.
+    // The player walks away: the fold is planned, and the poller does it between looks at
+    // the log -- cold and briefly -- after which the directive waits for a turn file.
     f.game.left();
     f.drain(tailer);
+    CHECK(f.llm.calls.size() == 1);
+    REQUIRE(f.session.has_speculation());
+    CHECK_FALSE(f.session.speculate([] { return false; }));
+    CHECK_FALSE(f.session.has_speculation());
     REQUIRE(f.llm.calls.size() == 2);
     const StubLlm::Call& fold = f.llm.last();
     CHECK(fold.options.temperature == doctest::Approx(0.3));
@@ -875,8 +879,11 @@ TEST_CASE("a fold the model botches is refused, and a record under budget is lef
     f.game.play();
     f.game.left();
     f.drain(tailer);
+    REQUIRE(f.session.has_speculation());
+    CHECK_FALSE(f.session.speculate([] { return false; }));
     CHECK(f.llm.calls.size() == 2);
     CHECK(f.session.pending().empty());
+    CHECK_FALSE(f.session.has_speculation());
     const auto refused = std::find_if(f.statuses.begin(), f.statuses.end(), [](const std::string& s) {
         return s.find("refused") != std::string::npos;
     });
@@ -890,6 +897,53 @@ TEST_CASE("a fold the model botches is refused, and a record under budget is lef
     f.game.play();
     f.game.left();
     f.drain(tailer);
+    CHECK_FALSE(f.session.has_speculation());
     CHECK(f.llm.calls.size() == 3);
     CHECK(f.session.pending().empty());
+}
+
+TEST_CASE("a fold due is not in the way of the next begin, and is stopped by a line of the log") {
+    Fixture f;
+    LogTailer tailer(f.game.log());
+    // The paragraph twice: the stub spends a reply on the call the log stops below.
+    f.llm.replies = {"You again.", "Who are you?", "A paragraph: Henry asked the way and you gave it.",
+                     "A paragraph: Henry asked the way and you gave it."};
+    f.game.dump(kBartel, 3, grown(700), "", 4);
+    f.game.begin(kBartel);
+    f.drain(tailer);
+    REQUIRE(f.game.play() == "You again.");
+    f.drain(tailer);
+    f.game.left();
+    f.drain(tailer);
+    REQUIRE(f.session.has_speculation());
+
+    // The player walks straight up to somebody else before the poller got to the fold
+    // (29 Oct 2026: Christine's 34 entries took 35 s to fold on the loop, and every soul
+    // pressed on in that time got the camera and no words). The begin is answered from
+    // the model at once, the fold still waiting.
+    f.game.begin(kStranger);
+    f.drain(tailer);
+    REQUIRE(f.game.play() == "Who are you?");
+    CHECK(f.llm.calls.size() == 2);
+    CHECK(f.game.directives().empty());
+    f.drain(tailer);
+    f.game.left();
+    f.drain(tailer);
+
+    // Back between conversations, a line arriving stops the fold within a token, and it
+    // is taken up again next time round; the directive then rides the next turn.
+    REQUIRE(f.session.has_speculation());
+    CHECK(f.session.speculate([] { return true; }));
+    CHECK(f.llm.calls.size() == 3);
+    REQUIRE(f.session.has_speculation());
+    CHECK(f.session.pending().empty());
+    CHECK_FALSE(f.session.speculate([] { return false; }));
+    CHECK(f.llm.calls.size() == 4);
+    CHECK_FALSE(f.session.has_speculation());
+    REQUIRE(f.session.pending().size() == 1);
+    CHECK(f.session.pending()[0].rfind("@memory " + kBartel + " compact 4 6 ", 0) == 0);
+    const auto stopped = std::find_if(f.statuses.begin(), f.statuses.end(), [](const std::string& s) {
+        return s.find("stopped 1 times by the log") != std::string::npos;
+    });
+    CHECK(stopped != f.statuses.end());
 }

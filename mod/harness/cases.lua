@@ -1935,7 +1935,7 @@ case("Pump: the rows already written behind a line land in the same tick", funct
     for i = 0, 4 do E.files[M.Path(M.inboxes[1], first + i)] = nil end
 end)
 
-case("App: a heartbeat but no first line within the backstop is the same message", function(E, M, check)
+case("App: a heartbeat but no first line within the backstop says the app did not answer", function(E, M, check)
     E.appUp = true
     opened(E, M, 2)
     M.Step()
@@ -1945,7 +1945,8 @@ case("App: a heartbeat but no first line within the backstop is the same message
     check(not M.appDown, "not yet at the limit")
     M.ticks = M.openedAt + M.appTicks + 1
     M.Step()
-    check(M.appDown and E.find("BRIDGE app down -- no first line in 20s"), "past it, the player is told")
+    check(M.appDown and E.find("BRIDGE app down -- no first line in 12s"), "past it, the player is told")
+    check(string.find(M.shown, "did not answer in time", 1, true) ~= nil, "that it did not answer, not that it is missing: " .. tostring(M.shown))
     check(M.ending == true, "and the conversation ends when read")
     M.ending = false
     M.appDown = false

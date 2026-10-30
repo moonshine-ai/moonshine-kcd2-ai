@@ -224,9 +224,20 @@ private:
     Persona persona_for(std::string_view soul, const Approach& approach, std::string_view anim);
     void greet();
     void close();
-    // After a conversation: folds the oldest remembered lines into a paragraph when there
-    // are too many of them, and queues the directive that tells the save so.
+    // After a conversation: when the oldest remembered lines are too many, plans their
+    // folding into a paragraph (fold_), which speculate() does between looks at the log.
+    // Not done here, on the loop that answers the game: it took 35-43 s on the Windows
+    // laptop for a record of 34 entries, and every soul pressed on in that time got the
+    // camera and no words (29 Oct 2026, after Words Must Not Fail).
     void compact();
+    // The planned fold, up to `interrupted`: the model asked for the paragraph, and the
+    // directive that tells the save queued for the next turn file. Returns whether it was
+    // interrupted and is still to do.
+    bool fold(const std::function<bool()>& interrupted);
+    // The look-ahead between conversations -- the voice on the written greeting, the model
+    // on the opening line -- for a look that has lasted. Nothing when there is none to do;
+    // else speculate()'s answer, whether there is more.
+    std::optional<bool> look_ahead(const std::function<bool()>& interrupted);
     // Generates a reply and writes it as the next turn. Blocks for as long as the
     // model takes. `remember` sends the player's words to the save first.
     void answer(std::string_view said, bool remember = false);
@@ -493,6 +504,20 @@ private:
         int runs = 0;
     };
     std::optional<GreetingGuess> greeting_guess_;
+    // A record due to be folded, planned by compact() when its conversation closed and done
+    // by fold() between conversations, after any look-ahead and never while one is open
+    // (it would push the open soul's sheet out of the cache). Replaced by the next close
+    // that finds a fold due; a fold set aside that way is asked for again the next time
+    // that soul's record is dumped.
+    struct PendingFold {
+        std::string soul;
+        std::string name;
+        int rev = 0;
+        Compaction due;
+        // How often the model was stopped on it by a line of the log, for the status line.
+        int stops = 0;
+    };
+    std::optional<PendingFold> fold_;
     // The look-ahead, held back until the look has lasted (notes.md 14 Oct 2026: walking
     // through a crowd, six souls were looked at in twelve seconds and each started the
     // voice on a greeting and the model on a line, beside the game, until the GPU driver

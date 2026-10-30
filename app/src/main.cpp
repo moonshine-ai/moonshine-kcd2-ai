@@ -1233,10 +1233,12 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             }
 
             // With the menu up and nothing to do, work out the replies the player might
-            // pick next. Under the lock like everything else that uses the model, and
-            // stopped within a token by anything that wants it: a line in the log, a
-            // line typed here, or being told to quit. With more to guess, straight back
-            // round without the sleep, so the log is looked at between guesses.
+            // pick next; between conversations, the opening line of whoever is looked at,
+            // and then any fold of a remembered record the last conversation left due.
+            // Under the lock like everything else that uses the model, and stopped within
+            // a token by anything that wants it: a line in the log, a line typed here, or
+            // being told to quit. With more to do, straight back round without the sleep,
+            // so the log is looked at between pieces.
             //
             // Not while a line is being spoken. The clone engine runs on the same cores as
             // the model and the game, and it is only a little ahead of real time with the
@@ -1252,7 +1254,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                     const bool more = session.speculate([&] {
                         return quit || typing.load() || tailer.pending() || speaking();
                     });
-                    held_by(since, "a guess at the next reply");
+                    held_by(since, "a guess at the next reply, or a fold of what is remembered");
                     if (more && !speaking()) continue;
                 }
             }

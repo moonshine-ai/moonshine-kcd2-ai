@@ -711,8 +711,8 @@ void Session::close() {
     picked_intent_.clear();
     drew_.clear();
     status("conversation over");
-    // Now, with the player walking away, rather than at the next begin, when they are
-    // standing in front of somebody waiting for a word. The record it judges is the one
+    // Planned now, with the player walking away, and done between looks at the log rather
+    // than here, where it would hold the next begin. The record it judges is the one
     // dumped before this conversation; the lines just said are not in it, and are not
     // what needs folding anyway -- the newest conversation is always kept whole.
     compact();
@@ -720,28 +720,51 @@ void Session::close() {
 }
 
 void Session::compact() {
-    const std::optional<Compaction> due = compaction_for(record_, persona_.name, kPlayer);
+    std::optional<Compaction> due = compaction_for(record_, persona_.name, kPlayer);
     if (!due) return;
-    status("folding " + std::to_string(due->n) + " remembered entries of " + persona_.name +
-           " into a paragraph");
+    if (fold_ && fold_->soul != record_.soul) {
+        status("the fold of " + fold_->name + "'s " + std::to_string(fold_->due.n) +
+               " entries is set aside, not done in time; their next conversation asks again");
+    }
+    fold_ = PendingFold{record_.soul, persona_.name, record_.rev, std::move(*due)};
+    status(std::to_string(fold_->due.n) + " remembered entries of " + persona_.name +
+           " are due to be folded into a paragraph, between looks at the log");
+}
+
+bool Session::fold(const std::function<bool()>& interrupted) {
+    if (!fold_) return false;
+    PendingFold& fold = *fold_;
     std::string summary;
     try {
-        llm_.chat(due->messages, compaction_options(options_),
-                  [&](std::string_view delta) { summary += delta; });
+        llm_.chat(fold.due.messages, compaction_options(options_), [&](std::string_view delta) {
+            summary += delta;
+            if (interrupted()) throw Interrupted{};
+        });
+    } catch (const Interrupted&) {
+        // Taken up again next time round, from the start; the prompt is the same, so the
+        // backend has most of it cached.
+        ++fold.stops;
+        return true;
     } catch (const std::exception& e) {
         status(std::string("the model could not be reached to fold them: ") + e.what());
-        return;
+        fold_.reset();
+        return false;
     }
     if (const std::string trouble = summary_trouble(summary); !trouble.empty()) {
         // Nothing is lost by refusing: the lines stay as they were and the next conversation
         // asks again. A bad paragraph kept would be a memory nobody can take back.
         status("the paragraph was refused (" + trouble + "), so nothing was folded");
-        return;
+        fold_.reset();
+        return false;
     }
     // Rides on the first turn file of the next conversation, whoever it is with: the
     // directive names the soul, and the mod checks the revision it was built from.
-    pending_.push_back(compact_directive(record_.soul, record_.rev, due->n, summary));
-    status("folded into " + std::to_string(words_in(summary)) + " words, for the next turn to carry");
+    pending_.push_back(compact_directive(fold.soul, fold.rev, fold.due.n, summary));
+    status("folded " + std::to_string(fold.due.n) + " remembered entries of " + fold.name + " into " +
+           std::to_string(words_in(summary)) + " words, for the next turn to carry" +
+           (fold.stops > 0 ? " (stopped " + std::to_string(fold.stops) + " times by the log)" : ""));
+    fold_.reset();
+    return false;
 }
 
 void Session::say(std::string_view said, bool heard_by_game) {
@@ -2159,7 +2182,10 @@ bool Session::look_held() const {
 }
 
 bool Session::has_speculation() const {
-    if (!talking_) return look_prepare_.has_value() || (greeting_guess_ && !greeting_guess_->done);
+    if (!talking_) {
+        return look_prepare_.has_value() || (greeting_guess_ && !greeting_guess_->done) ||
+               fold_.has_value();
+    }
     // Not while the microphone is open: the transcriber runs on the same cores, and a
     // guess at a row the player has left the list to speak is the least likely one to be
     // used anyway.
@@ -2168,6 +2194,59 @@ bool Session::has_speculation() const {
     if (!prefiller_.is_warm(persona_)) return true;
     for (const Guess& guess : guesses_) {
         if (!guess.done) return true;
+    }
+    return false;
+}
+
+std::optional<bool> Session::look_ahead(const std::function<bool()>& interrupted) {
+    // The voice first, on the written greeting's beats, so that the audio is ready at
+    // the press; the poller holds the model's guess below while the voice is at work.
+    if (look_prepare_) {
+        PendingPrepare prepare = std::move(*look_prepare_);
+        look_prepare_.reset();
+        if (listener_.on_prepare) {
+            for (const std::string& beat : prepare.beats) listener_.on_prepare(beat, prepare.actor);
+        }
+        status("the look at " + looked_soul_ + " has lasted, so their greeting is being made ahead");
+        if (!prepare.beats.empty() && greeting_guess_ && !greeting_guess_->done) return true;
+    }
+    // Between conversations the only guess is the opening line of whoever is being
+    // looked at: the very call open() would make for them, an empty history and no
+    // words of the player's, so the cache it leaves is the one that call would want.
+    if (!greeting_guess_ || greeting_guess_->done) return std::nullopt;
+    GreetingGuess& guess = *greeting_guess_;
+    ++guess.runs;
+    if (guess.warm_only) {
+        if (!prefiller_.warm_persona(world_, guess.persona, interrupted)) {
+            ++guess.stops;
+            return true;
+        }
+        guess.done = true;
+        status(guess.persona.name + "'s sheet is read in");
+        return false;
+    }
+    std::string raw;
+    try {
+        const Timing timing = llm_.chat(conversation(world_, guess.persona, {}, ""), options_,
+                                        [&](std::string_view delta) {
+                                            raw.append(delta);
+                                            if (interrupted()) throw Interrupted{};
+                                        });
+        guess.reply = std::move(raw);
+        guess.timing = timing;
+        guess.done = true;
+        prefiller_.mark_warm(guess.persona);
+        status("guessed " + guess.persona.name + "'s opening line ahead, " +
+               std::to_string(timing.reply_tokens) + " tokens");
+    } catch (const Interrupted&) {
+        // Picked up again next time round, unless what interrupted it was a look at
+        // somebody else or a begin, which replace or spend it.
+        ++guess.stops;
+        return true;
+    } catch (const std::exception& e) {
+        status(std::string("the model could not be reached for a guess: ") + e.what());
+        greeting_guess_.reset();
+        return false;
     }
     return false;
 }
@@ -2182,59 +2261,13 @@ bool Session::speculate(const std::function<bool()>& interrupted) {
         return has_speculation();
     }
     if (!talking_) {
-        // Nothing starts for a look until it has lasted: the poller comes back in a moment
-        // and asks again, and a look that has moved on by then cost nothing.
-        if (!look_held()) return false;
-        // The voice first, on the written greeting's beats, so that the audio is ready at
-        // the press; the poller holds the model's guess below while the voice is at work.
-        if (look_prepare_) {
-            PendingPrepare prepare = std::move(*look_prepare_);
-            look_prepare_.reset();
-            if (listener_.on_prepare) {
-                for (const std::string& beat : prepare.beats) listener_.on_prepare(beat, prepare.actor);
-            }
-            status("the look at " + looked_soul_ + " has lasted, so their greeting is being made ahead");
-            if (!prepare.beats.empty() && greeting_guess_ && !greeting_guess_->done) return true;
+        // The soul being looked at comes first: their line is the one the player is about
+        // to want. A fold due from the last conversation waits behind it, and is what the
+        // model does when nobody is being looked at.
+        if (look_held()) {
+            if (const std::optional<bool> more = look_ahead(interrupted)) return *more;
         }
-        // Between conversations the only guess is the opening line of whoever is being
-        // looked at: the very call open() would make for them, an empty history and no
-        // words of the player's, so the cache it leaves is the one that call would want.
-        if (!greeting_guess_ || greeting_guess_->done) return false;
-        GreetingGuess& guess = *greeting_guess_;
-        ++guess.runs;
-        if (guess.warm_only) {
-            if (!prefiller_.warm_persona(world_, guess.persona, interrupted)) {
-                ++guess.stops;
-                return true;
-            }
-            guess.done = true;
-            status(guess.persona.name + "'s sheet is read in");
-            return false;
-        }
-        std::string raw;
-        try {
-            const Timing timing = llm_.chat(conversation(world_, guess.persona, {}, ""), options_,
-                                            [&](std::string_view delta) {
-                                                raw.append(delta);
-                                                if (interrupted()) throw Interrupted{};
-                                            });
-            guess.reply = std::move(raw);
-            guess.timing = timing;
-            guess.done = true;
-            prefiller_.mark_warm(guess.persona);
-            status("guessed " + guess.persona.name + "'s opening line ahead, " +
-                   std::to_string(timing.reply_tokens) + " tokens");
-        } catch (const Interrupted&) {
-            // Picked up again next time round, unless what interrupted it was a look at
-            // somebody else or a begin, which replace or spend it.
-            ++guess.stops;
-            return true;
-        } catch (const std::exception& e) {
-            status(std::string("the model could not be reached for a guess: ") + e.what());
-            greeting_guess_.reset();
-            return false;
-        }
-        return false;
+        return fold(interrupted);
     }
     Guess* next = nullptr;
     for (Guess& guess : guesses_) {
