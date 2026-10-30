@@ -225,6 +225,9 @@ LlamaLlm::LlamaLlm(std::filesystem::path gguf, const Options& options)
     static ggml_backend_dev_t no_devices[] = {nullptr};
     if (options.cpu_only) weights.devices = no_devices;
     impl_->cpu_only = options.cpu_only;
+    // The "extra" buffer types are the CPU backend's repacking ones; the model is then held
+    // once, in the mapping of its file. Why, and what it costs, is at Options::repack_weights.
+    weights.use_extra_bufts = options.repack_weights;
     impl_->model = llama_model_load_from_file(impl_->path.string().c_str(), weights);
     if (!impl_->model) {
         throw std::runtime_error("llama.cpp could not load " + impl_->path.string());

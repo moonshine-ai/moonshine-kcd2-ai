@@ -68,6 +68,11 @@ LlamaEmbedder::LlamaEmbedder(std::filesystem::path gguf) : impl_(std::make_uniqu
     // same default list cost a CUDA context per model beside the game.
     static ggml_backend_dev_t no_devices[] = {nullptr};
     weights.devices = no_devices;
+    // And no rearranged second copy of the weights (llm.h, Options::repack_weights): the
+    // mapping of the file is the model. On Arm the CPU backend would otherwise repack the
+    // Q8_0 tensors, which is this model again in the process's own memory; on x86 it leaves
+    // Q8_0 alone, so this says there what already happens.
+    weights.use_extra_bufts = false;
     impl_->model = llama_model_load_from_file(impl_->path.string().c_str(), weights);
     if (!impl_->model) {
         throw std::runtime_error("llama.cpp could not load " + impl_->path.string());

@@ -425,6 +425,9 @@ void usage() {
         "                  opens no GPU device at all: the model, the embedder and the\n"
         "                  voice are on the CPU, and the game has the GPU to itself. The\n"
         "                  voice has its own switch, MOONSHINE_TTS_BACKEND=gpu\n"
+        "  --repack        let llama.cpp rearrange the weights for this CPU's kernels as it\n"
+        "                  loads them, for measuring. It holds the model twice then, the\n"
+        "                  file's mapping and the rearranged copy, which is 2 GB more\n"
         "  --embed-gguf PATH  the EmbeddingGemma weights for the knowledge base; default\n"
         "                  models/embeddinggemma-300m-q8_0.gguf (then -q4_k_s, -f16),\n"
         "                  looked for from here\n"
@@ -591,6 +594,7 @@ Args parse(int argc, char** argv, bool* stop) {
         else if (arg == "--sheet") args.sheet_path = value();
         else if (arg == "--model") args.options.model = value();
         else if (arg == "--gpu") args.options.cpu_only = false;
+        else if (arg == "--repack") args.options.repack_weights = true;
         else if (arg == "--serve") args.serve_port = std::stoi(value());
         else if (arg == "--gguf") args.gguf = value();
         else if (arg == "--embed-gguf") args.embed_gguf = value();

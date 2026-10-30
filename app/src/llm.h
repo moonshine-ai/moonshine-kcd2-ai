@@ -61,6 +61,28 @@ struct Options {
     // choosing a 4B was that the CPU could carry it.
     bool cpu_only = true;
 
+    // Whether llama.cpp may rearrange the weights for the CPU's matrix kernels as it loads
+    // them. Off, because the rearranged copy is a second copy of the model: the file stays
+    // mapped (the tensors that are not rearranged are read from it) while the rearranged
+    // ones are written into memory of the process's own. Measured on the shipping
+    // Qwen3-4B Q4_K_M, 29 Oct 2026, on the Mac: with it the process holds 3271 MB of its
+    // own beside the 2390 MB mapping; without, 1055 MB beside 2403, and the mapping is
+    // the kind of memory the OS takes back under pressure. The cost there was the second
+    // decimal place: decode 52-53 tok/s against 55-56, the soul's prefill 1.07 s against
+    // 0.75, the world's 3.66 s against 4.86. On the Windows laptop (AVX2, whose Q4_K
+    // kernel differs; 30 Oct 2026, release build, no game) there was no cost at all:
+    // 14-15 tok/s either way, the world prefilled in 10.4 s against 11.3 with the copy,
+    // the soul in 1.8 against 1.9; private bytes 1,188 MB against 2,875 after two turns,
+    // working set 3.2 GB against 4.9. The game runs beside this on 32 GB, and was at 34 GB
+    // committed when its GPU driver gave up on 29 Oct 2026. --repack turns it back on.
+    //
+    // Not something a prepared file could give back: the rearranged layout is the CPU
+    // backend's own, picked by the CPU's features at load (8x8 blocks on AVX2, 8x4 on
+    // Arm NEON) and never a GGUF type -- llama.cpp dropped the on-disk Q4_0_4_4/4_8/8_8
+    // kinds for this very rearranging at load (Dec 2024). And on the machine that ships
+    // it there is nothing to give back.
+    bool repack_weights = false;
+
     // How long the backend should keep the model and its caches resident. This is
     // not a tuning knob but the thing the whole prefill strategy rests on: once
     // this expires the world prefix is gone and the next conversation pays 6s of
