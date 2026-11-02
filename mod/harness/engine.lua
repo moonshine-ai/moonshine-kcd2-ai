@@ -789,9 +789,13 @@ function Engine.installGlobals()
         GetItem = Engine.itemOf,
         RemoveItem = Engine.removeItem,
     }
+    -- Which of the mod's maps are up, by name: the engine delivers a key only through a
+    -- map that is enabled, and a case that feeds a key of a map that is down has found
+    -- the bug where the talk button sat in a map Choose() had turned off (30 Oct 2026).
+    Engine.maps = {}
     ActionMapManager = {
         LoadFromXML = function() return true end,
-        EnableActionMap = function() return true end,
+        EnableActionMap = function(name, on) Engine.maps[name] = (on == true) end,
         SetActionListener = function() return true end,
     }
     XGenAIModule = {}
@@ -882,6 +886,7 @@ function Engine.reset()
     Engine.questState = {}
     Engine.dialog = { open = false, npc = nil, menu = false, beats = 0 }
     Engine.hud = { rows = nil, calls = {}, args = {} }
+    Engine.maps = {}
     Engine.files = {}
     Engine.infoTexts = {}
     Engine.rays = {}

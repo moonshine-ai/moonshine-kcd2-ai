@@ -29,6 +29,13 @@ TEST_CASE("the model's architecture is read off its name, through the quantized 
     CHECK(stt_arch_for("") == -1);
 }
 
+TEST_CASE("the model's name for the log is the folder above any quantized/ folder") {
+    CHECK(stt_model_name("/cache/model/tiny-streaming-en/quantized") == "tiny-streaming-en");
+    CHECK(stt_model_name("/cache/model/base-en/quantized_26_08_21") == "base-en");
+    // The installer's copy holds the files directly (models\stt\medium-streaming-en).
+    CHECK(stt_model_name("C:/Moonshine/models/stt/medium-streaming-en") == "medium-streaming-en");
+}
+
 TEST_CASE("a model is found by path or by its name in the cache") {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "moonshine-stt-test";
     std::filesystem::remove_all(root);

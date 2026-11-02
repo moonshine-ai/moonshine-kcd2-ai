@@ -21,7 +21,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MOONSHINE_REPO="${MOONSHINE_REPO:-https://github.com/moonshine-ai/moonshine}"
-MOONSHINE_PIN="${MOONSHINE_PIN:-9b05faab8adf4367e3c81bf05cd49207d3788e8e}"
+# c13be73 (dev-v0.1.6, 1 Nov 2026): ONNX Runtime's thread pool sized to the P-cores with
+# spinning off, on Windows. Measured on the i9-13900HX laptop: medium-streaming-en from
+# 0.14x real time (0.81x on one thread, which app/src/listen.cpp forced until this pin) to
+# 4.5x. The app must not set MOONSHINE_ORT_SINGLE_THREAD with this pin: the policy stands
+# down when it is set, and medium falls back to 1.0x.
+MOONSHINE_PIN="${MOONSHINE_PIN:-c13be733f6e5b41bfe64147bd6202c7fcc6ab2ec}"
 root="third_party/moonshine"
 build=1
 [[ "${1:-}" == "--no-build" ]] && build=0

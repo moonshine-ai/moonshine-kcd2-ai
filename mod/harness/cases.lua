@@ -2042,9 +2042,11 @@ end)
 local function sayMenu(E, M, directives)
     local npc = E.soul("kkut_additive_man_47", { pos = { x = 1, y = 0, z = 0 } })
     turn(E, 1, "Good day. What brings you?")
+    -- Begin() opens the typing maps itself, as in the game, before any line has asked
+    -- for a menu; opened again here afterwards, a map Choose() had taken down would come
+    -- back up and the case would not see it go.
     M.typingLoaded = true
     if not E.begin(npc) then return false end
-    M.TypingOpen(player)
     -- The rows after the first beat, as the app writes them: a choose code up before the
     -- graph has beaten once is a menu presented with nothing to enter it.
     E.advance(E.beatMillis + 500)
@@ -2064,6 +2066,14 @@ local function saySlot(E, M, check, directives)
     -- can have done anything with the keyboard.
     E.advance(200)
     return M.Display()
+end
+
+-- The talk button, one edge, as the engine delivers it: through the toggle map, and
+-- only while that map is up. Down, the press goes nowhere, which is what the game did
+-- with every press on a menu while Choose() took the map down with the keyboard's.
+local function talk(E, M, activation)
+    if M.typingLoaded and not E.maps[M.typingToggleMap] then return nil end
+    return M.OnPlayerAction("mtalk", activation)
 end
 
 -- Keys, one per character, into the open keyboard.
@@ -2112,8 +2122,8 @@ case("Say: keys go into the line and the caption follows; the app's transcript i
     M.SayHeard("where is the miller", true)
     check(M.typed == "h" and not E.find("BRIDGE say heard") and not E.find("BRIDGE said"), "the transcript ignored, nothing sent")
     -- Nor is the talk button anything here: the keyboard has the slot.
-    M.OnPlayerAction("mtalk", "press")
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "press")
+    talk(E, M, "release")
     check(M.sayMode == "typed" and M.typing == true and not E.find("BRIDGE say start voice"), "the button nothing in the typed slot")
     M.Typed("mtype_space", "press")
     M.Typed("mtype_lshift", "press")
@@ -2222,7 +2232,8 @@ end)
 -- The talk button pressed on a presented menu: the voice slot open under it.
 local function talkSlot(E, M, check, directives)
     check(sayMenu(E, M, directives), "menu presented")
-    check(M.OnPlayerAction("mtalk", "press") == true, "the button is ours")
+    check(E.maps[M.typingToggleMap] == true, "the button's map is up under the menu")
+    check(talk(E, M, "press") == true, "the button is ours")
     check(M.saying == true and M.sayMode == "voice" and M.talkDown == true and M.typing == false,
         "the voice slot open, the keyboard shut")
     return M.menuSayRow
@@ -2276,7 +2287,7 @@ case("Talk: the transcript fills the caption, a finished line waits for the rele
     M.SayHeard("where is the miller and his wife?", true)
     check(M.sayDone == true and not E.find("BRIDGE said"), "finished again, still held")
     -- The release sends it: the pick the app knows the slot by, the stop, the said line.
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     check(E.find("BRIDGE talk released on a finished line"), "the release logged")
     check(E.find("BRIDGE say stop -- sent"), "the stop")
     check(E.find("BRIDGE picked 3 say -- where is the miller and his wife?"), "the pick with the words, on the say row")
@@ -2290,7 +2301,7 @@ case("Talk: the transcript fills the caption, a finished line waits for the rele
     check(lastDimmed(E, 0), "the spoken line dimmed")
     check(M.menuSayRow == 0 and M.menuLeaveRow == 2, "no say row to take the button; the way out at 2")
     check(E.find("BRIDGE menu drawn as the spoken line"), "logged")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     check(M.saying == false and E.find("BRIDGE talk pressed with no say row"), "the button nothing while the reply comes")
     -- The reply plays on the caption through the pump, as any line does, and asks for the
     -- menu, which is already up: the round's bookkeeping, no code, no boundary.
@@ -2316,7 +2327,7 @@ case("Talk: the transcript fills the caption, a finished line waits for the rele
     turn(E, 6, "@opt 1 bye 4:Bye. @rows 1")
     check(untilMenu(E), "the next menu, presented afresh")
     check(E.count("[harness] menu presented") == 2, "presented again")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     check(M.saying == true and M.sayMode == "voice" and hudRow(E, 2) == M.menuSayListening, "the voice slot again")
     M.typingLoaded = false
 end)
@@ -2324,7 +2335,7 @@ end)
 case("Talk: released before the pause, the line goes when the pause comes, or as heard after the grace", function(E, M, check)
     talkSlot(E, M, check, "@opt 1 help 5:Help? @rows 1")
     M.SayHeard("hello", false)
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     check(M.talkDown == false and M.saying == true and not E.find("BRIDGE said"), "released, the line not yet finished: waiting")
     check(E.find("BRIDGE talk released") and not E.find("on a finished line"), "logged so")
     M.SayHeard("hello there", true)
@@ -2336,18 +2347,18 @@ case("Talk: released before the pause, the line goes when the pause comes, or as
     turn(E, 4, "@opt 1 ask 4:Ask? @rows 1")
     E.advance(1000)
     check(hudRow(E, 1) == "Ask?" and hudRow(E, 2) == M.menuSay, "the next rows")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     M.SayHeard("hm", false)
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     E.advance(M.sayReleaseMillis - 100)
     check(not E.find("BRIDGE said hm"), "not yet")
     -- A press inside the grace cancels it: the player has more to say.
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     check(E.find("BRIDGE talk pressed again") and M.talkDown == true, "pressed again")
     E.advance(200)
     check(not E.find("BRIDGE said hm"), "the grace cancelled")
     M.SayHeard("hm, where is the mill", false)
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     E.advance(M.sayReleaseMillis + 100)
     check(E.find("BRIDGE say release grace ran out, sent as heard") and E.find("BRIDGE said hm, where is the mill"),
         "sent as heard once the grace ran out")
@@ -2357,14 +2368,14 @@ end)
 case("Talk: nothing heard closes the slot after the grace; B closes it at once; the menu is as it was", function(E, M, check)
     talkSlot(E, M, check, "@opt 1 help 5:Help? @opt 2 ask 4:Ask? @rows 2")
     local drawn = E.count("BRIDGE menu drawn")
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     E.advance(M.sayReleaseMillis + 100)
     check(E.find("BRIDGE say stop -- nothing heard") and M.saying == false, "closed, the app told")
     check(hudRow(E, 3) == M.menuSay and E.count("BRIDGE menu drawn") == drawn + 1, "the say row back to its words")
     check(E.dialog.menu == true and M.choosing == true, "the menu as it was")
     check(not E.find("BRIDGE said") and not E.find("BRIDGE picked"), "nothing sent, nothing picked")
     -- B with words heard: closed unsent, the caption back to the line.
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     M.SayHeard("never mind", false)
     M.OnPlayerAction("dialog_cancel", "press")
     M.OnPlayerAction("dialog_cancel", "release")
@@ -2372,11 +2383,11 @@ case("Talk: nothing heard closes the slot after the grace; B closes it at once; 
     check(not E.find("BRIDGE skipped") and not E.find("BRIDGE said"), "nothing skipped, nothing sent")
     check(M.Display() ~= M.playerName .. ": _", "the caption is the line again")
     -- A release after the close is nothing; so is a late transcript.
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     M.SayHeard("late", true)
     check(not E.find("BRIDGE said") and M.saying == false, "late input is nothing")
     -- F9 is the same close.
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     M.Typed("mtype_toggle", "press")
     check(E.find("BRIDGE say stop -- toggle") and M.saying == false and M.typing == false, "F9 closes it, no keyboard")
     M.typingLoaded = false
@@ -2427,7 +2438,7 @@ case("Talk: the say row picked with words heard sends them; with none it opens t
     E.advance(E.beatMillis + 500)
     turn(E, 4, "@opt 1 thanks 7:Thanks. @rows 1")
     check(untilMenu(E), "the next menu")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     E.pick(2)
     check(E.find("BRIDGE say stop -- picked") and E.find("BRIDGE say start typed") and M.sayMode == "typed" and M.typing == true,
         "nothing heard: the keyboard, as any pick of the row")
@@ -2442,14 +2453,14 @@ case("Talk: the way out on the standing list leaves; the app with no ear closes 
     check(E.begin(npc), "begun")
     M.TypingOpen(player)
     E.advance(500)
-    check(M.OnPlayerAction("mtalk", "press") == true and M.saying == false, "ours, and nothing")
+    check(talk(E, M, "press") == true and M.saying == false, "ours, and nothing")
     check(E.find("BRIDGE talk pressed with no say row to take it"), "logged")
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     -- A closed list has no say row either.
     E.advance(E.beatMillis + 500)
     turn(E, 2, "@opt 1 yes 3:Yes @opt 2 no 2:No @rows 2 closed")
     check(untilMenu(E) and M.menuSayRow == 0, "a closed list")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     check(M.saying == false, "nothing")
     E.pick(1)
     -- The app says it cannot listen: the slot closes, the row is there to type into.
@@ -2457,15 +2468,15 @@ case("Talk: the way out on the standing list leaves; the app with no ear closes 
     E.advance(E.beatMillis + 500)
     turn(E, 4, "@opt 1 help 5:Help? @rows 1")
     check(untilMenu(E), "an open list")
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     check(M.saying == true, "the slot open")
     M.SayDeaf()
     check(E.find("BRIDGE say deaf") and E.find("BRIDGE say stop -- deaf") and M.saying == false, "closed")
     check(hudRow(E, 2) == M.menuSay, "the say row back")
     -- Leaving from the standing list after a spoken line.
-    M.OnPlayerAction("mtalk", "press")
+    talk(E, M, "press")
     M.SayHeard("farewell", true)
-    M.OnPlayerAction("mtalk", "release")
+    talk(E, M, "release")
     check(E.find("BRIDGE said farewell") and M.menuSpoken == true and M.menuLeaveRow == 2, "sent, the list standing")
     E.pick(2)
     check(E.find("BRIDGE picked 2 leave") and M.active == false, "the way out on the standing list leaves")
@@ -2479,7 +2490,10 @@ case("Talk: leaving with the voice slot open tells the app", function(E, M, chec
     check(M.saying == false and M.sayMode == nil and M.talkDown == false, "the slot over")
     check(E.find("BRIDGE say stop -- conversation over"), "the app told")
     check(not E.find("BRIDGE said"), "nothing sent")
-    M.OnPlayerAction("mtalk", "release")
+    -- The button's map stays up through every menu of a conversation and comes down
+    -- with the conversation, not before.
+    check(E.maps[M.typingToggleMap] == false, "the button's map down with the conversation")
+    talk(E, M, "release")
     M.SayHeard("well", true)
     check(not E.find("BRIDGE said"), "late input is nothing")
     M.typingLoaded = false

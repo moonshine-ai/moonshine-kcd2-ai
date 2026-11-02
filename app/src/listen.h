@@ -61,6 +61,10 @@ struct Heard {
 // or -1 for a name that says nothing.
 int stt_arch_for(const std::filesystem::path& model_dir);
 
+// The model's name for the log, from the same directory: the folder itself, or its parent
+// when the files sit under a quantized/ (or quantized_<date>/) folder.
+std::string stt_model_name(const std::filesystem::path& model_dir);
+
 class Ear {
 public:
     // Loads the transcriber; throws when it will not load. The microphone is not opened

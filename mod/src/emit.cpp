@@ -9818,10 +9818,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".TypingMap(" + g + ".typingToggleMap, true)\n";
     s += "end\n";
     s += "\n";
+    // The keyboard's map down whenever this is called; the toggle map only once the
+    // conversation is over (Leave clears `active` before calling). Choose() calls this
+    // too, as each menu comes up, and the toggle map is where the talk button lives: with
+    // it taken down there, no press on a menu ever reached SayTalk (30 Oct 2026). F9 in
+    // the same map is ignored on a menu by Typed(), so it loses nothing by staying up.
     s += "function " + g + ".TypingClose()\n";
     s += "\t" + g + ".SetTyping(false)\n";
     s += "\t" + g + ".awaiting = false\n";
-    s += "\tif " + g + ".typingLoaded and " + g + ".spotArmed == nil then " + g + ".TypingMap(" + g + ".typingToggleMap, false) end\n";
+    s += "\tif " + g + ".typingLoaded and not " + g + ".active and " + g + ".spotArmed == nil then\n";
+    s += "\t\t" + g + ".TypingMap(" + g + ".typingToggleMap, false)\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
     // The exclusive map up or down, and the caption told either way, since the typed
@@ -14246,20 +14253,15 @@ std::string emit_typing_actionmaps(const std::string& modid) {
     s += "  clears it or brings the menu back as escape does. The names reach the mod's\n";
     s += "  OnAction only; the engine's dialogue does not listen to a map that is not its own.\n";
     s += "  The talk button (mtalk) sits in the toggle map beside F9, both edges, since the\n";
-    s += "  line is spoken for as long as it is held: the right bumper or the right trigger\n";
-    s += "  on the pad, neither of which the dialogue's own map binds, and V on the keyboard.\n";
-    s += "  Two pad inputs on one action is the nested <xboxpad><inputdata/> form the game's\n";
-    s += "  profile uses for its own. While the typing map is up it is silenced with\n";
-    s += "  everything else under it, which is the typed slot taking keys only. -->\n";
+    s += "  line is spoken for as long as it is held: the right trigger on the pad\n";
+    s += "  (xi_triggerr_btn, the digital edge of the trigger, the name the game's own\n";
+    s += "  dialog_move_next binds; the dialogue's map itself binds only A and B), and V on\n";
+    s += "  the keyboard. While the typing map is up it is silenced with everything else\n";
+    s += "  under it, which is the typed slot taking keys only. -->\n";
     s += "<profile version=\"0\">\n";
     s += "\t<actionmap name=\"" + toggle + "\" priority=\"cheats\" exclusivity=\"0\">\n";
     s += "\t\t<action name=\"mtype_toggle\" onPress=\"1\" keyboard=\"f9\" />\n";
-    s += "\t\t<action name=\"mtalk\" onPress=\"1\" onRelease=\"1\" keyboard=\"v\">\n";
-    s += "\t\t\t<xboxpad>\n";
-    s += "\t\t\t\t<inputdata input=\"xi_shoulderr\" />\n";
-    s += "\t\t\t\t<inputdata input=\"xi_triggerr_btn\" />\n";
-    s += "\t\t\t</xboxpad>\n";
-    s += "\t\t</action>\n";
+    s += "\t\t<action name=\"mtalk\" onPress=\"1\" onRelease=\"1\" keyboard=\"v\" xboxpad=\"xi_triggerr_btn\" />\n";
     s += "\t</actionmap>\n";
     s += "\t<actionmap name=\"" + keys + "\" priority=\"cheats_haste\" exclusivity=\"1\">\n";
     s += "\t\t<action name=\"mtype_toggle\" onPress=\"1\" keyboard=\"f9\" />\n";

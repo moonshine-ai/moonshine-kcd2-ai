@@ -15,7 +15,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
 $repo = if ($env:MOONSHINE_REPO) { $env:MOONSHINE_REPO } else { 'https://github.com/moonshine-ai/moonshine' }
-$pin = if ($env:MOONSHINE_PIN) { $env:MOONSHINE_PIN } else { '9b05faab8adf4367e3c81bf05cd49207d3788e8e' }
+# The same pin as scripts/fetch_moonshine.sh, with the reason for it noted there.
+$pin = if ($env:MOONSHINE_PIN) { $env:MOONSHINE_PIN } else { 'c13be733f6e5b41bfe64147bd6202c7fcc6ab2ec' }
 $root = 'third_party\moonshine'
 
 $env:GIT_LFS_SKIP_SMUDGE = '1'

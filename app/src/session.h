@@ -152,6 +152,10 @@ public:
     // directive on the reply's turn file for the save to remember. Words the game itself
     // reported, off its own keyboard, it has already remembered; `heard_by_game` says which.
     void say(std::string_view said, bool heard_by_game = false);
+    // The words as the mod shows them and the voice marker carries them: one line, each run
+    // of whitespace a single space. What spoken() matches a finished line by, and what
+    // main.cpp matches Henry's voice marker against the said line it already spoke.
+    static std::string flat_words(std::string_view text);
 
     bool talking() const { return talking_; }
     const std::string& npc() const { return persona_.name; }
@@ -373,7 +377,6 @@ private:
     // "@end " when the conversation closes on the words; "@voiced " when the app speaks
     // them (set_voiced).
     std::string line_directives(bool closing) const;
-    static std::string flat_words(std::string_view text);
     // Writes a written line as its beats (quest.h, beats_of), one turn each from `turn`:
     // the first carries what is owed, every beat but the last is flagged @beat so the mod
     // keeps the turn, and the last carries @end if the conversation closes on it. The last

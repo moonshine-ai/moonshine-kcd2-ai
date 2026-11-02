@@ -5,6 +5,7 @@
 #include <cctype>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
@@ -127,6 +128,12 @@ int stt_arch_for(const fs::path& model_dir) {
     return -1;
 }
 
+std::string stt_model_name(const fs::path& model_dir) {
+    fs::path dir = model_dir;
+    if (lower(dir.filename().string()).rfind("quantized", 0) == 0) dir = dir.parent_path();
+    return dir.filename().string();
+}
+
 #ifdef MOONSHINE_CAN_LISTEN
 
 static_assert(static_cast<int>(ModelArch::TINY) == 0 && static_cast<int>(ModelArch::BASE) == 1 &&
@@ -156,6 +163,8 @@ struct Ear::Impl {
     // Whether this model takes a context passage at all (the streaming architectures do),
     // learned from the first call that is refused so the log is not told every time.
     bool context_refused = false;
+    // Whether the stream has thrown, so the log hears of it once.
+    std::atomic<bool> failed{false};
 
 #if defined(__APPLE__)
     AudioQueueRef queue = nullptr;
@@ -234,8 +243,13 @@ struct Ear::Impl {
                     read_at = fed;
                     set_text(flatten(stream->updateTranscription(0)));
                 }
-            } catch (const std::exception&) {
-                // A stream that fails stays quiet; the player can still type.
+            } catch (const std::exception& why) {
+                // A stream that fails stays quiet; the player can still type. Said once
+                // in the log, since a slot that hears nothing looks the same from the game
+                // whether the microphone is silent or the model is failing.
+                if (!failed.exchange(true)) {
+                    std::fprintf(stderr, "ear: the stream failed: %s\n", why.what());
+                }
             }
         }
     }
@@ -369,6 +383,13 @@ Ear::Ear(fs::path model_dir) : model_dir_(std::move(model_dir)) {
         throw std::runtime_error("cannot tell which Moonshine model " + model_dir_.string() +
                                  " is from its name (medium-streaming-en and the like)");
     }
+    // The thread pool is the library's business. On Windows it sizes ONNX Runtime's pool to
+    // the P-cores with spinning off (moonshine c13be73, the pin in scripts/fetch_moonshine.*):
+    // the default pool ran medium-streaming-en at 0.14x real time on a 24-core i9-13900HX,
+    // so a line held for six seconds showed nothing (30 Oct 2026); the library's policy
+    // runs it at 4.5x. For the two days between, this constructor set
+    // MOONSHINE_ORT_SINGLE_THREAD=1 instead, which was 0.81x -- and with the new library
+    // that variable stands its policy down (1.0x), so nothing here may set it.
     impl_ = std::make_unique<Impl>(model_dir_, static_cast<ModelArch>(arch));
 }
 

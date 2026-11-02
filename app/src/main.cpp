@@ -874,7 +874,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             } else {
                 try {
                     ear = std::make_unique<Ear>(model);
-                    std::cout << "ear: " << model.parent_path().filename().string()
+                    std::cout << "ear: " << stt_model_name(model)
                               << " listens while the talk button is held\n";
                 } catch (const std::exception& why) {
                     std::cerr << "ear: " << why.what() << "\n";
@@ -1093,6 +1093,8 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
 
     std::mutex lock;
     bool quit = false;
+    // Henry's line spoken from its said marker, whose voice marker is still to come (below).
+    std::string henry_voiced;
     // Raised by the keyboard loop below while it waits for the lock, so a guess in
     // progress lets go of it.
     std::atomic<bool> typing{false};
@@ -1191,9 +1193,31 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                                 event.marker == Marker::Restarted)) {
                     speaker->hush();
                 }
+                // Henry's own line goes to the voice from its said marker, not from the
+                // voice marker the mod writes a line behind it. The said marker is answered
+                // in Session::say -> answer, and a line in Henry's own words (spoken or
+                // typed) has no reply guessed ahead, so that call holds this loop in the
+                // model for ten seconds and more; the voice marker was not read until the
+                // reply was written, and Henry was heard after her answer, or -- a press
+                // on the menu meanwhile hushing the queue -- not at all (1 Nov 2026: "How
+                // are you doing?" was never voiced, and the mod waited out its grace for
+                // it). Spoken here, the line plays while the model works, and its marker is
+                // then one already spoken.
+                if (speaker && event.marker == Marker::Said && session.talking() && !event.said.empty() &&
+                    event.said != "...") {
+                    LipTag lips;
+                    lips.who = "henry";
+                    lips.face = std::string(kHenryFace);
+                    lips.key = lip_key("henry", event.said);
+                    speaker->say(event.said, clone_for("henry", session.actor()), std::move(lips));
+                    henry_voiced = Session::flat_words(event.said);
+                }
                 // The mod prints this as the line goes on screen. Henry's recording for
                 // him; a male or female token is that stand-in; npc is whoever is open.
-                if (speaker && event.marker == Marker::Voice) {
+                if (speaker && event.marker == Marker::Voice && event.intent == "henry" && !henry_voiced.empty() &&
+                    Session::flat_words(event.said) == henry_voiced) {
+                    henry_voiced.clear();
+                } else if (speaker && event.marker == Marker::Voice) {
                     // And a mouth to go with it: Henry's own actor's clips for him, the
                     // soul's actor's for them, named for the mod by the line's key, which
                     // the mod computes from the same marker (lipsync.h, lip_key).
