@@ -82,6 +82,25 @@ struct Listener {
     // session tells the mod to take the keyboard instead (Moonshine.SayDeaf). What it hears
     // comes back through Session::heard().
     std::function<bool(bool on, std::string_view context)> on_listen;
+    // A piece of a reply being written, as the model finishes it (sentence.h): where the
+    // voice speaks it now, in its turn behind the pieces before, rather than the whole
+    // reply when the mod shows it. The mod is told on the same turn (@lip) so the mouth and
+    // the menu follow the pieces. Only for a reply streamed from the model and only with a
+    // voice (set_voiced); one guessed ahead or written has its audio made whole
+    // (on_prepare) and is spoken by the mod's voice marker as before.
+    std::function<void(std::string_view piece)> on_speak_piece;
+    // The lines the voice has finished with since the last ask (Speaker::take_spoken),
+    // asked for while a reply is being written: Henry's line is called spoken (Session::
+    // spoken) as soon as it is, not when the reply is whole -- the mod holds the reply
+    // behind his line until then, and a line in his own words has no reply guessed ahead,
+    // so the writing was the whole of the wait (2 Nov 2026: 16 s).
+    std::function<std::vector<std::string>()> take_spoken;
+    // Whether the player has skipped a line (B, or space) at or after the given turn
+    // since the reply began: asked between the pieces of a reply being written, with the
+    // turn its first update went out as. Yes, and the reply ends where it is on the
+    // screen, as the game's own skip ends a line: the player has heard enough of it.
+    // The asker is expected to have hushed the voice.
+    std::function<bool(int first_turn)> skipped;
 };
 
 class Session {
@@ -111,6 +130,12 @@ public:
     // hook calling Moonshine.Spoken("henry") or ("npc"), once. Any other line is nothing to
     // it. Matched with whitespace flattened, as the voice marker carries them.
     void spoken(std::string_view text);
+    // Whether these are the words of the last reply, spoken in pieces as it was written
+    // (Listener::on_speak_piece): the mod's voice marker for the whole is then not a line
+    // to speak, since the voice has had it already.
+    bool pieced(std::string_view words) const {
+        return !pieced_reply_.empty() && flat_words(words) == pieced_reply_;
+    }
     // The microphone's transcript so far while the player is speaking into the say slot,
     // as the transcriber has it (the whole line, replaced each time), and whether the
     // transcriber has finished with it -- heard a pause after the last word. Sent to the
@@ -440,6 +465,8 @@ private:
     // same way: the camera is his until his voice is done with them.
     std::string closing_words_;
     std::string henry_words_;
+    // The last reply, flattened, when its pieces were spoken as it was written (pieced()).
+    std::string pieced_reply_;
     // Whole directives for the save -- the player's words, a compaction -- waiting the same
     // way. Kept across conversations, since a compaction is decided after the last turn of
     // one and can only travel on the first turn of the next.

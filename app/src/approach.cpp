@@ -136,6 +136,15 @@ std::string approach_prose(const Approach& a, std::string_view clause) {
         say(world);
     }
 
+    // Under a roof or not, before what they are doing: a housekeeper's card has her in the
+    // kitchen, and met sweeping the step she said so (bugs.txt 2 Nov 2026). Positive both
+    // ways, as the dry sky is: "not indoors" is still the word indoors.
+    if (a.indoors == 0) {
+        say("You are out of doors.");
+    } else if (a.indoors > 0) {
+        say("You are indoors.");
+    }
+
     if (asleep) {
         say("You are asleep.");
     } else if (!clause.empty()) {
@@ -157,7 +166,9 @@ std::string approach_prose(const Approach& a, std::string_view clause) {
     // knight.
     if (a.armed) parts.push_back("has a weapon in hand");
 
-    std::string arrival = "Someone";
+    // A young man, never "someone": the one who walks up is always Henry, and left unsaid
+    // his sex was the model's to guess (bugs.txt 2 Nov 2026, "Welcome, mistress").
+    std::string arrival = "A young man";
     // The greeting is only the first line. Without this the model would spend every turn after
     // it talking to a stranger it has just addressed by name, which is the same lapse the
     // reunion greetings exist to avoid -- one line later.

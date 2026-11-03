@@ -30,5 +30,6 @@ __pycache__/
 
 # The development deploy onto one particular laptop (its hostname is in the name).
 /scripts/deploy_wl1.sh
+/scripts/start-moonshine-on-wl1.sh
 
 bugs.txt

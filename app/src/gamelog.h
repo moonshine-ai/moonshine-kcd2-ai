@@ -96,6 +96,12 @@ enum class Marker {
     // over".
     SayStart,
     SayStop,
+    // The player tapped the skip button (B on the pad, space on the keyboard) on a line of
+    // the other party's: "BRIDGE skipped turn=N", N the turn that was on the screen. The
+    // mod has taken the mouth off and let the menu go by the time this is read; the app
+    // hushes the voice, and a reply still being written for that turn ends where it was
+    // (Session::answer, Listener::skipped).
+    Skipped,
 };
 
 struct Event {
@@ -173,6 +179,10 @@ public:
     // events, for work that should stop the moment the game says something (the replies
     // guessed ahead, session.h). Cheap when nothing has been written.
     bool pending();
+    // What pending() has read and poll() has not yet handed out, oldest first: for work
+    // held in the model that must answer one particular event now (the player skipping
+    // the line being written, main.cpp) and leave the rest to the loop.
+    const std::vector<Event>& buffered() const { return buffered_; }
 
     std::uintmax_t position();
 

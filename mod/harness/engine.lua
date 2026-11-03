@@ -798,7 +798,15 @@ function Engine.installGlobals()
         EnableActionMap = function(name, on) Engine.maps[name] = (on == true) end,
         SetActionListener = function() return true end,
     }
-    XGenAIModule = {}
+    -- The level's area labels at a point (`interior`), as the mod's Indoors asks them: a
+    -- case sets Engine.interior to true or false to label every point so, and nil (reset's
+    -- default) is a level that cannot say, which the mod reports as unlabelled.
+    XGenAIModule = {
+        IsPointInAreaWithLabel = function(p, label)
+            if Engine.interior == nil then error("no area labels") end
+            return label == "interior" and Engine.interior == true
+        end,
+    }
     Sound = { GetAudioTriggerID = function(name) return name end }
     Particle = { SpawnEffect = function() end }
     HUD = {}
@@ -895,6 +903,7 @@ function Engine.reset()
     Engine.framedAsked = {}
     Engine.consoled = {}
     Engine.mounted = false
+    Engine.interior = nil
     player = Engine.makePlayer()
     Moonshine.active = false
     Moonshine.npc = nil

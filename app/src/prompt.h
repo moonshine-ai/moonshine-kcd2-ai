@@ -90,6 +90,11 @@ struct Persona {
     // conversation opens like the quest plan (scripted.h). Empty throughout for a soul
     // nobody wrote them for, whose picks the model answers as it always did.
     Scripted scripted;
+    // Whether this soul has spoken to the player before (Approach::met), for the direction
+    // an opening line is generated on: a stranger's or an acquaintance's (kApproached,
+    // kApproachedAgain). Last, after everything the tests and main.cpp build a Persona
+    // from by position.
+    bool met = false;
 };
 
 // How a voiced NPC is to speak. True of every soul in the game, so it belongs in the
@@ -118,8 +123,12 @@ std::string system_prompt(std::string_view world, const Persona& persona);
 // blank turn and free-associates from the character sheet -- measured, an NPC opened
 // with "Bread's good today, sister", addressing their sister rather than the player
 // stood in front of them. Written as a direction rather than as speech so there is
-// nothing in it to answer.
+// nothing in it to answer. The one walking up is named for what he is, a young man, and
+// the second is for a soul who has met him (Persona::met): the stranger's direction sent
+// to a woman he had done two favours for had her greet him as a stranger would (bugs.txt
+// 2 Nov 2026), and with nothing said of his sex, as "mistress".
 extern const std::string_view kApproached;
+extern const std::string_view kApproachedAgain;
 
 // A conversation ready to send. `history` alternates player and NPC turns, oldest
 // first, and `said` is what the player has just said. Empty means they have not

@@ -251,10 +251,10 @@ private:
                 whole += " " + token();
                 whole += " " + token();
                 directives_.push_back(whole);
-            } else if (head == "@said") {
+            } else if (head == "@said" || head == "@lip") {
                 token();
                 const std::string text = counted();
-                directives_.push_back("@said " + std::to_string(text.size()) + ":" + text);
+                directives_.push_back(head + " " + std::to_string(text.size()) + ":" + text);
             } else if (head == "@memory") {
                 std::string whole = token();
                 const std::string soul = token();

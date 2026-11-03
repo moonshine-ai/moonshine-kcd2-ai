@@ -75,3 +75,25 @@ TEST_CASE("an opening line has no history") {
     CHECK(messages[0].role == "system");
     CHECK(messages[1].role == "user");
 }
+
+TEST_CASE("nothing said yet is the approach direction: a young man, a stranger's or an acquaintance's") {
+    // bugs.txt 2 Nov 2026: "someone" had Christine greet Henry as "mistress", and the
+    // stranger's direction went to a woman he had done two favours for.
+    const std::vector<Message> first = conversation(kWorld, kAdam, {}, "");
+    REQUIRE(first.size() == 2);
+    CHECK(first[1].content == kApproached);
+    CHECK(std::string(kApproached).find("A young man you do not know") != std::string::npos);
+    CHECK(std::string(kApproached).find("greet him with") != std::string::npos);
+    Persona again = kAdam;
+    again.met = true;
+    const std::vector<Message> back = conversation(kWorld, again, {}, "");
+    CHECK(back[1].content == kApproachedAgain);
+    CHECK(std::string(kApproachedAgain).find("you have spoken to before") != std::string::npos);
+    // The system message is the same either way: the direction is the player's turn.
+    CHECK(back[0].content == first[0].content);
+}
+
+TEST_CASE("the shared rules name the groschen as the only coin") {
+    // Generated lines spoke of hellers (bugs.txt 2 Nov 2026).
+    CHECK(std::string(kSpeaking).find("The only coin is the groschen") != std::string::npos);
+}

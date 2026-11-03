@@ -30,6 +30,12 @@ TEST_CASE("the markers the mod prints are recognised in the lines it prints them
     CHECK(classify("CSystem::Quit invoked from thread 63208 (main is 63208), reason: Quit requested by "
                    "C_UISaveLoad::ExitGame(), exit code: 0").marker == Marker::Quit);
     CHECK(classify("<12:05:02> [moonshine_names] BRIDGE played turn=3 -- Quit? Not I.").marker == Marker::Played);
+
+    // The player's tap on the skip button, with the turn that was on the screen.
+    const Event skipped = classify("<12:05:03> [moonshine_names] BRIDGE skipped turn=9");
+    CHECK(skipped.marker == Marker::Skipped);
+    CHECK(skipped.turn == 9);
+    CHECK(classify("BRIDGE skipped turn=").marker == Marker::None);
 }
 
 TEST_CASE("the say slot going live and stopping are markers, with how and the mod's reason") {
@@ -111,7 +117,8 @@ TEST_CASE("a turn that was only asked for is not a turn that was heard") {
     // three lines in four never said, so it is pinned here.
     CHECK(classify("<12:04:34> BRIDGE spoke turn=7").marker == Marker::None);
     CHECK(classify("<12:04:34> BRIDGE beat 3 turn=7").marker == Marker::None);
-    CHECK(classify("<12:04:36> BRIDGE skipped turn=7").marker == Marker::None);
+    // A skip is a marker of its own now (the voice is hushed on it), still not a played turn.
+    CHECK(classify("<12:04:36> BRIDGE skipped turn=7").marker != Marker::Played);
 }
 
 TEST_CASE("the rest of the log is not ours") {
@@ -209,6 +216,17 @@ TEST_CASE("a begin marker carries where the soul stands, or leaves it unread") {
     const Event half = classify("<12:04:31> BRIDGE begin npc=kkut_woman_30 at=1823, hour=1");
     CHECK(half.approach.x == kUnread);
     CHECK(half.approach.y == kUnread);
+}
+
+TEST_CASE("a begin marker says whether the soul is under a roof, or leaves it unread") {
+    // "in=true|false" beside the position (the level's interior label); left off by a mod
+    // too old to say or a level that cannot, and then not remarked on.
+    const Event out = classify("<12:04:31> BRIDGE begin npc=kkut_woman_223 at=3221,794 in=false nspc=25 hour=10.8");
+    CHECK(out.approach.indoors == 0);
+    const Event in = classify("<12:04:31> BRIDGE begin npc=kkut_woman_223 at=3221,794 in=true nspc=25 hour=10.8");
+    CHECK(in.approach.indoors == 1);
+    const Event old = classify("<12:04:31> BRIDGE begin npc=kkut_woman_223 at=3221,794 nspc=25 hour=10.8 doing=in");
+    CHECK(old.approach.indoors == -1);
 }
 
 TEST_CASE("a begin or look marker carries which deal the mod was built from") {

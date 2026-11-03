@@ -619,6 +619,196 @@ TEST_CASE("the reply reaches the screen as it is written, not when it is finishe
     CHECK(f.session.history().back().content == "God be with you, traveller.");
 }
 
+TEST_CASE("a voiced reply is spoken a sentence at a time as it is written, and the mod told of each piece") {
+    Fixture f;
+    f.session.set_stream_interval(std::chrono::milliseconds(0));
+    f.session.set_voiced(true);
+    f.llm.chunk = 4;
+    // Each sentence long enough to be a piece on its own (the buffer holds short ones
+    // back until there is a mouthful).
+    const std::string one = "God be with you, traveller, and welcome to Rattay town.";
+    const std::string two = "The well is a day's ride east of here, past the mill.";
+    const std::string three = "Mind the road after dark, there are bandits about these days.";
+    f.llm.replies.push_back(one + " " + two + " " + three);
+
+    // The voice is handed each piece the moment it is whole, while the model still writes,
+    // and reports what it has finished when the session asks between chunks.
+    std::vector<std::string> voiced;
+    std::vector<std::string> finished;
+    Listener listener;
+    listener.on_say = [&f](std::string_view piece) { f.spoken.emplace_back(piece); };
+    listener.on_speak_piece = [&voiced](std::string_view piece) { voiced.emplace_back(piece); };
+    listener.take_spoken = [&voiced, &finished] {
+        std::vector<std::string> done(voiced.begin() + static_cast<long>(finished.size()), voiced.end());
+        finished.insert(finished.end(), done.begin(), done.end());
+        return done;
+    };
+    f.session.set_listener(std::move(listener));
+    f.session.handle({Marker::Begin, 0, kBartel});
+
+    REQUIRE(voiced.size() == 3);
+    CHECK(voiced[0] == one);
+    CHECK(voiced[1] == two);
+    CHECK(voiced[2] == three);
+    CHECK(voiced == f.spoken);
+
+    // Every piece is announced to the mod exactly once, as "@lip <len>:<words>" in front
+    // of a turn, the length counting the bytes the mod will read; and the last turn is
+    // the whole reply, which the session knows was the one spoken in pieces.
+    std::string last;
+    while (const std::optional<std::string> update = f.game.play()) last = *update;
+    std::vector<std::string> announced;
+    for (const std::string& directive : f.game.directives()) {
+        if (directive.rfind("@lip ", 0) != 0) continue;
+        announced.push_back(directive.substr(directive.find(':') + 1));
+    }
+    CHECK(announced == std::vector<std::string>{one, two, three});
+    CHECK(last == one + " " + two + " " + three);
+    CHECK(f.session.pieced(last));
+    CHECK_FALSE(f.session.pieced(one));
+    // The voice was asked what it had finished while the reply was still being written.
+    CHECK(finished.size() == 3);
+}
+
+TEST_CASE("while the voice is on a sentence, the screen is shown the reply no further than its end") {
+    Fixture f;
+    f.session.set_stream_interval(std::chrono::milliseconds(0));
+    f.session.set_voiced(true);
+    f.llm.chunk = 4;
+    const std::string one = "God be with you, traveller, and welcome to Rattay town.";
+    const std::string two = "The well is a day's ride east of here, past the mill.";
+    f.llm.replies.push_back(one + " " + two);
+
+    // A voice that never gets to the end of the first sentence while the reply is written.
+    // The sentence completes on the blank after its full stop, which comes glued to the
+    // first word of the next ("town. The"): that word was on the screen for the length of
+    // the sentence before this (2 Nov 2026).
+    std::vector<std::string> voiced;
+    Listener listener;
+    listener.on_say = [&f](std::string_view piece) { f.spoken.emplace_back(piece); };
+    listener.on_speak_piece = [&voiced](std::string_view piece) { voiced.emplace_back(piece); };
+    listener.take_spoken = [] { return std::vector<std::string>{}; };
+    f.session.set_listener(std::move(listener));
+    f.session.handle({Marker::Begin, 0, kBartel});
+    REQUIRE(voiced.size() == 2);
+
+    std::vector<std::string> shown;
+    while (const std::optional<std::string> update = f.game.play()) shown.push_back(*update);
+    REQUIRE(shown.size() > 2);
+    // The whole first sentence was shown, on its own, the moment the voice was given it...
+    CHECK(std::find(shown.begin(), shown.end(), one) != shown.end());
+    // ...and no update before the last went past it. The last is the finished reply, which
+    // ends the turn whatever the voice is doing.
+    for (std::size_t i = 0; i + 1 < shown.size(); ++i) {
+        CHECK(shown[i].size() <= one.size());
+        CHECK(one.rfind(shown[i], 0) == 0);
+    }
+    CHECK(shown.back() == one + " " + two);
+}
+
+TEST_CASE("once the voice has finished a sentence, the next one streams to the screen as it is written") {
+    Fixture f;
+    f.session.set_stream_interval(std::chrono::milliseconds(0));
+    f.session.set_voiced(true);
+    f.llm.chunk = 4;
+    const std::string one = "God be with you, traveller, and welcome to Rattay town.";
+    const std::string two = "The well is a day's ride east of here, past the mill.";
+    f.llm.replies.push_back(one + " " + two);
+
+    // The voice reports a piece finished the first time it is asked after being given it.
+    std::vector<std::string> voiced;
+    std::size_t reported = 0;
+    Listener listener;
+    listener.on_say = [&f](std::string_view piece) { f.spoken.emplace_back(piece); };
+    listener.on_speak_piece = [&voiced](std::string_view piece) { voiced.emplace_back(piece); };
+    listener.take_spoken = [&voiced, &reported] {
+        std::vector<std::string> done(voiced.begin() + static_cast<long>(reported), voiced.end());
+        reported = voiced.size();
+        return done;
+    };
+    f.session.set_listener(std::move(listener));
+    f.session.handle({Marker::Begin, 0, kBartel});
+
+    std::vector<std::string> shown;
+    while (const std::optional<std::string> update = f.game.play()) shown.push_back(*update);
+    // Updates longer than the first sentence but shorter than the whole: the second
+    // sentence arriving a few characters at a time.
+    const std::string whole = one + " " + two;
+    int partial = 0;
+    for (const std::string& update : shown) {
+        if (update.size() > one.size() && update.size() < whole.size()) ++partial;
+    }
+    CHECK(partial > 2);
+    CHECK(shown.back() == whole);
+}
+
+TEST_CASE("a reply the player skips while it is being written ends where the screen had it") {
+    Fixture f;
+    f.session.set_stream_interval(std::chrono::milliseconds(0));
+    f.session.set_voiced(true);
+    f.llm.chunk = 4;
+    const std::string one = "God be with you, traveller, and welcome to Rattay town.";
+    const std::string two = "The well is a day's ride east of here, past the mill.";
+    const std::string three = "Mind the road after dark, there are bandits about these days.";
+    f.llm.replies.push_back(one + " " + two + " " + three);
+
+    // The voice keeps the first sentence going; the player taps skip once the screen has
+    // had the second one for a while. The skip is asked about with the turn the reply's
+    // first update went out as; one before that would be a skip of the line before it.
+    std::vector<std::string> voiced;
+    std::vector<int> asked_with;
+    bool reported = false;
+    Listener listener;
+    listener.on_say = [&f](std::string_view piece) { f.spoken.emplace_back(piece); };
+    listener.on_speak_piece = [&voiced](std::string_view piece) { voiced.emplace_back(piece); };
+    listener.take_spoken = [&voiced, &reported] {
+        // The first piece is finished with the first time it is asked about, so the
+        // second sentence streams; the rest never are.
+        std::vector<std::string> done;
+        if (!reported && !voiced.empty()) {
+            reported = true;
+            done.push_back(voiced.front());
+        }
+        return done;
+    };
+    listener.skipped = [&asked_with, &f, &two](int first_turn) {
+        asked_with.push_back(first_turn);
+        // Skip once the second sentence is well under way on the screen: the latest turn
+        // written carries its first twenty characters.
+        int latest = 0;
+        while (f.game.has_turn(latest + 1)) ++latest;
+        return latest > 0 && f.game.whole(latest).find(two.substr(0, 20)) != std::string::npos;
+    };
+    f.session.set_listener(std::move(listener));
+    f.session.handle({Marker::Begin, 0, kBartel});
+
+    // Asked with the first turn of the reply, every time.
+    REQUIRE_FALSE(asked_with.empty());
+    for (const int turn : asked_with) CHECK(turn == 1);
+    // The model was stopped: only the first two sentences were ever started, and the
+    // third never reached the voice.
+    CHECK(voiced.size() == 1);
+
+    std::vector<std::string> shown;
+    while (const std::optional<std::string> update = f.game.play()) shown.push_back(*update);
+    REQUIRE(shown.size() > 2);
+    // The reply ends at the last update the screen had, which is what the history holds.
+    CHECK(shown.back() == shown[shown.size() - 2]);
+    CHECK(shown.back().rfind(one, 0) == 0);
+    CHECK(shown.back().size() < (one + " " + two).size());
+    REQUIRE(f.session.history().size() == 1);
+    CHECK(f.session.history().back().content == shown.back());
+    // And the cut reply is the one the voice had in pieces, so the mod's marker for it is
+    // nothing to speak.
+    CHECK(f.session.pieced(shown.back()));
+    // No piece is announced on the finishing turn: the mod has nothing to wait for.
+    const std::vector<std::string>& directives = f.game.directives();
+    const long lips = std::count_if(directives.begin(), directives.end(), [](const std::string& d) {
+        return d.rfind("@lip ", 0) == 0;
+    });
+    CHECK(lips == 1);
+}
+
 TEST_CASE("a reply that opens by repeating the last line loses the repeat, and never shows it") {
     Fixture f;
     f.session.set_stream_interval(std::chrono::milliseconds(0));

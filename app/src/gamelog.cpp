@@ -16,6 +16,7 @@ constexpr std::string_view kBegin = "BRIDGE begin";
 constexpr std::string_view kLook = "BRIDGE look npc=";
 constexpr std::string_view kLeft = "BRIDGE left";
 constexpr std::string_view kPlayed = "BRIDGE played turn=";
+constexpr std::string_view kSkipped = "BRIDGE skipped turn=";
 constexpr std::string_view kSaid = "BRIDGE said ";
 constexpr std::string_view kVoice = "BRIDGE voice ";
 constexpr std::string_view kLoaded = "BRIDGE state loaded";
@@ -173,6 +174,11 @@ Event classify(std::string_view line) {
                 event.approach.y = y;
             }
         }
+        // Under a roof or not; " in=" with its space, since "in" ends many a word. Unread
+        // when the mod did not say or the level could not (the field is left off then).
+        const std::string in = field_from(line, " in=");
+        if (in == "true") event.approach.indoors = 1;
+        if (in == "false") event.approach.indoors = 0;
         // Which deal the mod was built from, for the check against this app's database.
         event.approach.quest_set = field_from(line, " qset=");
         // And the same for every quest the soul is party to, "<id>:<n>,<id>:<n>", for a soul
@@ -273,12 +279,21 @@ Event classify(std::string_view line) {
         }
     }
 
-    const std::size_t at = line.find(kPlayed);
+    // "BRIDGE played turn=N", or "BRIDGE skipped turn=N": the player's tap on the skip
+    // button, N being the turn on the screen when they tapped.
+    Marker marker = Marker::Played;
+    std::size_t at = line.find(kPlayed);
+    std::size_t after = kPlayed.size();
+    if (at == std::string_view::npos) {
+        at = line.find(kSkipped);
+        after = kSkipped.size();
+        marker = Marker::Skipped;
+    }
     if (at == std::string_view::npos) return {};
 
     // Parsed by hand rather than with stoi, so a marker with a malformed number is
     // ignored instead of throwing out of a log read.
-    std::string_view digits = trim(line.substr(at + kPlayed.size()));
+    std::string_view digits = trim(line.substr(at + after));
     if (digits.empty() || !std::isdigit(static_cast<unsigned char>(digits.front()))) return {};
 
     int turn = 0;
@@ -286,8 +301,8 @@ Event classify(std::string_view line) {
         if (!std::isdigit(static_cast<unsigned char>(c))) break;
         turn = turn * 10 + (c - '0');
     }
-    if (turn <= 0) return {};
-    return {Marker::Played, turn, {}};
+    if (turn < 0 || (turn == 0 && marker == Marker::Played)) return {};
+    return {marker, turn, {}};
 }
 
 RunCounts run_counts(const fs::path& log, std::uintmax_t limit) {

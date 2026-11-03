@@ -33,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <deque>
 #include <vector>
 
 #include "console.h"
@@ -1002,13 +1003,104 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         return std::optional<Persona>(persona);
     });
 
+    // The pieces of a reply the voice was given as the model wrote them (on_speak_piece
+    // below), in order, until the voice has finished with each; and the whole reply's
+    // words once the mod has shown it, for the closing line's word (Session::spoken) when
+    // the last piece ends. Under `lock`, as everything of the session's is.
+    std::deque<std::string> pieces_pending;
+    std::string pieces_whole;
+
     Listener listener;
     listener.on_say = [&session](std::string_view piece) {
-        // Spoken when the mod shows the line, not as it is written: the caption and
-        // the voice then belong to the same moment, and a streamed reply is one
-        // reading rather than a queue of pieces.
         std::cout << session.npc() << "> " << piece << "\n" << std::flush;
     };
+    // A piece of the reply being written, spoken now, in its turn: before (to 2 Nov 2026)
+    // the whole reply was spoken when the mod showed it, so the caption and the voice
+    // belonged to the same moment -- and on the Windows laptop the model took 13 s to
+    // write a reply, then the voice 2 s to start on it; fifteen seconds of silence after
+    // Henry's line. Now the first sentence is heard as the second is written, and the
+    // caption follows the voice page by page (the mod's LipPiece, told by @lip on the
+    // turn). The mouth is keyed by the piece's own words, as the mod queues it.
+    listener.on_speak_piece = [speaker, &session, &pieces_pending](std::string_view piece) {
+        if (!speaker) return;
+        LipTag lips;
+        lips.who = "npc";
+        lips.face = session.face();
+        lips.key = lip_key("npc", piece);
+        speaker->say(piece, clone_for("npc", session.actor()), std::move(lips));
+        pieces_pending.push_back(Session::flat_words(piece));
+    };
+    // The lines the voice has finished with, for the session to match Henry's line and the
+    // closing line by (Session::spoken). A piece of a reply spoken as it was written is
+    // struck off here; the last one struck off is the whole reply spoken, which is the
+    // closing line's word when the reply was the close. Asked from the loop below between
+    // markers, and by the session itself while it writes a reply (Listener::take_spoken).
+    const auto voice_done = [speaker, &session, &pieces_pending, &pieces_whole]() {
+        std::vector<std::string> lines;
+        if (!speaker) return lines;
+        lines = speaker->take_spoken();
+        for (const std::string& line : lines) {
+            if (!pieces_pending.empty() && Session::flat_words(line) == pieces_pending.front()) {
+                pieces_pending.pop_front();
+            }
+        }
+        if (pieces_pending.empty() && !pieces_whole.empty()) {
+            session.spoken(pieces_whole);
+            pieces_whole.clear();
+        }
+        return lines;
+    };
+    listener.take_spoken = voice_done;
+    // Whatever the voice has and is going to say goes, with the bookkeeping of the pieces:
+    // a line taken off the queue unheard is reported by nobody.
+    const auto hush_all = [speaker, &pieces_pending, &pieces_whole] {
+        if (!speaker) return;
+        speaker->hush();
+        pieces_pending.clear();
+        pieces_whole.clear();
+    };
+    // The player's taps on the skip button (B, or space: the mod's Skip, "BRIDGE skipped
+    // turn=N") while the loop below is held in the model, which is where it is for the
+    // length of a reply. Read off the log ahead of the loop, since the voice would otherwise
+    // play on -- and the model stand aside for it -- until the reply was written. Each one
+    // hushes the voice the moment it is seen; the loop, reaching the same event later,
+    // leaves it be (skips_early). Returns whether one was of the given turn or a later,
+    // for the session to know a skip of the reply it is writing from one of the line
+    // before it. Under `lock`, as is every use of the tailer.
+    int skips_early = 0;
+    const auto skipped_since = [&tailer, &hush_all, &skips_early](int turn) {
+        tailer.pending();
+        int seen = 0;
+        bool of_turn = false;
+        for (const Event& event : tailer.buffered()) {
+            if (event.marker != Marker::Skipped) continue;
+            ++seen;
+            if (event.turn >= turn) of_turn = true;
+        }
+        while (skips_early < seen) {
+            ++skips_early;
+            std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
+            hush_all();
+        }
+        return of_turn;
+    };
+    listener.skipped = skipped_since;
+    // The voice and the model share the cores, so the model stands aside while a line is
+    // spoken (llm.h) -- but not for a line the player has skipped: the skip is looked for
+    // while it waits, and hushes the line, which lets the model go on. Looked for no more
+    // than a few times a second; a look is a stat of the log.
+    if (speaker) {
+        auto looked_at = std::chrono::steady_clock::now();
+        llm.stand_aside_while([speaker, &skipped_since, looked_at]() mutable {
+            if (!speaker->speaking()) return false;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - looked_at >= std::chrono::milliseconds(100)) {
+                looked_at = now;
+                skipped_since(0);
+            }
+            return speaker->speaking();
+        });
+    }
     listener.on_status = [](std::string_view text) {
         std::cout << "-- " << text << "\n" << std::flush;
     };
@@ -1188,10 +1280,21 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 }
                 // A new approach, a reply, or the end of the talk: whatever was still
                 // being said belongs to the line before this one.
-                if (speaker && (event.marker == Marker::Begin || event.marker == Marker::Said ||
-                                event.marker == Marker::Picked || event.marker == Marker::Left ||
-                                event.marker == Marker::Restarted)) {
-                    speaker->hush();
+                if (event.marker == Marker::Begin || event.marker == Marker::Said ||
+                    event.marker == Marker::Picked || event.marker == Marker::Left ||
+                    event.marker == Marker::Restarted) {
+                    hush_all();
+                }
+                // The player skipped the line: hushed when it was seen, if the loop was held
+                // in the model then (skipped_since), else now. A line spoken whole -- a reply
+                // guessed ahead, a greeting -- is only ever skipped here.
+                if (event.marker == Marker::Skipped) {
+                    if (skips_early > 0) {
+                        --skips_early;
+                    } else if (speaker) {
+                        std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
+                        hush_all();
+                    }
                 }
                 // Henry's own line goes to the voice from its said marker, not from the
                 // voice marker the mod writes a line behind it. The said marker is answered
@@ -1217,6 +1320,15 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 if (speaker && event.marker == Marker::Voice && event.intent == "henry" && !henry_voiced.empty() &&
                     Session::flat_words(event.said) == henry_voiced) {
                     henry_voiced.clear();
+                } else if (speaker && event.marker == Marker::Voice && event.intent == "npc" &&
+                           session.pieced(event.said)) {
+                    // The reply the voice has had in pieces as it was written: nothing to
+                    // speak, and the whole is spoken when the last piece has been.
+                    pieces_whole = Session::flat_words(event.said);
+                    if (pieces_pending.empty()) {
+                        session.spoken(pieces_whole);
+                        pieces_whole.clear();
+                    }
                 } else if (speaker && event.marker == Marker::Voice) {
                     // And a mouth to go with it: Henry's own actor's clips for him, the
                     // soul's actor's for them, named for the mod by the line's key, which
@@ -1251,7 +1363,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 const Held since = std::chrono::steady_clock::now();
                 std::lock_guard<std::mutex> held(lock);
                 if (quit) return;
-                for (const std::string& line : speaker->take_spoken()) session.spoken(line);
+                for (const std::string& line : voice_done()) session.spoken(line);
                 held_by(since, "the lines the voice had finished");
             }
             // What the ear has heard so far, offered to the session on every pass; it sends

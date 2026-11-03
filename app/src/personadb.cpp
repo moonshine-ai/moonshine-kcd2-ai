@@ -276,8 +276,19 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
         if (!persona.quest.greeting.empty()) {
             persona.greeting = persona.quest.greeting;
             persona.greeting_exact = true;
+        } else if (chosen.role == QuestRole::Giver && chosen.exists() && !facts.voided && facts.done &&
+                   facts.how != "abandoned") {
+            // A giver whose errand Henry has seen through, and no line written for the
+            // visits after: the soul's general greeting knows nothing of it, and Christine's
+            // "I haven't got all day for you, what is it now?" is the wrong note after two
+            // favours done her for nothing (bugs.txt 2 Nov 2026). Left empty, so the opening
+            // line is generated off the sheet, whose quest paragraph says what she owes him
+            // (plan_quest's "Since then..."). The look guesses it ahead as for a soul with
+            // nothing written.
+            persona.greeting.clear();
         }
     }
+    persona.met = approach.met;
 
     // Last in the sheet, because everything above it is the same text for this soul every
     // time and so is worth prefilling, while this changes with every conversation. The

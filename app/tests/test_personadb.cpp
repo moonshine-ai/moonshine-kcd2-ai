@@ -198,6 +198,9 @@ public:
             "INSERT INTO npc_quest_text VALUES ('quest-wenzel','The Borrowed Saw',"
             " 'Julian has my saw. Eight groschen to whoever brings it back.',"
             " 'That is my saw. Here, eight, as I said.');"
+            "INSERT INTO npc_default_greeting VALUES"
+            " ('kkut_additive_man_48',0,'What is it? I have work waiting.'),"
+            " ('kkut_additive_man_48',1,'You again. I have work waiting.');"
 
             // The slate (Phase 4): Ondra's two favours from Vit make a chain, the first a
             // dispute with the giver's lines written; the second pays in thanks.
@@ -671,10 +674,10 @@ TEST_CASE("an animation name becomes a clause the sheet can say") {
     // rather than only on the opening line.
     const std::string sheet = personas.persona("kkut_additive_man_47", {},
                                                "LumberJackSawVAR").sheet;
-    CHECK(sheet.find("You are busy sawing wood. Someone walks up to you.") !=
+    CHECK(sheet.find("You are busy sawing wood. A young man walks up to you.") !=
           std::string::npos);
     CHECK(sheet.rfind("You are busy sawing wood") ==
-          sheet.size() - std::string("You are busy sawing wood. Someone walks up "
+          sheet.size() - std::string("You are busy sawing wood. A young man walks up "
                                      "to you.").size());
 }
 
@@ -691,7 +694,7 @@ TEST_CASE("an animation nobody can be caught at adds nothing to the sheet") {
         const std::string sheet = personas.persona("kkut_additive_man_47", {}, anim).sheet;
         CHECK(sheet.find("You are busy") == std::string::npos);
         // The approach itself is still reported -- somebody did walk up.
-        CHECK(sheet.find("Someone walks up to you.") != std::string::npos);
+        CHECK(sheet.find("A young man walks up to you.") != std::string::npos);
     }
 }
 
@@ -967,6 +970,38 @@ TEST_CASE("the persona carries the written answers for where the save says thing
     // With no standing given at all, the plan is for a first meeting, as before the field.
     CHECK(personas.persona("kkut_additive_man_48").scripted.about ==
           "Wenzel. Carpenter, when I have my tools.");
+}
+
+TEST_CASE("a giver whose errand is done does not fall back on the soul's general greeting") {
+    // bugs.txt 2 Nov 2026: Christine's "I haven't got all day for you, what is it now?"
+    // after two favours done her. With the errand open the written line for the visit
+    // serves; done, and nothing written for the visits after, the opening line is left to
+    // be generated off the sheet, whose quest paragraph says what is owed. Given up to his
+    // face, the general line stands: there is nothing to be grateful for.
+    Db db;
+    PersonaDb personas(db.path());
+    Approach back;
+    back.met = true;
+    Standing standing;
+    standing.met = 2;
+    CHECK(personas.persona("kkut_additive_man_48", back, {}, true, {}, {}, standing).greeting ==
+          "You again. I have work waiting.");
+    // Open, with no owed line written for Wenzel: the general line still serves.
+    QuestFacts open;
+    open.accepted = true;
+    CHECK(personas.persona("kkut_additive_man_48", back, {}, true, open, {}, standing).greeting ==
+          "You again. I have work waiting.");
+    QuestFacts done;
+    done.accepted = true;
+    done.done = true;
+    const Persona after = personas.persona("kkut_additive_man_48", back, {}, true, done, {}, standing);
+    CHECK(after.greeting.empty());
+    CHECK(after.met);
+    CHECK(after.sheet.find("you think the better of them for it") != std::string::npos);
+    QuestFacts given_up = done;
+    given_up.how = "abandoned";
+    CHECK(personas.persona("kkut_additive_man_48", back, {}, true, given_up, {}, standing).greeting ==
+          "You again. I have work waiting.");
 }
 
 TEST_CASE("a soul on a chain has every link, in order, and the conversation is about one of them") {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <deque>
 #include <iterator>
 
 #include "personadb.h"
@@ -212,6 +213,11 @@ void Session::handle(const Event& event) {
             // Spoken in main.cpp, which has the speaker. Nothing about the conversation
             // changes because a line was heard.
             break;
+        case Marker::Skipped:
+            // Hushed in main.cpp, which has the speaker; a reply being written when the
+            // player skipped was cut in answer (Listener::skipped), ahead of this.
+            status("the player skipped the line on turn " + std::to_string(event.turn));
+            break;
         case Marker::None:
             break;
     }
@@ -231,6 +237,7 @@ void Session::open(std::string_view soul, const Approach& approach,
     dictation_due_ = false;
     closing_words_.clear();
     henry_words_.clear();
+    pieced_reply_.clear();
     rows_.clear();
     drop_guesses();
     preset_.clear();
@@ -706,6 +713,7 @@ void Session::close() {
     talking_ = false;
     closing_words_.clear();
     henry_words_.clear();
+    pieced_reply_.clear();
     history_.clear();
     rows_.clear();
     drop_guesses();
@@ -1201,12 +1209,24 @@ void Session::answer(std::string_view said, bool remember) {
     int next = turn;
     bool wrote = false;
     bool failed = false;
+    // The pieces the voice has been given since the last turn went out (lip_pieces below),
+    // for the mod to queue the mouth and hold the menu by: "@lip <len>:<words>" each, in
+    // front of the turn that completes them or the next one after.
+    std::vector<std::string> pieces_to_tell;
     const auto ship = [&](const std::string& words) {
         if (failed) return;
         // Read for names as it goes out, so a person the model names mid-reply is in the
         // save by the time the reply is whole, and on the list after it.
         note_heard(words);
-        if (!writer_.write(next, with_owed(words))) {
+        // Flattened as the writer flattens the line, so the count is of the bytes the mod
+        // reads (and the words those the voice keys its cues by: Speaker flattens the same).
+        std::string lips;
+        for (const std::string& piece : pieces_to_tell) {
+            const std::string words = flat_words(piece);
+            lips += "@lip " + std::to_string(words.size()) + ":" + words + " ";
+        }
+        pieces_to_tell.clear();
+        if (!writer_.write(next, lips + with_owed(words))) {
             status("turn " + std::to_string(next) + " could not be written");
             failed = true;
             return;
@@ -1281,6 +1301,40 @@ void Session::answer(std::string_view said, bool remember) {
     // Undashed on the way, so the screen, the voice and the history all have the same
     // words; a trailing hyphen or space waits for the next piece, unless this is the end.
     std::size_t clean_fed = 0;  // how much of the undashed reply has been given
+    // Whether the reply is coming from the model as it is written, so its pieces are
+    // spoken as they complete (Listener::on_speak_piece) and the mod told of each (@lip).
+    // A reply guessed ahead arrives whole, with its audio made ahead whole, and is spoken
+    // from the mod's voice marker as before.
+    bool live = false;
+    // The pieces the voice has and has not finished with, each with where it ends in the
+    // reply so far. While it is on one, the screen is shown the reply only that far: a
+    // sentence completes on the blank after its full stop, which the model writes glued to
+    // the first word of the next ("town. The"), and that word would otherwise sit on the
+    // screen for the length of the sentence, the model standing aside while it is spoken.
+    struct Out {
+        std::string words;  // flattened, as the voice reports it
+        std::size_t end;    // in buffer.text()
+    };
+    std::deque<Out> pieces_out;
+    std::size_t pieces_end = 0;  // where the last piece handed over ends
+    bool fresh_piece = false;    // one was handed over since the last update went out
+    const auto piece = [&](const std::string& ready) {
+        if (listener_.on_say) listener_.on_say(ready);
+        if (!live || !voiced_ || !listener_.on_speak_piece) return;
+        listener_.on_speak_piece(ready);
+        pieces_to_tell.push_back(ready);
+        // Pieces are the text in order, trimmed, so each is found after the one before.
+        const std::size_t at = buffer.text().find(ready, pieces_end);
+        pieces_end = at == std::string::npos ? buffer.text().size() : at + ready.size();
+        pieces_out.push_back({flat_words(ready), pieces_end});
+        fresh_piece = true;
+    };
+    // The reply so far as the screen may have it: up to the end of the piece being spoken,
+    // or all of it when the voice is not on one.
+    const auto showable = [&]() {
+        if (pieces_out.empty()) return so_far(buffer.text());
+        return so_far(buffer.text().substr(0, pieces_out.front().end));
+    };
     const auto feed = [&](bool whole = false) {
         if (!skip || raw.size() <= std::max(*skip, fed)) return;
         const std::string_view reply(std::string_view(raw).substr(*skip));
@@ -1290,14 +1344,31 @@ void Session::answer(std::string_view said, bool remember) {
         // to a safe point the result is a prefix of the whole's, so only the new tail goes.
         const std::string clean = undashed(reply.substr(0, safe));
         if (clean.size() > clean_fed) {
-            for (std::string& ready : buffer.push(std::string_view(clean).substr(clean_fed))) {
-                if (listener_.on_say) listener_.on_say(ready);
-            }
+            for (std::string& ready : buffer.push(std::string_view(clean).substr(clean_fed))) piece(ready);
             clean_fed = clean.size();
         }
         fed = *skip + safe;
     };
+    // The lines the voice has finished with, while the model writes: Henry's own line
+    // among them, which the mod holds the reply behind until it hears so (spoken).
+    const auto drain_spoken = [&] {
+        if (!listener_.take_spoken) return;
+        for (const std::string& line : listener_.take_spoken()) {
+            if (!pieces_out.empty() && flat_words(line) == pieces_out.front().words) {
+                pieces_out.pop_front();
+            }
+            spoken(line);
+        }
+    };
 
+    // The player skipped the reply while it was being written (Listener::skipped): the
+    // model is stopped by throwing out of its callback, as a guess made ahead of need is,
+    // and the reply ends at what the screen had (streamed). The pieces the voice had not
+    // finished were hushed by whoever answered the ask; those not yet told to the mod are
+    // not going to be spoken, and the mod has nothing to wait for.
+    struct Cut {};
+    bool cut = false;
+    std::string streamed;  // the last update the screen was sent
     // One try at the reply, streamed to the game as it settles. False means nothing was
     // written because the model could not be reached before a word had gone out.
     const auto generate = [&](const std::string& said_now, const Options& options) {
@@ -1318,21 +1389,34 @@ void Session::answer(std::string_view said, bool remember) {
             return true;
         }
         auto streamed_at = std::chrono::steady_clock::now();
-        std::string streamed;
+        live = true;
         try {
             timing = llm_.chat(conversation(world_, persona_, history_, said_now), options,
                                [&](std::string_view delta) {
                                    raw.append(delta);
                                    settle();
                                    feed();
+                                   drain_spoken();
+                                   // Asked with the turn the reply's first update went out
+                                   // as, so a skip of the line before it (Henry's own, which
+                                   // the mod holds the reply behind) is not the reply's.
+                                   if (wrote && listener_.skipped && listener_.skipped(turn)) throw Cut{};
+                                   // A piece just handed to the voice goes to the screen
+                                   // whole at once, rather than its last word waiting on
+                                   // the next update while the voice is already on it.
                                    const auto now = std::chrono::steady_clock::now();
-                                   if (now - streamed_at < stream_every_) return;
-                                   const std::string text = so_far(buffer.text());
+                                   if (now - streamed_at < stream_every_ && !fresh_piece) return;
+                                   fresh_piece = false;
+                                   const std::string text = showable();
                                    if (text.empty() || text == streamed) return;
                                    streamed = text;
                                    streamed_at = now;
                                    ship("@more " + text);
                                });
+        } catch (const Cut&) {
+            cut = true;
+            status("the player skipped the reply; it ends where it was on the screen");
+            return true;
         } catch (const std::exception& e) {
             status(std::string("the model could not be reached: ") + e.what());
             // Nothing reached the game, so nothing was said. Otherwise the reply ends where
@@ -1372,12 +1456,19 @@ void Session::answer(std::string_view said, bool remember) {
     } else if (skip && *skip > 0) {
         status("the reply opened by repeating the last line, which was dropped");
     }
-    feed(true);
-    if (std::optional<std::string> last = buffer.flush()) {
-        if (listener_.on_say) listener_.on_say(*last);
+    std::string reply;
+    if (cut) {
+        // Nothing more is spoken, and nothing the voice was given is told to the mod: it
+        // has let the menu go already, and a mouth queued now would hold it for a line
+        // that is not coming.
+        pieces_to_tell.clear();
+        reply = streamed;
+    } else {
+        feed(true);
+        if (std::optional<std::string> last = buffer.flush()) piece(*last);
+        drain_spoken();
+        reply = so_far(buffer.text());
     }
-
-    const std::string reply = so_far(buffer.text());
     if (reply.empty()) {
         status("the model said nothing");
         return;
@@ -1386,13 +1477,17 @@ void Session::answer(std::string_view said, bool remember) {
     // the turn that says the reply is over.
     ship(reply);
     if (!wrote || failed) return;
+    // Spoken in pieces, so the mod's marker for the whole is not to be spoken again
+    // (pieced, asked by main.cpp).
+    pieced_reply_ = live && voiced_ && listener_.on_speak_piece ? flat_words(reply) : std::string();
 
     // The direction goes into the history with the words, because it is part of what the
     // model answered and a later turn that lacked it would read the reply as unprompted.
     if (!heard.empty()) history_.push_back({"user", heard});
     history_.push_back({"assistant", reply});
     if (listener_.on_turn) listener_.on_turn(history_.back());
-    if (listener_.on_timing) listener_.on_timing(timing);
+    // A cut reply has no times: the call was thrown out of before it could report them.
+    if (listener_.on_timing && !cut) listener_.on_timing(timing);
     drew(advice.item_id, reply);
     // An ending the judge settled on a row the model answered: the rest of the
     // conversation is planned as after it.

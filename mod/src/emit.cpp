@@ -7825,6 +7825,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tlocal p = npc:GetWorldPos()\n";
     s += "\t\tif type(p.x) == \"number\" and type(p.y) == \"number\" then\n";
     s += "\t\t\tat = string.format(\" at=%.0f,%.0f\", p.x, p.y)\n";
+    // And whether they stand under a roof (the level's `interior` label, Indoors): the
+    // app says so in its prose, since a housekeeper met sweeping the street step spoke
+    // of "the kitchen" (bugs.txt 2 Nov 2026). Left off where the level cannot say.
+    s += "\t\t\tlocal inside = " + g + ".Indoors(p)\n";
+    s += "\t\t\tif inside ~= nil then at = at .. \" in=\" .. tostring(inside) end\n";
     s += "\t\tend\n";
     s += "\tend)\n";
     // The soul's own Speech stat, the other half of the app's pry check (see Seen).
@@ -9127,7 +9132,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // actor's clips: before (23 Oct 2026) it took the face of whatever session was last
     // open, and Father Ernest read Christine's letter with the housekeeper's clips on his
     // head, which moved nothing a player could see.
-    s += "function " + g + ".Voice(who, text, soul)\n";
+    //
+    // A reply the app spoke in pieces as it was written (@lip, LipPiece) is not armed
+    // again whole: its pieces' mouths are armed and queued already, and arming the whole
+    // would stop the piece being spoken and drop the rest. The marker is still written,
+    // since the app matches it to the pieces it spoke (main.cpp).
+    s += "function " + g + ".Voice(who, text, soul, pieced)\n";
     s += "\tif text == nil or text == \"\" or text == \"...\" then return end\n";
     s += "\tif not " + g + ".active and soul ~= nil and soul ~= \"\" then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE voice \" .. who .. \" soul=\" .. soul .. \" \" .. text)\n";
@@ -9135,8 +9145,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"BRIDGE voice \" .. who .. \" \" .. text)\n";
     s += "\tend\n";
     s += "\tif " + g + ".active then\n";
-    // The mouth's cues looked for, from the same words the app will key them by.
-    s += "\t\tpcall(" + g + ".LipArm, who, text)\n";
+    // The mouth's cues looked for, from the same words the app will key them by. A new
+    // line of either party's supersedes whatever pieces were still queued: Henry's own
+    // line is the player cutting in, and the app hushes the rest at the same marker.
+    s += "\t\tif not pieced then\n";
+    s += "\t\t\t" + g + ".lipQueue = {}\n";
+    s += "\t\t\tpcall(" + g + ".LipArm, who, text)\n";
+    s += "\t\tend\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tpcall(" + g + ".VoicedFrames)\n";
@@ -9151,6 +9166,25 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".lipQueue = {}\n";
     s += "\tend\n";
     s += "\t" + g + ".voiceAt = now\n";
+    s += "\t" + g + ".LipQueue(who, text)\n";
+    s += "end\n";
+    s += "\n";
+    s += g + ".voicedSoul = nil\n";
+    s += g + ".voicedTalk = false\n";
+    s += g + ".lipQueue = {}\n";
+    s += g + ".lipPieced = false\n";
+    // The reply being written was skipped (Skip): the app ends it at what was on the
+    // screen, and the turn that finishes it is not a line to speak or to hold the menu for.
+    s += g + ".cutShort = false\n";
+    // Lips move in a session, or in a voiced Talk of the game's own.
+    s += "function " + g + ".LipLive()\n";
+    s += "\treturn " + g + ".active or " + g + ".voicedTalk\n";
+    s += "end\n";
+    s += "\n";
+    // A line the app will speak after the one being spoken: armed now when nothing is,
+    // else queued, to be armed as the one before it stops (LipNext). The lines of a voiced
+    // Talk queue this way, and so do the pieces of a reply spoken as it is written.
+    s += "function " + g + ".LipQueue(who, text)\n";
     s += "\tif " + g + ".lipKey == nil then\n";
     s += "\t\tpcall(" + g + ".LipArm, who, text)\n";
     s += "\telse\n";
@@ -9159,21 +9193,26 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "end\n";
     s += "\n";
-    s += g + ".voicedSoul = nil\n";
-    s += g + ".voicedTalk = false\n";
-    s += g + ".lipQueue = {}\n";
-    // Lips move in a session, or in a voiced Talk of the game's own.
-    s += "function " + g + ".LipLive()\n";
-    s += "\treturn " + g + ".active or " + g + ".voicedTalk\n";
-    s += "end\n";
-    s += "\n";
-    // The next queued line of a voiced Talk, once the one before it has stopped.
+    // The next queued line, once the one before it has stopped.
     s += "function " + g + ".LipNext()\n";
-    s += "\tif " + g + ".active then return end\n";
     s += "\tlocal q = " + g + ".lipQueue\n";
     s += "\tif #q == 0 then return end\n";
     s += "\tlocal nxt = table.remove(q, 1)\n";
     s += "\tpcall(" + g + ".LipArm, nxt.who, nxt.text)\n";
+    s += "end\n";
+    s += "\n";
+    // One piece of the reply being written, which the app's voice is speaking now or will
+    // speak after the pieces before it (@lip on the turn that completed it; the app's
+    // Session::answer sends each sentence as the model finishes it, and speaks it). The
+    // mouth for it is queued behind the piece being spoken, keyed by the piece's own words
+    // as the app keys its cues; the menu waits for the last of them (MenuHold), and the
+    // caption turns to the page a piece is on as its sound starts (LipApply). Before this
+    // the voice waited for the whole reply and spoke it as one line, which on the Windows
+    // laptop was fifteen seconds of silence after a line of Henry's (2 Nov 2026).
+    s += "function " + g + ".LipPiece(who, text)\n";
+    s += "\tif not " + g + ".active or text == nil or text == \"\" then return end\n";
+    s += "\t" + g + ".lipPieced = true\n";
+    s += "\t" + g + ".LipQueue(who, text)\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".Say(turn, words, bare)\n";
@@ -9251,7 +9290,15 @@ std::string emit_conversation_lua(const std::string& modid,
     // The finished line, once. A streamed update is the same words growing, and
     // speaking each of them would queue a reading per piece. A bare line is the
     // mod's own notice, not anyone talking.
-    s += "\tif not " + g + ".more and not " + g + ".bare then " + g + ".Voice(\"npc\", words) end\n";
+    // A reply spoken in pieces as it was written (@lip) has its mouths queued already,
+    // and the marker goes out for the app to match against them (Voice).
+    // So has one the player skipped while it was being written (cutShort): the app hushed
+    // the voice and ends the reply with this turn, and the menu is not to wait on it.
+    s += "\tif not " + g + ".more and not " + g + ".bare then\n";
+    s += "\t\t" + g + ".Voice(\"npc\", words, nil, " + g + ".lipPieced or " + g + ".cutShort)\n";
+    s += "\t\t" + g + ".lipPieced = false\n";
+    s += "\t\t" + g + ".cutShort = false\n";
+    s += "\tend\n";
     // A beat is not the end of their turn: the next line of theirs follows through the
     // pump once this one has had its reading, and Henry's turn comes after that one.
     s += "\tif " + g + ".more then " + g + ".StreamArm()\n";
@@ -9308,8 +9355,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // line was the first thing seen once the mouth moved (12 Oct 2026). Asked from
     // Choose(), after the round's bookkeeping, so the rows that land during the hold are
     // kept for it rather than cleared by a Choose() that came after them.
+    // A reply spoken in pieces (LipPiece) holds while a piece is being looked for or
+    // spoken, or any is still queued: the reply's last words are read out after its last
+    // turn has landed.
     s += "function " + g + ".MenuHold()\n";
-    s += "\tif not " + g + ".voiced or " + g + ".lipKey == nil or " + g + ".lipWho ~= \"npc\" then return false end\n";
+    s += "\tif not " + g + ".voiced or " + g + ".lipWho ~= \"npc\" then return false end\n";
+    s += "\tif " + g + ".lipKey == nil and #" + g + ".lipQueue == 0 then return false end\n";
     s += "\tif not " + g + ".menuHeld then\n";
     s += "\t\t" + g + ".menuHeld = true\n";
     s += "\t\t" + g + ".menuHeldAt = " + g + ".ticks\n";
@@ -9632,6 +9683,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // The borrowed mouth too, or the face stays on the clip's last frame after the talk.
     s += "\tpcall(" + g + ".LipStop, \"conversation over\")\n";
     s += "\t" + g + ".lipKey = nil\n";
+    s += "\t" + g + ".lipQueue = {}\n";
+    s += "\t" + g + ".lipPieced = false\n";
+    s += "\t" + g + ".cutShort = false\n";
     s += "\t" + g + ".menuHeld = false\n";
     // A hail's line still on the narrative subtitle (put up in the breath before the
     // conversation opened) goes with it (HailShow, 28 Oct 2026).
@@ -9738,18 +9792,22 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Leave(\"asked to go\")\n";
     s += "end\n";
     s += "\n";
-    // Where stopping the voice will go, once there is one to stop: a skipped line should
-    // fall silent, not talk over the line after it.
+    // A tap of the skip button (B, or space) on the other party's line. The marker is the
+    // app's cue to hush its voice, and -- for a reply still being written (streaming) -- to
+    // stop the model and end the reply at what the screen had, which lands as the turn
+    // that finishes the line (Say, cutShort): no mouth for it, no wait on it, the menu.
     s += "function " + g + ".Skip()\n";
     s += "\t" + g + ".Log(\"BRIDGE skipped turn=\" .. " + g + ".turn)\n";
     s += "\t" + g + ".hold = 0\n";
     s += "\t" + g + ".Speak(0)\n";
+    s += "\tif " + g + ".streaming then " + g + ".cutShort = true end\n";
     // The borrowed mouth comes off and the menu it was holding comes up, as the game's
-    // own skip ends a line: the player has heard enough of it. The audio itself runs on
-    // in the app for now (the same as a skipped line's words staying on the caption).
-    s += "\tif " + g + ".lipEnt ~= nil or " + g + ".menuHeld then\n";
+    // own skip ends a line: the player has heard enough of it. The pieces of a reply still
+    // to be spoken go with it: the player has heard enough of all of it.
+    s += "\tif " + g + ".lipEnt ~= nil or " + g + ".menuHeld or #" + g + ".lipQueue > 0 then\n";
     s += "\t\tpcall(" + g + ".LipStop, \"skipped\")\n";
     s += "\t\t" + g + ".lipKey = nil\n";
+    s += "\t\t" + g + ".lipQueue = {}\n";
     s += "\t\tpcall(" + g + ".MenuRelease, \"skipped\")\n";
     s += "\tend\n";
     s += "end\n";
@@ -9987,9 +10045,20 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Refresh()\n";
     s += "end\n";
     s += "\n";
-    s += "function " + g + ".PageAnchor()\n";
+    // `piece`, for a reply spoken in pieces as it was written (LipPiece): the sound
+    // starting is that piece's, so the caption turns to the page its first words are on,
+    // and counts on from there. A line still being written shows its newest words as
+    // before, whichever piece is being spoken.
+    s += "function " + g + ".PageAnchor(piece)\n";
     s += "\tif " + g + ".pagesOf ~= " + g + ".shown or #" + g + ".pages < 2 or " + g + ".more then return end\n";
-    s += "\t" + g + ".page = 1\n";
+    s += "\tlocal at = 1\n";
+    s += "\tif type(piece) == \"string\" and piece ~= \"\" then\n";
+    s += "\t\tlocal head = string.sub((string.gsub(piece, \"^%s+\", \"\")), 1, 24)\n";
+    s += "\t\tfor i, p in ipairs(" + g + ".pages) do\n";
+    s += "\t\t\tif string.find(p, head, 1, true) ~= nil then at = i break end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\t" + g + ".page = at\n";
     s += "\t" + g + ".pageAt = " + g + ".Now()\n";
     s += "\t" + g + ".Refresh()\n";
     s += "end\n";
@@ -10285,6 +10354,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\t" + g + ".LipStop(\"next line\")\n";
     s += "\t" + g + ".lipKey = " + g + ".LipKey(who, text)\n";
+    s += "\t" + g + ".lipText = text\n";
     s += "\t" + g + ".lipSeq = 1\n";
     s += "\t" + g + ".lipWho = who\n";
     s += "\t" + g + ".lipGen = " + g + ".lipGen + 1\n";
@@ -10360,15 +10430,19 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tif seq == 1 then " + g + ".lipT0 = " + g + ".Now() end\n";
-    // The audio has begun: a paged caption counts its pages from here.
-    s += "\tif seq == 1 and " + g + ".lipWho == \"npc\" then pcall(" + g + ".PageAnchor) end\n";
+    // The audio has begun: a paged caption counts its pages from here -- or, for a piece
+    // of a reply spoken as it was written, turns to the page the piece is on.
+    s += "\tif seq == 1 and " + g + ".lipWho == \"npc\" then pcall(" + g + ".PageAnchor, " + g + ".lipText) end\n";
     s += "\tif stop then\n";
     s += "\t\t" + g + ".LipStop(\"audio ended\")\n";
     s += "\t\t" + g + ".lipKey = nil\n";
     // The other party's line heard out: the menu that waited on it may come, and a paged
-    // caption shows its last page.
-    s += "\t\tif " + g + ".lipWho == \"npc\" then pcall(" + g + ".MenuRelease, \"audio ended\") end\n";
-    s += "\t\tif " + g + ".lipWho == \"npc\" then pcall(" + g + ".PageLast) end\n";
+    // caption shows its last page. Not between the pieces of a reply: the next piece is
+    // armed in its turn, and the menu waits for the last.
+    s += "\t\tif " + g + ".lipWho == \"npc\" and #" + g + ".lipQueue == 0 then\n";
+    s += "\t\t\tpcall(" + g + ".MenuRelease, \"audio ended\")\n";
+    s += "\t\t\tpcall(" + g + ".PageLast)\n";
+    s += "\t\tend\n";
     s += "\t\t" + g + ".LipNext()\n";
     s += "\t\treturn\n";
     s += "\tend\n";
@@ -13202,6 +13276,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // the turn follow them on the same line.
     //   @opt <row> <intent> <len>:<words>                   one row of the reply menu
     //   @heard <token>                                      the words name somebody new to Henry
+    //   @lip <len>:<words>                                  a piece of the reply the voice speaks now (LipPiece)
     // A turn of @opt lines is the menu so far, whole each time (the @more rule: each
     // file replaces the last), and is taken through the reading hold since it shows
     // nothing itself. Rows are frozen once drawn: a later file fills empty rows only.
@@ -13226,6 +13301,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif len == nil then return string.match(words, \"^@said%s*(.*)$\") or \"\" end\n";
     s += "\t\t\tlen = tonumber(len)\n";
     s += "\t\t\tpcall(" + g + ".StateSaid, string.sub(tail, 1, len))\n";
+    s += "\t\t\twords = string.match(string.sub(tail, len + 1), \"^%s*(.*)$\")\n";
+    s += "\t\telseif string.match(words, \"^@lip%s\") then\n";
+    // @lip <len>:<words>: a piece of this reply the app's voice is speaking, or will after
+    // the pieces before it, as the model finished writing it (LipPiece). The mouth for it
+    // is queued under the piece's own words, the key the app writes its cues by.
+    s += "\t\t\tlocal len, tail = string.match(words, \"^@lip%s+(%d+):(.*)$\")\n";
+    s += "\t\t\tif len == nil then return string.match(words, \"^@lip%s*(.*)$\") or \"\" end\n";
+    s += "\t\t\tlen = tonumber(len)\n";
+    s += "\t\t\tpcall(" + g + ".LipPiece, \"npc\", string.sub(tail, 1, len))\n";
     s += "\t\t\twords = string.match(string.sub(tail, len + 1), \"^%s*(.*)$\")\n";
     s += "\t\telseif string.match(words, \"^@memory%s\") then\n";
     s += "\t\t\tlocal soul, rev, n, len, tail = string.match(words, \"^@memory%s+(%S+)%s+compact%s+(%d+)%s+(%d+)%s+(%d+):(.*)$\")\n";

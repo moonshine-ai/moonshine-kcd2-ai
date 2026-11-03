@@ -300,6 +300,28 @@ case("The begin and look lines carry the build's quest set (qset=)", function(E,
     check(begin ~= nil and begin:find(" qset=" .. M.questSet, 1, true) ~= nil, "begin line carries qset: " .. tostring(begin))
 end)
 
+case("The begin line says whether the soul stands under a roof (in=), and nothing where the level cannot say", function(E, M, check)
+    -- The level's `interior` label at their feet (Indoors; bugs.txt 2 Nov 2026: a
+    -- housekeeper met sweeping the street step spoke of the kitchen).
+    local npc = E.soul("kkut_additive_man_10", { pos = { x = 10, y = 20, z = 0 } })
+    check(E.begin(npc), "the prompt opens the conversation")
+    local begin = E.find("BRIDGE begin npc=kkut_additive_man_10")
+    check(begin ~= nil and begin:find(" at=10,20", 1, true) ~= nil and begin:find(" in=", 1, true) == nil,
+          "no label, no field: " .. tostring(begin))
+    M.Leave("test")
+    E.interior = false
+    local mark = E.mark()
+    check(E.begin(npc), "begun again, out of doors")
+    begin = E.find("BRIDGE begin npc=kkut_additive_man_10", mark)
+    check(begin ~= nil and begin:find(" at=10,20 in=false ", 1, true) ~= nil, "in=false in the street: " .. tostring(begin))
+    M.Leave("test")
+    E.interior = true
+    mark = E.mark()
+    check(E.begin(npc), "begun again, under a roof")
+    begin = E.find("BRIDGE begin npc=kkut_additive_man_10", mark)
+    check(begin ~= nil and begin:find(" in=true ", 1, true) ~= nil, "in=true indoors: " .. tostring(begin))
+end)
+
 case("Frames: the game is held to framesTalk for the conversation and given back after", function(E, M, check)
     -- The voice engine's share of the machine (Frames in emit.cpp): 60 fps goes to 30 at
     -- Begin and comes back at Leave; 0 (no cap) is moved the same way; a cap the player
@@ -798,6 +820,112 @@ case("Mouth: a tap of the skip button takes the mouth off and lets the held menu
     lipCue(E, M, "npc", words, 2, "stop\n")
     E.advance(1000)
     check(E.count("BRIDGE lip stopped") == 1, "no second stop")
+end)
+
+case("Mouth: a reply spoken in pieces as it is written queues a mouth per piece, holds the menu for the last, and turns the caption's page with the voice", function(E, M, check)
+    -- The app speaks each sentence as the model finishes it (Session::answer, @lip on the
+    -- turn that completed it) instead of the whole reply when the line is whole, which on
+    -- the Windows laptop was fifteen seconds of silence after Henry's line (2 Nov 2026).
+    live(E, M)
+    local twin = E.soul("DialogTwin_kkut_additive_man_47")
+    local one = "I am well enough, thank you, though the house feels heavy with worry."
+    local two = "The soldiers are everywhere now, even here in the town, taking grain and coin."
+    local three = "I keep the kitchen clean so I may serve bread and soup to the servants and to any who come in need of it."
+    -- The first piece completes on a streamed update: its mouth is armed at once.
+    M.Say(1, "@lip " .. #one .. ":" .. one .. " @voiced @more " .. one .. " The")
+    check(M.lipWho == "npc" and M.lipKey == M.LipKey("npc", one), "the first piece's cues looked for under its own words")
+    check(#M.lipQueue == 0 and M.lipPieced == true, "nothing queued behind it yet; the reply is known to be spoken in pieces")
+    check(M.more == true and M.shown == one .. " The", "the words on screen as written")
+    -- Its sound starts while the model writes on.
+    lipCue(E, M, "npc", one, 1, "lip npc 1\nplay pdea_dial_a 1.00 4.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(#twin.anims == 1 and twin.anims[1].clip == "pdea_dial_a", "its clip on the twin")
+    -- The second piece completes on a later update: queued behind the first.
+    M.Say(2, "@lip " .. #two .. ":" .. two .. " @voiced @more " .. one .. " " .. two .. " I keep")
+    check(M.lipKey == M.LipKey("npc", one) and #M.lipQueue == 1 and M.lipQueue[1].text == two, "queued, the first still being spoken")
+    -- The whole line, with the last piece on it: the marker goes out, but arms nothing new.
+    local whole = one .. " " .. two .. " " .. three
+    M.Say(3, "@lip " .. #three .. ":" .. three .. " @voiced " .. whole)
+    check(E.find("BRIDGE voice npc " .. whole), "the whole line's marker written for the app to match")
+    check(M.lipKey == M.LipKey("npc", one) and #M.lipQueue == 2 and M.lipQueue[2].text == three, "the first piece still armed, the third queued; the whole did not take over")
+    check(M.lipPieced == false, "and the next reply starts whole unless told otherwise")
+    check(M.menuHeld == true and M.choosing == true and M.face ~= M.chooseCode, "the menu held for the voice")
+    check(#M.pages == 2, "the caption in two pages: " .. #M.pages)
+    -- The first piece ends: not the reply, so the menu stays held and the second is armed.
+    lipCue(E, M, "npc", one, 2, "stop\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipKey == M.LipKey("npc", two) and #M.lipQueue == 1, "the second piece armed as the first stopped")
+    check(M.menuHeld == true, "the menu still held between the pieces")
+    check(E.count("BRIDGE menu released") == 0, "and not released")
+    -- The third piece's words sit on the caption's second page: its sound starting turns to it.
+    lipCue(E, M, "npc", two, 1, "lip npc 1\nplay pdea_dial_b 1.00 4.00\n")
+    E.advance(M.lipPollMillis + 10)
+    lipCue(E, M, "npc", two, 2, "stop\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipKey == M.LipKey("npc", three) and #M.lipQueue == 0, "the third armed")
+    M.page = 1
+    lipCue(E, M, "npc", three, 1, "lip npc 1\nplay pdea_dial_c 1.00 3.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.page == 2, "the caption turned to the page the third piece is on: " .. M.page)
+    check(M.menuHeld == true, "still held on the last piece")
+    -- The last piece's end is the reply's: the menu comes.
+    lipCue(E, M, "npc", three, 2, "stop\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipKey == nil and #M.lipQueue == 0, "done looking")
+    check(M.menuHeld == false, "the menu released by the last piece's stop")
+    check(E.find("BRIDGE menu released -- audio ended"), "logged")
+    -- Henry's next line supersedes whatever pieces were still queued.
+    M.MenuRelease("the case moves on")
+    M.Say(4, "@lip 9:One more. @voiced @more One more. And")
+    M.Say(5, "@lip 8:And one. @voiced One more. And one.")
+    check(#M.lipQueue == 1, "a piece queued behind the first")
+    M.Said("Enough.")
+    check(M.lipWho == "henry" and #M.lipQueue == 0, "his line took the mouth and the queue went")
+end)
+
+case("Mouth: a skip drops the pieces still queued as well as the mouth", function(E, M, check)
+    live(E, M)
+    local one = "A long first sentence the player has heard quite enough of already."
+    local two = "And a second one queued behind it, going on about the weather."
+    M.Say(1, "@lip " .. #one .. ":" .. one .. " @lip " .. #two .. ":" .. two .. " @voiced " .. one .. " " .. two)
+    M.Say(2, "@opt 1 ask 18:I have a question. @rows 1")
+    lipCue(E, M, "npc", one, 1, "lip npc 1\nplay pdea_dial_a 1.00 12.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.menuHeld == true and #M.lipQueue == 1, "held, a piece queued")
+    M.OnPlayerAction("dialog_skip", "press")
+    M.OnPlayerAction("dialog_skip", "release")
+    check(M.lipKey == nil and #M.lipQueue == 0, "the mouth off and the queue emptied")
+    check(M.menuHeld == false and M.face == M.chooseCode, "the menu let go")
+end)
+
+case("Mouth: a reply skipped while it is being written finishes with no mouth and no wait", function(E, M, check)
+    live(E, M)
+    -- The first update of a streamed reply, no sentence of it whole yet; the player taps
+    -- skip on it. The app hushes and ends the reply where the screen had it: the turn that
+    -- finishes the line arrives with those words, and the menu comes at once.
+    M.Say(1, "@more @voiced The well is a day's ride")
+    check(M.streaming == true, "the line is being written")
+    M.OnPlayerAction("dialog_skip", "press")
+    M.OnPlayerAction("dialog_skip", "release")
+    check(E.find("BRIDGE skipped turn=1"), "the skip logged with the turn on the screen")
+    check(M.cutShort == true, "the reply is marked cut short")
+    M.Say(2, "@voiced The well is a day's ride")
+    M.Say(3, "@opt 1 ask 18:I have a question. @rows 1")
+    check(E.find("BRIDGE voice npc The well is a day's ride"), "the marker still goes out, for the app to match")
+    check(M.lipKey == nil and #M.lipQueue == 0, "no mouth armed for the cut line")
+    check(M.menuHeld == false and M.choosing == true, "the menu not held for it")
+    check(M.cutShort == false, "the mark spent on the turn that finished the line")
+    -- The next reply is spoken as any other.
+    M.Say(4, "@voiced Mind the road after dark, there are bandits about.")
+    check(M.lipKey ~= nil, "the next line's mouth is armed")
+end)
+
+case("Mouth: a skip of a line already whole marks nothing cut short", function(E, M, check)
+    live(E, M)
+    M.Say(1, "@voiced Have you come for another blessing?")
+    M.OnPlayerAction("dialog_skip", "press")
+    M.OnPlayerAction("dialog_skip", "release")
+    check(M.cutShort == false, "nothing being written, nothing cut")
 end)
 
 case("Mouth: without a voice nothing is looked for and the menu is not held", function(E, M, check)

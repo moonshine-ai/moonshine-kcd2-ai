@@ -83,6 +83,12 @@ struct Approach {
     // (personadb.h, away_from_places).
     double x = kUnread;
     double y = kUnread;
+    // Whether the soul stands under a roof (`in=true|false` on the begin line: the level's
+    // `interior` label at their feet, the same read the mod's street watch makes). -1 when
+    // the mod did not say, or the level could not. Said in the prose, since a housekeeper
+    // met sweeping the street step asked what brought Henry "to the kitchen" (bugs.txt
+    // 2 Nov 2026): her card has her indoors, and nothing told the model otherwise.
+    int indoors = -1;
 
     // Which deal the game's mod was built from (`qset=` on the begin and look lines): the
     // fingerprint the emitter writes as Moonshine.questSet, for main.cpp to set against
@@ -112,13 +118,16 @@ std::string_view sky(double rain);
 
 // The state turned into prose for the model, which gets all of it:
 //
-//   It is late afternoon and drizzly. You are busy sawing wood. Someone who looks like a
-//   noble, is bloody, is injured, and has a weapon in hand walks up to you.
+//   It is late afternoon and drizzly. You are out of doors. You are busy sawing wood. A
+//   young man who looks like a noble, is bloody, is injured, and has a weapon in hand walks
+//   up to you.
 //
 // The world comes first because it is the widest thing true of the scene and the model reads
 // it as staging before it reads the two people in it. `clause` is the anim_activity phrase
 // for what they were caught doing, and reads on from "You are busy ". Empty when the
-// animation was not worth reporting, and then that sentence is left out.
+// animation was not worth reporting, and then that sentence is left out. The one walking
+// up is a young man, since he always is (Henry): a bare "someone" left his sex to the model,
+// which once made it "mistress" (bugs.txt 2 Nov 2026).
 std::string approach_prose(const Approach& approach, std::string_view clause);
 
 }  // namespace moonshine

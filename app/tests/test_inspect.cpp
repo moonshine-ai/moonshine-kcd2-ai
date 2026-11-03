@@ -85,7 +85,7 @@ TEST_CASE("every piece of the prompt is handed over labelled with where it came 
     }
     // The state the player walked up in is one of the blocks, so a caller can point at what
     // changes between two conversations with the same soul without diffing two prompts.
-    CHECK(json.find("{ \"label\": \"approach\", \"text\": \"You are busy sawing wood. Someone "
+    CHECK(json.find("{ \"label\": \"approach\", \"text\": \"You are busy sawing wood. A young man "
                     "who is bloody walks up to you.\" }") != std::string::npos);
 }
 
