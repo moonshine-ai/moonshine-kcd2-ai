@@ -93,7 +93,7 @@ TEST_CASE("nothing said yet is the approach direction: a young man, a stranger's
     again.met = true;
     const std::vector<Message> back = conversation(kWorld, again, {}, "");
     CHECK(back[1].content == kApproachedAgain);
-    CHECK(std::string(kApproachedAgain).find("you have spoken to before") != std::string::npos);
+    CHECK(std::string(kApproachedAgain).find("Henry, the young man you have spoken to before") != std::string::npos);
     // The system message is the same either way: the direction is the player's turn.
     CHECK(back[0].content == first[0].content);
 }
@@ -101,4 +101,10 @@ TEST_CASE("nothing said yet is the approach direction: a young man, a stranger's
 TEST_CASE("the shared rules name the groschen as the only coin") {
     // Generated lines spoke of hellers (bugs.txt 2 Nov 2026).
     CHECK(std::string(kSpeaking).find("The only coin is the groschen") != std::string::npos);
+}
+
+TEST_CASE("the shared rules forbid a name or title the soul has not been told") {
+    // Christine, told a young man she knew who looked like a noble stood there, greeted him
+    // "Herr von Bergow" (bugs.txt 3 Nov 2026).
+    CHECK(std::string(kSpeaking).find("never invent one for him") != std::string::npos);
 }

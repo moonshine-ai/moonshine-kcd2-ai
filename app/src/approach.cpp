@@ -171,13 +171,15 @@ std::string approach_prose(const Approach& a, std::string_view clause) {
     std::string arrival = "A young man";
     // The greeting is only the first line. Without this the model would spend every turn after
     // it talking to a stranger it has just addressed by name, which is the same lapse the
-    // reunion greetings exist to avoid -- one line later.
-    if (a.met) arrival += " you have spoken to before";
+    // reunion greetings exist to avoid -- one line later. And he is named: a soul who knows
+    // him and is not told his name makes one up, and with "looks like a noble" beside it,
+    // a noble one (bugs.txt 3 Nov 2026, "Herr von Bergow").
+    if (a.met) arrival = "Henry, the young man you have spoken to before";
     if (!parts.empty()) {
         arrival += a.met ? ", who " : " who ";
         arrival += listed(parts);
-        if (a.met) arrival += ",";
     }
+    if (a.met) arrival += ",";
     arrival += asleep ? " wakes you." : " walks up to you.";
     say(arrival);
     return prose;

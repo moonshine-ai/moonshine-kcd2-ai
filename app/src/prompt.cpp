@@ -14,14 +14,17 @@ constexpr std::string_view kJoin = "\n\n";
 // The one who walks up is always Henry, a young man: said so, since a bare "someone" had
 // Christine greet him "Welcome, mistress" (bugs.txt 2 Nov 2026). And whether they have met:
 // the stranger's version was the only one, and was sent for a soul met a dozen times and
-// owed a favour, which is the lapse the reunion greetings exist to avoid.
+// owed a favour, which is the lapse the reunion greetings exist to avoid. The man they have
+// met is named: told only that a young man they knew stood there, and that he looked like a
+// noble, Christine greeted him "Herr von Bergow", the one noble house the setting names
+// (bugs.txt 3 Nov 2026).
 const std::string_view kApproached =
     "[A young man you do not know has walked up and is standing in front of you, "
     "waiting for you to speak. Say the one or two lines you would greet him with.]";
 const std::string_view kApproachedAgain =
-    "[A young man you have spoken to before has walked up and is standing in front of you, "
-    "waiting for you to speak. Say the one or two lines you would greet him with, as "
-    "somebody who knows him and remembers what has passed between you.]";
+    "[Henry, the young man you have spoken to before, has walked up and is standing in "
+    "front of you, waiting for you to speak. Say the one or two lines you would greet him "
+    "with, as somebody who knows him and remembers what has passed between you.]";
 
 const std::string_view kSpeaking =
     "What follows is who you are, one person living in this world. Some of it is written "
@@ -33,6 +36,8 @@ const std::string_view kSpeaking =
     "said, and never break character. Never say a number aloud, not a count of things and "
     "not a sum of money: it is a few, a good bunch, a fair price, what was promised. "
     "The only coin is the groschen; never speak of hellers, pennies or any other. "
+    "Call the one you are speaking to by a name or a title only if you have been told it; "
+    "never invent one for him. "
     "Write no dashes; a full stop or a comma does their work.\n"
     "\n"
     "Sometimes a note in square brackets follows what they say. They did not say it and "

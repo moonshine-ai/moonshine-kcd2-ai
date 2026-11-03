@@ -92,14 +92,14 @@ TEST_CASE("the prose says when they have met before, and reads as a sentence eit
     // The written greeting covers the opening line only. Every turn after it is generated, so
     // without this the model addresses somebody it has just recognised as a stranger.
     CHECK(approach_prose({.met = true}, "") ==
-          "A young man you have spoken to before walks up to you.");
+          "Henry, the young man you have spoken to before, walks up to you.");
     CHECK(approach_prose({.charisma = 0.95, .met = true}, "") ==
-          "A young man you have spoken to before, who looks like a noble, walks up to you.");
+          "Henry, the young man you have spoken to before, who looks like a noble, walks up to you.");
     CHECK(approach_prose({.charisma = 0.95, .blood = 0.5, .met = true}, "sawing wood") ==
-          "You are busy sawing wood. A young man you have spoken to before, who looks like a noble "
+          "You are busy sawing wood. Henry, the young man you have spoken to before, who looks like a noble "
           "and is bloody, walks up to you.");
     CHECK(approach_prose({.asleep = true, .met = true}, "") ==
-          "You are asleep. A young man you have spoken to before wakes you.");
+          "You are asleep. Henry, the young man you have spoken to before, wakes you.");
 }
 
 TEST_CASE("the appearance rungs are the game's own four") {
@@ -254,5 +254,5 @@ TEST_CASE("the world sentence joins the ones that were already there") {
     CHECK(approach_prose({.charisma = 0.2, .blood = 0.5, .hour = 10.0, .rain = 0.6,
                           .met = true}, "hoeing a row") ==
           "It is late morning and pouring with rain. You are busy hoeing a row. "
-          "A young man you have spoken to before, who looks wretched and is bloody, walks up to you.");
+          "Henry, the young man you have spoken to before, who looks wretched and is bloody, walks up to you.");
 }

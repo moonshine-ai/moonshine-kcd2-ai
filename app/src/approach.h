@@ -127,7 +127,8 @@ std::string_view sky(double rain);
 // for what they were caught doing, and reads on from "You are busy ". Empty when the
 // animation was not worth reporting, and then that sentence is left out. The one walking
 // up is a young man, since he always is (Henry): a bare "someone" left his sex to the model,
-// which once made it "mistress" (bugs.txt 2 Nov 2026).
+// which once made it "mistress" (bugs.txt 2 Nov 2026). Once met he is Henry by name, since a
+// soul who knew him and was not told it invented "Herr von Bergow" (3 Nov 2026).
 std::string approach_prose(const Approach& approach, std::string_view clause);
 
 }  // namespace moonshine
