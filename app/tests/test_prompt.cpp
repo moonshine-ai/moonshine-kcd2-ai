@@ -1,3 +1,8 @@
+// Before doctest.h, which only forward-declares std::ostream: a CHECK that compares a
+// string with a string_view has doctest print the string_view through MSVC's
+// operator<< in <string_view>, which needs the whole class (wl1, 3 Nov 2026).
+#include <ostream>
+
 #include "doctest.h"
 
 #include "prompt.h"
