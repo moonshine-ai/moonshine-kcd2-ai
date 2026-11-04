@@ -223,22 +223,32 @@ std::string quest_key(const std::string& modid, const std::string& quest_id,
                       const std::string& field);
 
 // Data/Quests/<modid>.xml -- the concept graph the engine loads alongside the
-// game's own (IncludeModGraphs: "Quests/%s.xml" for a mod), a Project whose one
-// definition is the Level below and whose one node is an instance of it, the shape of
-// the shipped concept_test project (a Project, a Level under it, the quests under
-// that). Definition paths are resolved against the project's own directory, so it
+// game's own (IncludeModGraphs: "Quests/%s.xml" for a mod), a Project whose
+// definitions are the Levels below, one node an instance of each, the shape of the
+// shipped Barbora project (a Project, its Levels under it, each level's quests under
+// its own). Definition paths are resolved against the project's own directory, so it
 // names <modid>/<level>.xml from here.
 std::string emit_dialogue_project(const std::string& modid);
 
-// Data/Quests/<modid>/<kQuestLevel>.xml -- the Level the dialogue and the quests sit in,
-// named for the game's own level (Libs/Tables/level.xml), which is what the journal
-// files a quest's region by: under a bare Project every errand read "Different
-// region" (noted 4 Oct 2026). It points at the dialogue definition beside it and, when
-// there are quests, at a quest per file, with the edges from the dialogue's ports into
-// them. Definition paths are resolved against this file's directory, so they name
-// <kQuestLevel>/<file>.xml from here.
-constexpr const char* kQuestLevel = "kutnohorsko";
+// The game's levels (Libs/Tables/level.xml), one Level node each. A Level's graph runs
+// while its level is the one loaded and not otherwise, which is why there is one per
+// level rather than one for all: with the dialogue under kutnohorsko alone, a Talk pressed
+// anywhere around Trosky queued a request no graph was awake to run -- the words came
+// through the caption, no session opened and no menu was drawn (a tester's log of 3 Nov
+// 2026, every pump tick `indialog=false`). The shipped project keeps its three Levels
+// `HibernateMode="Auto"` and its cross-level dialogues out of any Level; ours sit in every
+// Level instead, so each level has its own instance of the same held loop.
+constexpr const char* kLevels[] = {"kutnohorsko", "trosecko", "klaster"};
+
+// Data/Quests/<modid>/<level>.xml -- one game level's Level node: the dialogue and that
+// level's quests, named for the game's own level, which is what the journal files a
+// quest's region by: under a bare Project every errand read "Different region" (noted
+// 4 Oct 2026). It points at the dialogue definition beside it and, for each quest whose
+// giver lives on this level (Quest::level), at a quest per file, with the edges from the
+// dialogue's ports into them; quests of other levels are left out. Definition paths are
+// resolved against this file's directory, so they name <level>/<file>.xml from here.
 std::string emit_quest_level(const std::string& modid,
+                             const std::string& level,
                              const std::string& dialogue_name,
                              const std::vector<Quest>& quests);
 

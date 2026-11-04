@@ -112,6 +112,13 @@ std::vector<Persona> read_personas(const std::string& db_path, const Filter& fil
     return out;
 }
 
+std::string level_for_region(const std::string& region) {
+    if (region == "Kuttenberg region") return "kutnohorsko";
+    if (region == "Trosky region") return "trosecko";
+    if (region == "Monastery") return "klaster";
+    return "";
+}
+
 std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Persona>& personas) {
     sqlite3* raw_db = nullptr;
     if (sqlite3_open_v2(db_path.c_str(), &raw_db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
@@ -158,7 +165,7 @@ std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Per
         ", COALESCE(h.gender, '') " +
         (links ? ", COALESCE(s.after_quest_id, ''), COALESCE(s.after_how, '') " : ", '', '' ") +
         (rewards ? ", COALESCE(s.reward_kind, ''), COALESCE(s.reward_text, '') " : ", '', '' ") +
-        ", COALESCE(g.gender, '') " +
+        ", COALESCE(g.gender, ''), COALESCE(g.region, '') " +
         "FROM npc_quest q "
         "JOIN npc_quest_text t USING (quest_id) "
         "JOIN npc g ON g.soul_name = q.giver_soul "
@@ -214,7 +221,11 @@ std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Per
         q.reward_kind = text(27);
         q.reward_text = text(28);
         q.giver_gender = text(29);
+        q.level = level_for_region(text(30));
         if (q.id.empty() || q.giver_guid.empty()) continue;
+        // A giver on no level has no Level node to be emitted under, so no graph could
+        // ever run the errand; the five Trosky givers and the Kuttenberg ones all have one.
+        if (q.level.empty()) continue;
         if (!renamed.count(q.giver_soul)) continue;
         // A find, a pray, a leave or a return has no target at all; every other kind needs
         // a renamed one.

@@ -392,28 +392,40 @@ int main(int argc, char** argv) {
                                                quests));
             data_pak.add("Libs/Storm/roles/" + o.modid + ".xml", roles);
 
-            // One dialogue, listed by the project beside it. A definition the
-            // project does not name is a file the graph never reads.
+            // The project, listing a Level per game level. A definition the project
+            // does not name is a file the graph never reads.
             data_pak.add("Quests/" + o.modid + ".xml", kcd2::emit_dialogue_project(o.modid));
-            // The Level under it, which is where the dialogue and the quests sit (the
-            // journal's region comes from it), and its folder, which is where their files go.
-            const std::string level_dir = "Quests/" + o.modid + "/" + kcd2::kQuestLevel + "/";
-            data_pak.add("Quests/" + o.modid + "/" + kcd2::kQuestLevel + ".xml",
-                         kcd2::emit_quest_level(o.modid, dialogue_name, quests));
+            // The dialogue, the same words in every Level: a Level's graph is awake on its
+            // own level only (emit.hpp kLevels), so each needs its own instance for a
+            // Talk pressed there to find. Every quest's ports are on every copy -- the
+            // copies are one definition written three times -- and the edges from them
+            // are wired in the Level whose quests they are.
             const std::vector<kcd2::QuestBeat> all_beats = kcd2::quest_beats(quests);
             beats = all_beats.size();
-            data_pak.add(level_dir + dialogue_name + ".xml",
-                         kcd2::emit_dialogue(o.modid, dialogue_name, o.dialogue_role,
-                                             o.beat_seconds, all_beats));
-            // One file per quest beside the dialogue, and its journal rows in the same
-            // table as everything else the mod says.
+            const std::string dialogue =
+                kcd2::emit_dialogue(o.modid, dialogue_name, o.dialogue_role, o.beat_seconds, all_beats);
+            for (const char* level : kcd2::kLevels) {
+                // The Level, which is where the dialogue and that level's quests sit (the
+                // journal's region comes from it), and its folder, where their files go.
+                const std::string level_dir = "Quests/" + o.modid + "/" + level + "/";
+                data_pak.add("Quests/" + o.modid + "/" + level + ".xml",
+                             kcd2::emit_quest_level(o.modid, level, dialogue_name, quests));
+                data_pak.add(level_dir + dialogue_name + ".xml", dialogue);
+            }
+            // One file per quest beside its level's dialogue, and its journal rows in the
+            // same table as everything else the mod says.
             // One file per run (a story's same-giver scenes under one journal entry,
             // stages.md), named for its head; the holder's and onward's files and the
-            // journal rows per scene as before.
+            // journal rows per scene as before. A run's legs share a giver, so a level.
+            const auto level_dir_of = [&](const kcd2::Quest& q) {
+                return "Quests/" + o.modid + "/" + q.level + "/";
+            };
             for (const kcd2::QuestRun& run : kcd2::quest_runs(quests)) {
-                data_pak.add(level_dir + kcd2::quest_node(run.legs.front()->id) + ".xml", kcd2::emit_quest(o.modid, run));
+                data_pak.add(level_dir_of(*run.legs.front()) + kcd2::quest_node(run.legs.front()->id) + ".xml",
+                             kcd2::emit_quest(o.modid, run));
             }
             for (const auto& q : quests) {
+                const std::string level_dir = level_dir_of(q);
                 for (auto& row : kcd2::quest_localization(o.modid, q)) {
                     loc_extras.push_back(std::move(row));
                 }

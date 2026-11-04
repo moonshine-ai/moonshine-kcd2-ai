@@ -48,6 +48,10 @@ struct Quest {
     std::string target_gender;  // npc.gender of the holder: "male", "female" or ""; a woman
                                 // is never offered the dread option (survey-followups.md §1)
     std::string giver_gender;   // npc.gender of the giver, for the voice of a hail
+    // The game level the giver lives on (level_for_region of npc.region): the Level node
+    // the quest's graph is emitted under, and so the one that is awake when Henry is
+    // there and the one the journal files it by. A quest's parties never straddle levels.
+    std::string level;
     std::string item_class;    // item class guid the game knows
     std::string item_name;     // "work axe"
     std::string reward_tier;   // money_change.xml row, "01 Few beers"
@@ -782,6 +786,11 @@ inline bool untrue_how(const std::string& how) {
     return how == "lied" || how == "quiet" || how == "kept" || how == "dead" ||
            how == "pinned" || how == "covered" || how == "fibbed" || how == "evaded" || how == "caught";
 }
+
+// The game's level (Libs/Tables/level.xml) a soul's npc.region stands for: "Kuttenberg
+// region" is kutnohorsko, "Trosky region" trosecko, "Monastery" klaster. Anything else
+// (event NPCs, the test rows) is "", nobody's level in particular.
+std::string level_for_region(const std::string& region);
 
 // Reads npc_quest joined to npc_quest_text, keeping only quests whose giver and
 // target are both among personas -- a quest between souls the mod does not rename

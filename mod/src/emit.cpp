@@ -1201,11 +1201,15 @@ std::string emit_dialogue_project(const std::string& modid) {
     std::string s = skald_header(modid);
     s += "\t\t<Project Name=\"" + xml_escape(modid) + "\">\r\n";
     s += "\t\t\t<Definitions>\r\n";
-    s += "\t\t\t\t<Definition File=\"" + xml_escape(modid + "/" + std::string(kQuestLevel) + ".xml") +
-         "\" />\r\n";
+    for (const char* level : kLevels) {
+        s += "\t\t\t\t<Definition File=\"" + xml_escape(modid + "/" + std::string(level) + ".xml") +
+             "\" />\r\n";
+    }
     s += "\t\t\t</Definitions>\r\n";
     s += "\t\t\t<Nodes>\r\n";
-    s += "\t\t\t\t<" + std::string(kQuestLevel) + " Name=\"" + std::string(kQuestLevel) + "\" />\r\n";
+    for (const char* level : kLevels) {
+        s += "\t\t\t\t<" + std::string(level) + " Name=\"" + std::string(level) + "\" />\r\n";
+    }
     s += "\t\t\t</Nodes>\r\n";
     s += "\t\t</Project>\r\n";
     s += "\t</Skald>\r\n";
@@ -1214,19 +1218,33 @@ std::string emit_dialogue_project(const std::string& modid) {
 }
 
 std::string emit_quest_level(const std::string& modid,
+                             const std::string& level,
                              const std::string& dialogue_name,
-                             const std::vector<Quest>& quests) {
+                             const std::vector<Quest>& all_quests) {
+    require_identifier(level, "level");
+    // This level's quests only (Quest::level): a quest's graph belongs in the Level that is
+    // awake where its parties live, and a link's before is looked for among these alone,
+    // since an edge to a node in another Level names nothing.
+    std::vector<Quest> quests;
+    for (const Quest& q : all_quests) {
+        if (q.level == level) quests.push_back(q);
+    }
     std::string s = skald_header(modid);
-    // The Level, under the Project above, as the shipped concept_test project nests its
-    // own (Quests/Testing/daniel.mikes/concept_test). A Level as the *root* of the mod's
+    // The Level, under the Project above, as the shipped Barbora project nests its three
+    // (Quests/Final/Barbora/trosecko.xml and the rest). A Level as the *root* of the mod's
     // graph was tried first (4 Oct 2026), with and without HibernateMode="Auto": the game
     // loaded it and ran the errand the same, and the journal still said "Different
-    // region", so a root is not a level to the journal whatever it is called. No
-    // HibernateMode: the shipped Levels' "Auto" would put the graph to sleep -- the
-    // dialogue with it -- whenever Kuttenberg is not the level loaded.
-    s += "\t\t<Level Name=\"" + std::string(kQuestLevel) + "\">\r\n";
+    // region", so a root is not a level to the journal whatever it is called.
+    //
+    // One Level per game level, each with its own instance of the dialogue (kLevels in
+    // emit.hpp). A single kutnohorsko Level carrying no HibernateMode was meant to stay
+    // awake on every level and did not: around Trosky the request for the dialogue was
+    // accepted and never run, so the Talk had words and no session (3 Nov 2026). The
+    // attribute is the shipped Levels' own, so what sleeps and wakes with the level is
+    // what the game's graphs do.
+    s += "\t\t<Level Name=\"" + level + "\" HibernateMode=\"Auto\">\r\n";
     s += "\t\t\t<Definitions>\r\n";
-    const std::string dir = std::string(kQuestLevel) + "/";
+    const std::string dir = level + "/";
     s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + dialogue_name + ".xml") + "\" />\r\n";
     // One file and one node per run (stages.md): a quest of one scene as before, a story's
     // same-giver scenes gathered under their head's name.
@@ -1287,11 +1305,10 @@ std::string emit_quest_level(const std::string& modid,
         const std::string node = quest_node(q.id);
         // RequiredForOutput names the Level the node is exported with, as on every quest's
         // instance node in the shipped Levels (<bratriZCimburka Name="…"
-        // RequiredForOutput="kutnohorsko">). It is the enclosing Level's name, always: the
-        // five Trosky givers' errands sit in this Level too (one dialogue instance, so one
-        // Level for its edges), and a node tagged for another level than its own has no
-        // measured meaning. On its own it did nothing for the journal's region; the Level did.
-        s += "\t\t\t\t<" + node + " Name=\"" + node + "\" RequiredForOutput=\"" + kQuestLevel + "\">\r\n";
+        // RequiredForOutput="kutnohorsko">). It is the enclosing Level's name, always; a
+        // node tagged for another level than its own has no measured meaning. On its own
+        // it did nothing for the journal's region; the Level did.
+        s += "\t\t\t\t<" + node + " Name=\"" + node + "\" RequiredForOutput=\"" + level + "\">\r\n";
         for (const Quest* leg : run.legs) {
             for (const std::string& command : quest_commands(*leg)) {
                 const std::string port = quest_port({leg->id, command, 0});
@@ -1515,7 +1532,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (!quest.hail.empty()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(hail_node(quest.id) + ".xml") + "\" />\r\n";
     }
-    const std::string rfo = std::string(" RequiredForOutput=\"") + kQuestLevel + "\"";
+    const std::string rfo = " RequiredForOutput=\"" + xml_escape(quest.level) + "\"";
     std::string s;
     // The one objective follows the quest state, and its own State is what the logs hang
     // off. Its type is the quest's own (Types, below), the way the shipped quests write
@@ -2816,8 +2833,9 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     // shipped micro quests wire, in the same names.
     // RequiredForOutput on the quest's state and objective nodes as the shipped files have
     // it (sedmStatecnych.xml's questProgress, poustevnik_a_vdova.xml's questState and
-    // objectiveVisual5): the Level the quest sits in.
-    const std::string rfo = std::string(" RequiredForOutput=\"") + kQuestLevel + "\"";
+    // objectiveVisual5): the Level the quest sits in (Quest::level; a run's legs share a
+    // giver, so one level).
+    const std::string rfo = " RequiredForOutput=\"" + xml_escape(head.level) + "\"";
     s += t(4) + "<State Name=\"questState\"" + rfo + " TypeT=\"wh::questmodule::QuestProgress\">\r\n";
     s += t(5) + "<Edge From=\"" + legs.front().in_ports.front() + "\" To=\"SetActive\" />\r\n";
     // `onward` is a beat in the middle (the giver told and paid, Henry sent on), not an
