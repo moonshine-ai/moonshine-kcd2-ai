@@ -69,6 +69,30 @@ manifest_args=(--version "$version")
     "${manifest_args[@]}" \
     | sed 's/^/  /'
 
+# What this folder was built from: a hash of every tracked file the build reads, so that
+# installer\Stage.ps1 can tell a release\mod built from an older generator than the
+# checkout it is staging, and refuse it. 0.9.101 (4 Nov 2026) shipped the mod of the day
+# before -- release.sh copies the source and packages release\mod as it finds it, and
+# nothing compared the two -- and the fix it was cut for never reached the tester. Tracked
+# files only (git ls-files), since the build machine's checkout is the tracked tree and
+# nothing else; the database and the drop's assets are named by data/DROP. The file stays
+# out of the package (Stage.ps1 leaves it behind), and is harmless beside a mod.manifest
+# wherever else the folder goes.
+inputs="$out/inputs.sha256"
+roots=(mod/src mod/vendor mod/CMakeLists.txt mod/assets
+       scripts/build_mod.sh scripts/build_scheduler.py scripts/build_mouthpak.py data/DROP)
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    {
+        echo "# scripts/build_mod.sh: the tracked files this mod was built from (sha256  path)."
+        echo "# roots: ${roots[*]}"
+        git ls-files -z -- "${roots[@]}" | xargs -0 shasum -a 256 | sed 's/^\([0-9a-f]*\) [ *]/\1  /'
+    } > "$inputs"
+    echo "  $(grep -vc '^#' "$inputs") input files fingerprinted in inputs.sha256"
+else
+    rm -f "$inputs"
+    echo "  (not a git checkout; no inputs.sha256, and Stage.ps1 will refuse this folder)" >&2
+fi
+
 # The emitted Lua is one 7,000-line file built by string concatenation, and a syntax
 # error in it reaches the game as a mod that loaded and then did nothing. luac is the
 # cheapest place to find that out.

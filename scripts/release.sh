@@ -39,7 +39,10 @@
 # (kcd2ai, under the ssh user's home); its python is RELEASE_PYTHON (py -3). The files are
 # published under MOONSHINE_DOWNLOAD_BASE (https://download.moonshine.ai/kcd2). The
 # release build's prerequisites on that machine -- the drop, the models, release\mod --
-# are its own (README.md, The installer) and are checked by Stage.ps1, not here.
+# are its own (README.md, The installer) and are checked by Stage.ps1, not here. The mod
+# in release\mod is not rebuilt by this script: Stage.ps1 refuses one whose inputs.sha256
+# does not match the generator sources being released, so after a change under mod/ run
+# scripts/deploy_wl1.sh (or build_mod.sh release/mod/moonshine_names and copy it over) first.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

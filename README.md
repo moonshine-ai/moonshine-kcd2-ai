@@ -355,6 +355,15 @@ scripts/release.sh --stage-only # build and stage, run the verifiers, then --pub
 It bumps `VERSION` (and the installer link in this file's Step 1), copies the tracked
 files over, runs `scripts\build_windows.bat release` and `installer\Stage.ps1` there,
 uploads with `installer\publish.py`, and commits the bump as `Release <version>`, tagged.
+The release does not rebuild the mod: `release\mod\moonshine_names` on the build machine
+is whatever `scripts/deploy_wl1.sh` last put there, and `Stage.ps1` packages it as found.
+It does check it, though: `scripts/build_mod.sh` leaves an `inputs.sha256` beside the
+`mod.manifest` naming every tracked file the build read, and `Stage.ps1` refuses a folder
+whose files do not match the checkout being released (0.9.101 shipped the previous day's
+mod that way, and the fix it was cut for never reached the tester). After a change under
+`mod/`, run `scripts/deploy_wl1.sh` (or `scripts/build_mod.sh release/mod/moonshine_names`
+and copy it over) before `scripts/release.sh`.
+
 The pieces run on their own too. With the release build, the drop, the models and a mod
 folder under `release\mod\moonshine_names` in place on the build machine:
 

@@ -23,6 +23,8 @@
 #     models\llm\<name>.gguf        the one GGUF under models\llm
 #     models\stt\medium-streaming-en\ the one folder under models\stt
 #     mod\moonshine_names\          from release\mod; Fetch-Package copies it into the game
+#                                   (only if its inputs.sha256 says it was built from the
+#                                   generator in this checkout; a stale folder is refused)
 #   extra\vc_redist.x64.exe         run by the installer, not installed
 #
 # The installer carries only the program, the scripts and manifest.json; the rest (data\,
@@ -336,7 +338,47 @@ if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Micros
 Step 'mod'
 $modSrc = Join-Path $Repo 'release\mod\moonshine_names'
 if (-not (Test-Path -LiteralPath (Join-Path $modSrc 'mod.manifest'))) { Fail "no mod folder at $modSrc -- scripts/build_mod.sh release\mod\moonshine_names writes it" }
-Mirror $modSrc (Join-Path $pkg 'mod\moonshine_names')
+# The mod folder is built elsewhere and copied here (scripts/deploy_wl1.sh), whenever it
+# was; this script packages it as found. So it had better be built from the generator in
+# this checkout: 0.9.101 (4 Nov 2026) was cut two minutes after a generator fix was
+# committed, with release\mod still holding the day before's build, and shipped the bug it
+# was meant to fix. scripts/build_mod.sh writes inputs.sha256 beside the mod.manifest -- a
+# hash of every tracked file the build reads, and the roots it listed -- and here each of
+# those files in this checkout must hash the same, and no file under those roots may be
+# unlisted (a source file added since the build). Anything else is a stale folder.
+$inputsFile = Join-Path $modSrc 'inputs.sha256'
+if (-not (Test-Path -LiteralPath $inputsFile)) { Fail "no inputs.sha256 in ${modSrc}: the mod was built by a build_mod.sh from before 4 Nov 2026, or outside a checkout. Rebuild it (scripts/build_mod.sh release/mod/moonshine_names, or scripts/deploy_wl1.sh) and copy it here." }
+$listed = @{}
+$roots = @()
+foreach ($line in [IO.File]::ReadAllLines($inputsFile)) {
+    if ($line -match '^# roots: (.+)$') { $roots = $Matches[1].Trim() -split '\s+'; continue }
+    if ($line -match '^\s*(#|$)') { continue }
+    if ($line -notmatch '^([0-9a-fA-F]{64})\s+(\S.*)$') { Fail "inputs.sha256: unreadable line: $line" }
+    $listed[$Matches[2]] = $Matches[1].ToLowerInvariant()
+}
+if ($listed.Count -eq 0 -or $roots.Count -eq 0) { Fail "inputs.sha256 in $modSrc names no files or no roots" }
+$stale = New-Object System.Collections.Generic.List[string]
+$repoFull = (Resolve-Path -LiteralPath $Repo).Path.TrimEnd('\')
+foreach ($rel in ($listed.Keys | Sort-Object)) {
+    $path = Join-Path $Repo ($rel -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $stale.Add("gone from the checkout: $rel"); continue }
+    $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($h -ne $listed[$rel]) { $stale.Add("changed since the build: $rel") }
+}
+foreach ($root in $roots) {
+    $rootPath = Join-Path $Repo ($root -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $rootPath)) { continue }
+    $files = if (Test-Path -LiteralPath $rootPath -PathType Container) { Get-ChildItem -LiteralPath $rootPath -File -Recurse } else { @(Get-Item -LiteralPath $rootPath) }
+    foreach ($f in $files) {
+        $rel = $f.FullName.Substring($repoFull.Length).TrimStart('\') -replace '\\', '/'
+        if (-not $listed.ContainsKey($rel)) { $stale.Add("not in the build: $rel") }
+    }
+}
+if ($stale.Count -gt 0) {
+    Fail ("release\mod\moonshine_names was not built from this checkout's generator:`n  " + ($stale -join "`n  ") + "`nRebuild it from the source being released (scripts/build_mod.sh release/mod/moonshine_names, or scripts/deploy_wl1.sh, which copies it here) and stage again. A file listed as 'not in the build' that is not in git is a leftover in this checkout; delete it.")
+}
+Write-Output ("  built from this checkout's generator (" + $listed.Count + " input files match)")
+Mirror $modSrc (Join-Path $pkg 'mod\moonshine_names') @() @('inputs.sha256')
 # Where an earlier Stage.ps1 put it.
 if (Test-Path -LiteralPath (Join-Path $stage 'mod')) { Remove-Item -LiteralPath (Join-Path $stage 'mod') -Recurse -Force }
 # The mod's manifest says which build it is, and release\mod was built whenever it was

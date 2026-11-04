@@ -2118,6 +2118,9 @@ int main(int argc, char** argv) try {
                           : quest.is_spot()
                               ? "wants " + quest.item_name + (quest.is_return() ? " put back at " : " left at ") +
                                     (quest.spot_text.empty() ? std::string("a place") : quest.spot_text)
+                          : quest.is_seek()
+                              ? "wants " + quest.item_name + " looked for at " +
+                                    (quest.spot_text.empty() ? std::string("a place") : quest.spot_text)
                           : quest.is_mind()
                               ? (quest.role == QuestRole::Giver ? "wants " + quest.target_name + " looked in on, " + std::to_string(quest.count) + " visits"
                                                                 : "is looked in on for " + quest.giver_name)

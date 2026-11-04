@@ -43,8 +43,9 @@ struct Quest {
                        // prayer said at a place), "mind" (the target is looked in on), "ask"
                        // (the target knows a truth the giver wants, and is got to tell it),
                        // "leave"/"return" (a thing put down at a place), "ambush" (the target
-                       // gives a false way first) or "buy" (the target sells the item for a
-                       // thing of the giver's and a sum)
+                       // gives a false way first), "buy" (the target sells the item for a
+                       // thing of the giver's and a sum) or "seek" (no target: a creature of
+                       // the giver's looked for where it was last seen)
     QuestRole role = QuestRole::None;
     std::string giver_soul, giver_name;
     std::string target_soul, target_name;
@@ -347,11 +348,16 @@ struct Quest {
     // price.
     bool is_ambush() const { return kind == "ambush"; }
     bool is_buy() const { return kind == "buy"; }
+    // A seek (Sweepings and Strays): nobody is spoken to but the giver; the thing is found
+    // at a place (the mod notes the finding as the travel's `seen`) and the giver's rows are
+    // the travel's three.
+    bool is_seek() const { return kind == "seek"; }
     // The kinds with nothing carried: taken up on a word and settled on a word. A leave's
     // thing is carried, but away from the giver, and nothing is ever brought to them; an
     // ambush's directions the same.
     bool thingless() const {
-        return is_travel() || is_beat() || is_pray() || is_mind() || is_ask() || is_spot() || is_ambush();
+        return is_travel() || is_beat() || is_pray() || is_mind() || is_ask() || is_spot() || is_ambush() ||
+               is_seek();
     }
     // Whether the player has brought what the giver asked for: the one thing a retrieve is
     // about, or a find's full count. A letter is never "brought" to its writer.
@@ -378,8 +384,9 @@ struct QuestFacts {
     bool broker = false;
     bool apologised = false;
     bool refused = false;
-    // A travel: the player has been within sight of the one they were sent to look at.
-    // The mod's Watch sets it; the dump carries it as the flag letter s.
+    // A travel: the player has been within sight of the one they were sent to look at. A
+    // seek: the player has stood over the thing at the end of its path. The mod's Watch sets
+    // it; the dump carries it as the flag letter s.
     bool seen = false;
     // A beat: the man has been knocked down (flag k); a beat or a mind: he is dead (flag x).
     // A pray: the prayer has been said at the place (flag y). A mind: how many visits have

@@ -1406,7 +1406,90 @@ Quest gingers_grave_goods() {
     return quest;
 }
 
+Quest annas_maggie() {
+    Quest quest;
+    quest.id = "f90334f5d7e8";
+    quest.kind = "seek";
+    quest.role = QuestRole::Giver;
+    quest.giver_soul = "kkut_woman_5";
+    quest.giver_name = "Anna";
+    quest.item_name = "cat";
+    quest.reward_text = "a hot supper from the kitchen whenever Henry comes to the back door";
+    quest.spot_text = "the hen yards behind the houses on Wine Street";
+    quest.offer = "Matilda says my Maggie went off into the hen yards behind the houses on Wine Street. Look for her there, and there's a hot supper in it.";
+    quest.thanks = "Kittens! So that's where the fat went, the sly madam.";
+    quest.tell = "I found her. She's lying up by the hen coops with a litter of newborn kittens.";
+    quest.lie = "I looked all through those hen yards. There's no sign of her.";
+    quest.lie_reply = "Gone, then. Well. You went looking, which is more than my neighbours did.";
+    quest.quiet = "I went and I looked. What I found is my own business.";
+    quest.quiet_reply = "Then you can whistle for your supper.";
+    return quest;
+}
+
 }  // namespace
+
+TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henry's word: the truth and silence once it is found, a lie at any time") {
+    const Quest quest = annas_maggie();
+    QuestFacts fresh;
+    CHECK(offerable(quest, fresh));
+    CHECK(quest.thingless());
+    CHECK_FALSE(quest.brought(1));
+
+    QuestPlan first = plan_quest(quest, fresh, {});
+    CHECK(first.block.find("the hen yards behind the houses on Wine Street") != std::string::npos);
+    CHECK(first.block.find("Your cat has not come home") != std::string::npos);
+    CHECK(first.block.find(quest.offer) != std::string::npos);
+    CHECK(first.question.find("look for your cat") != std::string::npos);
+    CHECK(first.on_yes == kQuestAccept);
+    CHECK(first.direction.find("last seen") != std::string::npos);
+    CHECK(first.rows.empty());
+
+    // Agreed and not yet found: only the lie is on the menu, and it pays.
+    QuestPlan looking = plan_quest(quest, at("accepted"), {});
+    REQUIRE(looking.rows.size() == 2);
+    CHECK(looking.rows[1].intent == "give_up");
+    CHECK(looking.rows[0].intent == "lie");
+    CHECK(looking.rows[0].text == quest.lie);
+    CHECK(looking.rows[0].reply == quest.lie_reply);
+    CHECK(looking.rows[0].command == kQuestLie);
+
+    // Found (the mod's `seen`): the truth (paid) and silence (unpaid) join it, in the written words.
+    QuestFacts found = at("accepted");
+    found.seen = true;
+    QuestPlan back = plan_quest(quest, found, {});
+    REQUIRE(back.rows.size() == 3);
+    CHECK(back.rows[0].intent == "tell");
+    CHECK(back.rows[0].text == quest.tell);
+    CHECK(back.rows[0].reply == quest.thanks);
+    CHECK(back.rows[0].command == kQuestComplete);
+    CHECK(back.rows[1].command == kQuestLie);
+    CHECK(back.rows[2].intent == "quiet");
+    CHECK(back.rows[2].text == quest.quiet);
+    CHECK(back.rows[2].reply == quest.quiet_reply);
+    CHECK(back.rows[2].command == kQuestQuiet);
+
+    CHECK(plan_quest(quest, at("done"), {}).block.find("settled") != std::string::npos);
+    CHECK(quest_aside(quest, found, {quest}, {found}).find("look for your cat") != std::string::npos);
+    QuestFacts locked;
+    locked.locked = true;
+    CHECK(plan_quest(quest, locked, {}).block.find("one thing at a time") != std::string::npos);
+    CHECK(plan_quest(quest, locked, {}).question.empty());
+
+    // Nothing written: plain rows, not empty ones, and the place's stand-in phrase.
+    Quest bare = quest;
+    bare.tell.clear();
+    bare.lie.clear();
+    bare.quiet.clear();
+    bare.spot_text.clear();
+    QuestPlan plain = plan_quest(bare, found, {});
+    REQUIRE(plain.rows.size() == 3);
+    for (const auto& row : plain.rows) {
+        CHECK_FALSE(row.text.empty());
+        CHECK_FALSE(row.reply.empty());
+    }
+    CHECK(plain.rows[0].text.find("I found your cat") != std::string::npos);
+    CHECK(plan_quest(bare, fresh, {}).block.find("the place you named") != std::string::npos);
+}
 
 TEST_CASE("a beat asks for amends, and is paid on Henry's word: agreed, fought, or a lie; dead is unpaid") {
     const Quest quest = oswalds_grudge();

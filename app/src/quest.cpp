@@ -725,6 +725,69 @@ QuestPlan plan_spot(const Quest& quest, const QuestFacts& facts) {
     return plan;
 }
 
+// A seek: a creature of the giver's gone missing, last seen at a place; the giver wants it
+// looked for there. The finding is the mod's (its own animal at the place, leading Henry to
+// where it lies up; standing over it sets `seen`); the giver knows nothing until Henry says,
+// and takes his word, true or false. The giver's rows are the travel's three.
+QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
+    QuestPlan plan;
+    if (quest.role != QuestRole::Giver) return plan;
+    const std::string pay = reward_words(quest);
+    const std::string thing = quest.item_name.empty() ? std::string("animal") : quest.item_name;
+    const std::string where = quest.spot_text.empty() ? "the place you named" : quest.spot_text;
+    auto row = [&](std::string_view intent, const std::string& text, const std::string& reply,
+                   std::string_view command, const std::string& plain_text,
+                   const std::string& plain_reply) {
+        plan.rows.push_back({std::string(intent), text.empty() ? plain_text : text,
+                             reply.empty() ? plain_reply : reply, std::string(command)});
+    };
+    if (facts.done) {
+        plan.block = "This person went looking for your " + thing + " at " + where + " and came back "
+                     "and told you what they found, or would not; either way it is settled between "
+                     "you, and you do not ask again.";
+        return plan;
+    }
+    if (facts.accepted) {
+        plan.block = "This person agreed to look for your " + thing + " at " + where + " and come back "
+                     "and tell you what they found, for " + pay + ". You have no way of knowing "
+                     "whether they have been; you take their word for what they found, and give "
+                     "nothing until they tell you. Ask if they have been yet, if you like.";
+        if (facts.seen) {
+            row("tell", quest.tell, quest.thanks, kQuestComplete,
+                "I found your " + thing + ". Alive and well, at " + where + ".",
+                "God be thanked. Here: " + pay + ", as I said.");
+        }
+        row("lie", quest.lie, quest.lie_reply, kQuestLie,
+            "I looked. There's no sign of your " + thing + "; I'd give it up for lost.",
+            "Lost, then. Well. You went, which is more than the rest did. Here, " + pay + ".");
+        if (facts.seen) {
+            row("quiet", quest.quiet, quest.quiet_reply, kQuestQuiet,
+                "I went and I looked. What I found is my business.",
+                "Then you've had your walk and I've had nothing. Nothing for nothing.");
+        }
+        return plan;
+    }
+    if (facts.locked) {
+        plan.block = "You also want somebody to look for your " + thing + " at " + where +
+                     ", but one thing at a time; you do not bring it up.";
+        return plan;
+    }
+    plan.block = "Your " + thing + " has not come home, and was last seen at " + where +
+                 "; you want somebody to look for it there and bring you word, and cannot go "
+                 "yourself. Nobody has agreed to yet. " + offer_words(quest) +
+                 " If this person offers, take them up on it, say plainly where it was last seen and " +
+                 name_it(quest);
+    if (!quest.offer.empty()) {
+        plan.block += " When it comes up, this is how you put it: " + in_quotes(quest.offer);
+    }
+    plan.question = "Did this person just agree, offer or promise to go and look for your " + thing +
+                    " at " + where + " for you?";
+    plan.on_yes = std::string(kQuestAccept);
+    plan.direction = "[They have agreed to go. You tell them again where your " + thing +
+                     " was last seen, and that it is " + pay + " when they come back with word.]";
+    return plan;
+}
+
 // A mind: the giver wants somebody looked in on, more than once, hours apart. The visits are
 // the game's own Talk on the one looked in on (the mod counts them and keeps the clock);
 // the giver knows nothing until Henry says.
@@ -1316,6 +1379,7 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
     if (quest.is_beat()) return plan_beat(quest, facts);
     if (quest.is_pray()) return plan_pray(quest, facts);
     if (quest.is_spot()) return plan_spot(quest, facts);
+    if (quest.is_seek()) return plan_seek(quest, facts);
     if (quest.is_mind()) return plan_mind(quest, facts);
     if (quest.is_ask()) return plan_ask(quest, facts);
     if (quest.is_ambush()) return plan_ambush(quest, facts);
@@ -1696,6 +1760,19 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
         if (facts.accepted) {
             return "They also have your " + quest.item_name + " and have agreed to take it to " + where +
                    ", and have not yet told you they have.";
+        }
+        return {};
+    }
+    if (quest.is_seek()) {
+        if (quest.role != QuestRole::Giver) return {};
+        const std::string where = quest.spot_text.empty() ? std::string("the place you named") : quest.spot_text;
+        if (facts.done) {
+            return "This person also went looking for your " + quest.item_name + " at " + where +
+                   " for you, which is settled.";
+        }
+        if (facts.accepted) {
+            return "They have also agreed to look for your " + quest.item_name + " at " + where +
+                   ", and have not yet brought you word.";
         }
         return {};
     }
