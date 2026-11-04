@@ -438,7 +438,7 @@ app/            the companion app: src/, tests/, vendor/ (llama.cpp and xn-ptts 
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
 installer/      Stage.ps1, publish.py, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
 scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
-tools/          assemble_db.py, fetch_drop.py, s3_sign.py
+tools/          assemble_db.py, fetch_drop.py, s3_sign.py, kitten_textures.py (the kitten coats under mod/assets)
 data/           schema.sql (the shipped database's schema), DROP (the pin), kcd2/voices/ (catalogues)
 third_party/    sqlite3 (shared by app and mod); moonshine/ when fetched
 setting.txt     the world setting every conversation's prompt opens with

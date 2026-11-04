@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<!-- black kitten: the shipped cat_black.mtl with a kitten diffuse (tools/kitten_textures.py) and blue eyes -->
+<Material MtlFlags="524544" vertModifType="0">
+	<SubMaterials>
+		<Material CustomSortPriority="2" Diffuse="1,1,1" GenMask="8002000000020" LayerAct="0" MatTemplate="" MtlFlags="524416" Name="eyes" Opacity="1" Shader="Eye" Shininess="255" Specular="0.01228649,0.01228649,0.01228649" StringGenMask="%NORMAL_MAP%TEMP_EYES%VERTCOLORS" SurfaceType="" vertModifType="0">
+			<Textures>
+				<Texture File="objects/characters/animals/cat/cat_eyes_diff.tif" Map="Diffuse" />
+				<Texture File="objects/characters/animals/cat/cat_eyes_ddna.tif" Map="Bumpmap" />
+				<Texture File="objects/characters/animals/cat/cat_eyes_ddna.tif" Map="Custom" />
+			</Textures>
+			<PublicParams CorneaRefraction="0.087" CorneaSmoothness="1" IrisColor="0.30,0.50,0.95" IrisDepth="0" IrisShadowing="0" IrisSSS="1.494" ScleraSSS="0" />
+		</Material>
+		<Material CustomSortPriority="1" Diffuse="1,1,1" Emittance="0,0,0,0" GenMask="1000028" LayerAct="0" MatTemplate="" MtlFlags="526464" Name="body" Opacity="1" Shader="Hair" Specular="0.3467041,0.3467041,0.3467041" StringGenMask="%ANISO_SPECULAR%HAIR_PASS%NORMAL_MAP" SurfaceType="" vertModifType="0">
+			<Textures>
+				<Texture File="./moonshine_kitten_black_diff.tif" Map="Diffuse" />
+				<Texture File="objects/characters/animals/cat/cat_body_black_ddna.tif" Map="Bumpmap" />
+				<Texture File="objects/characters/animals/cat/cat_body_spec.tif" Map="Specular" />
+			</Textures>
+			<PublicParams AlphaBlendMultiplier="1" DiffuseWrap="1" SecondaryHighlightColor="1,1,1" SecondaryHighlightShiftAmount="0.5" SecondaryHighlightWidth="4" ShiftVariation="4" SoftIntersection="0" />
+		</Material>
+		<Material CloakAmount="0" Diffuse="0,0,0" GenMask="8002000080020" LayerAct="1" MatTemplate="" MtlFlags="524416" Name="overlay" Opacity="1" Shader="Eye" Shininess="255" Specular="1,1,1" StringGenMask="%EYE_AO_OVERLAY%NORMAL_MAP%TEMP_EYES%VERTCOLORS" SurfaceType="" vertModifType="0">
+			<Textures>
+				<Texture File="objects/characters/humans/male/head/base/base_head/eye_overlay_diff.tif" Map="Diffuse" />
+				<Texture File="objects/characters/humans/male/head/base/base_head/generic_eye_v01_ddna.tif" Map="Bumpmap" />
+				<Texture File="objects/characters/humans/male/head/base/base_head/eye_overlay_spec.tif" Map="Specular" />
+			</Textures>
+			<PublicParams DiffOccStrength="1" SpecOccStrength="0" />
+		</Material>
+	</SubMaterials>
+	<PublicParams EmittanceMapGamma="1" RockDarkeningPrePostDetail="1" RockDarkeningSoftEdge="0" RockDarkeningStrength="0" RockDarkeningThreshold="0" SSSIndex="0" />
+</Material>
