@@ -33,3 +33,7 @@ __pycache__/
 /scripts/start-moonshine-on-wl1.sh
 
 bugs.txt
+
+# External-test materials. The recruiting post and the tester guide name the
+# unreleased build; keep them out of the public repo.
+/testing/
