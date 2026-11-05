@@ -1488,7 +1488,19 @@ TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henr
         CHECK_FALSE(row.reply.empty());
     }
     CHECK(plain.rows[0].text.find("I found your cat") != std::string::npos);
-    CHECK(plan_quest(bare, fresh, {}).block.find("the place you named") != std::string::npos);
+
+    // No spot_text: the giver does not know where it went (Sweepings and Strays as the
+    // narrative has it: she has asked the street and got nothing; the neighbours tell Henry).
+    // The brief says so, names no place, and sends Henry to ask along the street.
+    QuestPlan unknown = plan_quest(bare, fresh, {});
+    CHECK(unknown.block.find("you do not know where it went") != std::string::npos);
+    CHECK(unknown.block.find("ask the neighbours") != std::string::npos);
+    CHECK(unknown.block.find("the place you named") == std::string::npos);
+    CHECK(unknown.block.find("last seen") == std::string::npos);
+    CHECK(unknown.direction.find("nobody on the street") != std::string::npos);
+    CHECK(unknown.question.find(" at ") == std::string::npos);
+    CHECK(plan_quest(bare, at("accepted"), {}).block.find("you do not know where it went") != std::string::npos);
+    CHECK(quest_aside(bare, found, {bare}, {found}).find(" at ") == std::string::npos);
 }
 
 TEST_CASE("a beat asks for amends, and is paid on Henry's word: agreed, fought, or a lie; dead is unpaid") {

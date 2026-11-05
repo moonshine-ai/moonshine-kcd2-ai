@@ -725,16 +725,20 @@ QuestPlan plan_spot(const Quest& quest, const QuestFacts& facts) {
     return plan;
 }
 
-// A seek: a creature of the giver's gone missing, last seen at a place; the giver wants it
-// looked for there. The finding is the mod's (its own animal at the place, leading Henry to
-// where it lies up; standing over it sets `seen`); the giver knows nothing until Henry says,
-// and takes his word, true or false. The giver's rows are the travel's three.
+// A seek: a creature of the giver's gone missing; the giver wants it looked for. With a
+// spot_text the giver knows where it was last seen and says so; without one the giver does
+// not know -- she has asked the street and been told nothing, and it is the neighbours who
+// tell Henry (their own knowledge) where it went. The finding is the mod's (its own animal
+// at the place, leading Henry to where it lies up; standing over it sets `seen`); the giver
+// knows nothing until Henry says, and takes his word, true or false. The giver's rows are
+// the travel's three.
 QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
     QuestPlan plan;
     if (quest.role != QuestRole::Giver) return plan;
     const std::string pay = reward_words(quest);
     const std::string thing = quest.item_name.empty() ? std::string("animal") : quest.item_name;
-    const std::string where = quest.spot_text.empty() ? "the place you named" : quest.spot_text;
+    const bool knows_where = !quest.spot_text.empty();
+    const std::string at_where = knows_where ? " at " + quest.spot_text : std::string();
     auto row = [&](std::string_view intent, const std::string& text, const std::string& reply,
                    std::string_view command, const std::string& plain_text,
                    const std::string& plain_reply) {
@@ -742,19 +746,21 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
                              reply.empty() ? plain_reply : reply, std::string(command)});
     };
     if (facts.done) {
-        plan.block = "This person went looking for your " + thing + " at " + where + " and came back "
+        plan.block = "This person went looking for your " + thing + at_where + " and came back "
                      "and told you what they found, or would not; either way it is settled between "
                      "you, and you do not ask again.";
         return plan;
     }
     if (facts.accepted) {
-        plan.block = "This person agreed to look for your " + thing + " at " + where + " and come back "
+        plan.block = "This person agreed to look for your " + thing + at_where + " and come back "
                      "and tell you what they found, for " + pay + ". You have no way of knowing "
-                     "whether they have been; you take their word for what they found, and give "
+                     "whether they have been" +
+                     std::string(knows_where ? "" : ", or where they looked, since you do not know where it went") +
+                     "; you take their word for what they found, and give "
                      "nothing until they tell you. Ask if they have been yet, if you like.";
         if (facts.seen) {
             row("tell", quest.tell, quest.thanks, kQuestComplete,
-                "I found your " + thing + ". Alive and well, at " + where + ".",
+                "I found your " + thing + ". Alive and well" + (knows_where ? ", at " + quest.spot_text : std::string()) + ".",
                 "God be thanked. Here: " + pay + ", as I said.");
         }
         row("lie", quest.lie, quest.lie_reply, kQuestLie,
@@ -768,23 +774,37 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
         return plan;
     }
     if (facts.locked) {
-        plan.block = "You also want somebody to look for your " + thing + " at " + where +
+        plan.block = "You also want somebody to look for your " + thing + at_where +
                      ", but one thing at a time; you do not bring it up.";
         return plan;
     }
-    plan.block = "Your " + thing + " has not come home, and was last seen at " + where +
-                 "; you want somebody to look for it there and bring you word, and cannot go "
-                 "yourself. Nobody has agreed to yet. " + offer_words(quest) +
-                 " If this person offers, take them up on it, say plainly where it was last seen and " +
-                 name_it(quest);
+    if (knows_where) {
+        plan.block = "Your " + thing + " has not come home, and was last seen at " + quest.spot_text +
+                     "; you want somebody to look for it there and bring you word, and cannot go "
+                     "yourself. Nobody has agreed to yet. " + offer_words(quest) +
+                     " If this person offers, take them up on it, say plainly where it was last seen and " +
+                     name_it(quest);
+    } else {
+        plan.block = "Your " + thing + " has not come home, and you do not know where it went: you have "
+                     "asked up and down the street and been told nothing. You want somebody to ask the "
+                     "neighbours where you cannot, look for it, and bring you word, and cannot go "
+                     "yourself. Nobody has agreed to yet. " + offer_words(quest) +
+                     " If this person offers, take them up on it, say plainly that nobody will tell you "
+                     "where it went, send them to ask along the street, and " + name_it(quest) +
+                     " You name no place, because you do not know one.";
+    }
     if (!quest.offer.empty()) {
         plan.block += " When it comes up, this is how you put it: " + in_quotes(quest.offer);
     }
     plan.question = "Did this person just agree, offer or promise to go and look for your " + thing +
-                    " at " + where + " for you?";
+                    at_where + " for you?";
     plan.on_yes = std::string(kQuestAccept);
-    plan.direction = "[They have agreed to go. You tell them again where your " + thing +
-                     " was last seen, and that it is " + pay + " when they come back with word.]";
+    plan.direction = knows_where
+        ? "[They have agreed to go. You tell them again where your " + thing +
+              " was last seen, and that it is " + pay + " when they come back with word.]"
+        : "[They have agreed to go. You tell them again that nobody on the street would say where your " +
+              thing + " went, that the neighbours may tell a stranger more, and that it is " + pay +
+              " when they come back with word.]";
     return plan;
 }
 
@@ -1765,13 +1785,13 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
     }
     if (quest.is_seek()) {
         if (quest.role != QuestRole::Giver) return {};
-        const std::string where = quest.spot_text.empty() ? std::string("the place you named") : quest.spot_text;
+        const std::string at_where = quest.spot_text.empty() ? std::string() : " at " + quest.spot_text;
         if (facts.done) {
-            return "This person also went looking for your " + quest.item_name + " at " + where +
+            return "This person also went looking for your " + quest.item_name + at_where +
                    " for you, which is settled.";
         }
         if (facts.accepted) {
-            return "They have also agreed to look for your " + quest.item_name + " at " + where +
+            return "They have also agreed to look for your " + quest.item_name + at_where +
                    ", and have not yet brought you word.";
         }
         return {};

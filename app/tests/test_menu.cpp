@@ -2261,9 +2261,10 @@ TEST_CASE("with guessing off, a look still writes the opening list, but does not
 }
 
 TEST_CASE("the truth told, the reminder goes and the giver's next scene is there to ask in the same conversation") {
-    // Sweepings and Strays (notes.md 8 Oct 2026): Anna's second scene (then A Notched Ear,
-    // now the seek Plump as a Friar) follows it once the truth is told, but the plan is
-    // fixed when a conversation opens, so the hand-in left
+    // Sweepings and Strays as it was (notes.md 8 Oct 2026; since 5 Nov 2026 the story is
+    // the one seek and chains nothing -- this pairing is the fixture's own, for the
+    // mechanism): Anna's second scene followed the first once the truth was told, but the
+    // plan is fixed when a conversation opens, so the hand-in left
     // "Remind me what it is you need of me." on the list and the second scene waited for
     // Henry to happen back -- "just talk and return". Now the ending replans the
     // conversation: the reminder goes with the errand, the next scene's offer is said in

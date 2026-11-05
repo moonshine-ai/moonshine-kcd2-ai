@@ -229,8 +229,8 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
             ? "I'll take your " + quest.item_name + (quest.is_return() ? " back to " : " to ") +
                   (quest.spot_text.empty() ? std::string("the place") : quest.spot_text) + " for you."
             : quest.is_seek()
-            ? "I'll go and look for your " + quest.item_name + " at " +
-                  (quest.spot_text.empty() ? std::string("the place") : quest.spot_text) + "."
+            ? "I'll go and look for your " + quest.item_name +
+                  (quest.spot_text.empty() ? std::string(", and ask along the street") : " at " + quest.spot_text) + "."
             : quest.is_mind()
             ? "I'll look in on " + quest.target_name + " for you, and keep looking in."
             : quest.is_ask()
