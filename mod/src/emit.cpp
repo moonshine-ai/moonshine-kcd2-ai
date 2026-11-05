@@ -627,6 +627,7 @@ bool quest_returns(const Quest& quest) {
     if (quest.is_beat()) return !quest.log_beaten.empty();
     if (quest.is_pray()) return !quest.log_prayed.empty();
     if (quest.is_spot()) return !quest.log_left.empty();
+    if (quest.is_seek()) return !quest.log_found.empty();
     // A retrieve or a buy: the holder's handover is the mid-moment (notes.md, 5 Oct
     // 2026 -- Father Nicholas gave the hood and the journal still said fetch it). A
     // deliver's the same, the other way round: the receiver has taken the letter (notes.md,
@@ -1453,7 +1454,8 @@ struct LegOut {
 LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx) {
     LegOut out;
     if (quest.giver_guid.empty() ||
-        (quest.target_guid.empty() && !quest.is_find() && !quest.is_pray() && !quest.is_spot())) {
+        (quest.target_guid.empty() && !quest.is_find() && !quest.is_pray() && !quest.is_spot() &&
+         !quest.is_seek())) {
         throw std::runtime_error("quest " + quest.id + " needs both souls' guids");
     }
     // A find has nobody at the other end: no holder menu, no receiver, no default item,
@@ -1467,12 +1469,15 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // somebody with a menu, and its Out ports are the visits. A leave or a return is a
     // pray with a thing in Henry's pocket (made at accept, as a letter is) and a place to
     // put it down; the Lua's token is again what the graph sees, and the marker stays on
-    // the giver (nothing can be added to the level, so the place is named in words).
+    // the giver (nothing can be added to the level, so the place is named in words). A
+    // seek is a pray with the mod's own animal at the place: the Lua's token when Henry
+    // stands over it is what the graph sees, and the marker again stays on the giver.
     const bool find = quest.is_find();
     const bool travel = quest.is_travel();
     const bool beat = quest.is_beat();
     const bool pray = quest.is_pray();
     const bool spot = quest.is_spot();
+    const bool seek = quest.is_seek();
     const bool mind = quest.is_mind();
     const bool ask = quest.is_ask();
     // An ambush has somebody at the other end with a three-stage menu and a Document (the
@@ -1482,12 +1487,12 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // holder as any retrieve's thing is, and the menu is the holder's own.
     const bool ambush = quest.is_ambush();
     const bool holder = quest.has_holder();
-    const bool thingless = travel || beat || pray || mind || ask || quest.carries_word();
+    const bool thingless = travel || beat || pray || seek || mind || ask || quest.carries_word();
     // A find with a keepsake is marked on the keepsake itself, lying where the things grow
     // (an ItemOnGroundAsset, behaviors.md §10.4; the Lua lays it at accept): the first
     // marker on a place rather than a soul.
     const bool keepsake = quest.has_keepsake();
-    const char* marker = keepsake ? "keepsake" : (find || pray || spot) ? "giver" : "target";
+    const char* marker = keepsake ? "keepsake" : (find || pray || spot || seek) ? "giver" : "target";
     if (quest.item_class.empty() && !thingless) {
         throw std::runtime_error("quest " + quest.id + " names no item class");
     }
@@ -1576,11 +1581,17 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // A leave's or a return's: the token the Lua makes when the thing is put down (Updated,
     // log_left).
     const bool left = spot && !quest.log_left.empty();
+    // A seek's: the token the Lua makes when Henry stands over the animal found (Updated,
+    // log_found).
+    const bool found = seek && !quest.log_found.empty();
     if (prayed) {
         s += t(5) + "<Edge From=\"prayed.OnAcquire\" To=\"SetPrayed\" />\r\n";
     }
     if (left) {
         s += t(5) + "<Edge From=\"left.OnAcquire\" To=\"SetLeft\" />\r\n";
+    }
+    if (found) {
+        s += t(5) + "<Edge From=\"found.OnAcquire\" To=\"SetFound\" />\r\n";
     }
     // An ask's moment: the one asked gives up the truth, which is the menu's handover port
     // (whichever of persuade, threaten or pay won it), and the objective says so (Updated,
@@ -1706,6 +1717,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         if (beaten) return "beaten.OnUnconscious";
         if (prayed) return "prayed.OnAcquire";
         if (left) return "left.OnAcquire";
+        if (found) return "found.OnAcquire";
         if (gathered) return "gathered.OnTargetAmountAcquire";
         return "";
     }();
@@ -1812,7 +1824,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"watching.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</SoulUnconsciousTrigger>\r\n";
         }
-    } else if (pray || spot) {
+    } else if (pray || spot || seek) {
         // Nothing to seed and nobody at the other end. The graph cannot see Henry kneel
         // (the shrines' interactions are bound per level in waitinglinks.xml, which a mod
         // cannot author), so the Lua watches his position and, when he has stood at the spot
@@ -1820,9 +1832,10 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         // moment; an ItemDescriptorTrigger on the player's inventory (the shape of the shipped
         // utils/item/itemclasstrigger_playerinventory module) fires OnAcquire on it. Live until
         // the first, so a second kneeling does not write the journal twice. A leave's and a
-        // return's thing put down at the place is the same token under another name.
-        if (prayed || left) {
-            const char* trigger = prayed ? "prayed" : "left";
+        // return's thing put down at the place is the same token under another name, and
+        // so is a seek's animal found.
+        if (prayed || left || found) {
+            const char* trigger = prayed ? "prayed" : left ? "left" : "found";
             s += t(4) + "<State Name=\"watching\" TypeT=\"bool\">\r\n";
             s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
             s += t(5) + "<Edge From=\"" + std::string(trigger) + ".OnAcquire\" To=\"SetFalse\" />\r\n";
@@ -2408,6 +2421,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (beaten) s += state("Beaten", mid);
     if (prayed) s += state("Prayed", mid);
     if (left) s += state("Left", mid);
+    if (found) s += state("Found", mid);
     if (directed) s += state("Directed", "Updated");
     if (ambushed) s += state("Ambushed", "Updated");
     if (told) s += state("Told", mid);
@@ -2433,7 +2447,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     s += state("Failed", "Canceled");
     out.types = s;
     s.clear();
-    if (!find && !pray && !spot) {
+    if (!find && !pray && !spot && !seek) {
         s += t(4) + "<SoulAsset Name=\"target\" SharedSoulGuids=\"" + xml_escape(quest.target_guid) +
              "\" />\r\n";
     }
@@ -2463,7 +2477,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<SoulAsset Name=\"holderHousehold\" SharedSoulGuids=\"" + xml_escape(guids) + "\" />\r\n";
     }
     out.assets_a = s;
-    out.wants_player = seen || prayed || left || ambushed || gathered || named || written || caught;
+    out.wants_player = seen || prayed || left || found || ambushed || gathered || named || written || caught;
     s.clear();
     if (quest.has_brawl() && (seen || ambushed)) {
         std::string guids;
@@ -2530,6 +2544,12 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(6) + mid_log("Left");
         s += t(7) + "<Log StringName=\"" + key("log_left") + "\" Text=\"" +
              xml_escape(quest.log_left) + "\" />\r\n";
+        s += t(6) + "</EnumLog>\r\n";
+    }
+    if (found) {
+        s += t(6) + mid_log("Found");
+        s += t(7) + "<Log StringName=\"" + key("log_found") + "\" Text=\"" +
+             xml_escape(quest.log_found) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
     }
     // An ambush's directions keep the marker on the one who gave them (the place is named
@@ -3075,6 +3095,9 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
     }
     if (quest.is_spot() && !quest.log_left.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_left"), quest.log_left);
+    }
+    if (quest.is_seek() && !quest.log_found.empty()) {
+        rows.emplace_back(quest_key(modid, quest.id, "log_found"), quest.log_found);
     }
     if (quest.is_mind()) {
         for (int i = 0; i < 3 && i < quest.count && !quest.log_check[i].empty(); ++i) {
@@ -4850,6 +4873,9 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         } else if (q.is_return()) {
             rows.emplace_back(item_ui_key(modid, token_name(q)), "A thing put back");
             rows.emplace_back(item_info_key(modid, token_name(q)), "A thing put back for " + q.giver_name + ".");
+        } else if (q.is_seek()) {
+            rows.emplace_back(item_ui_key(modid, token_name(q)), "A " + q.item_name + " found");
+            rows.emplace_back(item_info_key(modid, token_name(q)), q.giver_name + "'s " + q.item_name + ", found.");
         } else if (q.is_ambush()) {
             rows.emplace_back(item_ui_key(modid, token_name(q)), "A trap sprung");
             rows.emplace_back(item_info_key(modid, token_name(q)), "A trap walked into for " + q.giver_name + ".");
@@ -6972,7 +6998,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- directions, made in the player's pocket on the first; spot and hours are where and\n";
     s += "-- when the Watch springs the trap with its token. A buy's holder wants carry (the\n";
     s += "-- giver's thing, made in the player's pocket at accept with pay in groschen) and\n";
-    s += "-- carryVar is the global its menu reads for whether Henry still has it.\n";
+    s += "-- carryVar is the global its menu reads for whether Henry still has it. A seek has\n";
+    s += "-- no target and no item: the Watch spawns the mod's own animal at the first point of\n";
+    s += "-- path once Henry is near, plays cue from it, moves it on as he comes close, and\n";
+    s += "-- settles it with its litter at spot; Henry standing over them makes the token.\n";
     s += g + ".quests = {\n";
     for (const Quest& q : quests) {
         s += "\t[\"" + lua_escape(q.id) + "\"] = { kind = \"" + lua_escape(q.kind) + "\", giver = \"" +
@@ -6989,17 +7018,15 @@ std::string emit_conversation_lua(const std::string& modid,
              (q.dispute ? "true" : "false") + ", brokerVar = \"" +
              lua_escape(quest_flag_variable(modid, q.id, "broker")) + "\", innerVar = \"" +
              lua_escape(quest_flag_variable(modid, q.id, "inner")) + "\"";
-        if (q.is_pray() || q.is_spot() || q.is_ambush() || q.has_keepsake()) {
-            // "x,y,z" -> { x, y, z }; a spot the generator did not write is nil, and the
-            // Watch has nothing to measure against. (A find with a keepsake has the spot
-            // the keepsake is laid at, and no token.)
-            std::string spot;
+        // "x,y,z" -> "x, y, z", or "" when it is not three numbers.
+        auto lua_point = [](const std::string& pos) -> std::string {
+            std::string point;
             std::string part;
             int parts = 0;
-            for (char c : q.spot_pos + ",") {
+            for (char c : pos + ",") {
                 if (c == ',') {
                     if (!part.empty() && std::strspn(part.c_str(), "0123456789.-+eE ") == part.size()) {
-                        spot += (parts ? ", " : "") + part;
+                        point += (parts ? ", " : "") + part;
                         ++parts;
                     }
                     part.clear();
@@ -7007,8 +7034,32 @@ std::string emit_conversation_lua(const std::string& modid,
                     part += c;
                 }
             }
-            if (parts == 3) s += ", spot = { " + spot + " }";
+            return parts == 3 ? point : std::string();
+        };
+        if (q.is_pray() || q.is_spot() || q.is_seek() || q.is_ambush() || q.has_keepsake()) {
+            // A spot the generator did not write is nil, and the Watch has nothing to
+            // measure against. (A find with a keepsake has the spot the keepsake is laid
+            // at, and no token.)
+            const std::string spot = lua_point(q.spot_pos);
+            if (!spot.empty()) s += ", spot = { " + spot + " }";
             if (!q.has_keepsake()) s += ", token = \"" + lua_escape(token_class(q)) + "\"";
+        }
+        if (q.is_seek()) {
+            // The waypoints before the spot ("x,y,z;x,y,z"), the creature's name for the
+            // info text, and the call it is heard by.
+            std::string path;
+            std::string leg;
+            for (char c : q.path + ";") {
+                if (c == ';') {
+                    const std::string point = lua_point(leg);
+                    if (!point.empty()) path += (path.empty() ? "" : ", ") + ("{ " + point + " }");
+                    leg.clear();
+                } else {
+                    leg += c;
+                }
+            }
+            s += ", path = { " + path + " }, thing = \"" + lua_escape(q.item_name) + "\"";
+            if (!q.cue_sound.empty()) s += ", cue = \"" + lua_escape(q.cue_sound) + "\"";
         }
         if (q.has_keepsake()) {
             // The keepsake laid at spot when the errand is taken up (LayKeepsake), and
@@ -11695,6 +11746,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif q.kind == \"return\" and q.spot ~= nil then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"beat\" and not f.beaten and not f.dead then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"pray\" and not f.prayed and q.spot ~= nil then out[#out + 1] = id end\n";
+    // A seek until the hand-in: the family stands (and is made again after a load) until
+    // the giver has been told.
+    s += "\t\t\tif q.kind == \"seek\" and q.spot ~= nil then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"mind\" and not f.dead and (f.checks or 0) < (q.count or 1) then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"ask\" and not f.handed and not f.dead then out[#out + 1] = id end\n";
     // An ambush until the truth is told or the one who knows is dead (the trap in between
@@ -11767,6 +11821,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\telseif q.kind == \"beat\" then " + g + ".WatchBeat(id, q)\n";
     s += "\t\t\telseif q.kind == \"pray\" then " + g + ".WatchPray(id, q, pp)\n";
     s += "\t\t\telseif q.kind == \"leave\" or q.kind == \"return\" then " + g + ".WatchSpot(id, q, pp)\n";
+    s += "\t\t\telseif q.kind == \"seek\" then " + g + ".WatchSeek(id, q, pp)\n";
     s += "\t\t\telseif q.kind == \"mind\" then " + g + ".WatchMind(id, q)\n";
     s += "\t\t\telseif q.kind == \"ask\" then " + g + ".WatchAsk(id, q)\n";
     s += "\t\t\telseif q.kind == \"ambush\" then " + g + ".WatchAmbush(id, q, pp)\n";
@@ -12821,6 +12876,181 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal played = " + g + ".Sound(ent, q.cue)\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" cue \" .. q.cue .. (played and \" played\" or \" failed\") .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\")\n";
     s += "\tif played and d <= " + g + ".cueHeardMetres then pcall(" + g + ".StateQuest, id, \"heard\") end\n";
+    s += "end\n";
+    s += "\n";
+    // A seek (quest-design/stories.md, Sweepings and Strays): the giver's animal is the
+    // mod's own, since nothing of the game's can be told to lead Henry anywhere. The points
+    // are the quest's path and then its spot; the cat is a BasicEntity on the game's cat
+    // character (the probes of 3-4 Nov 2026: it takes the cat's clips on layer 0, spawns at
+    // any scale, and the kitten definitions under mod/assets are the same rig under a
+    // younger coat), made at the first point once Henry is within seekCallMetres, sitting
+    // and calling (q.cue, every seekCallSeconds) until he is within seekNearMetres, then
+    // galloping to the next point -- the position moved each quick tick, since a BasicEntity
+    // has no legs of its own -- to sit and call again. At the last point she lies down and
+    // the litter is spawned round her; Henry within seekFoundMetres of them is the find
+    // (seen in the store, the token for the graph's found trigger). The family is kept
+    // standing until the hand-in: a load sweeps spawned entities, so a tick that finds them
+    // gone with Henry near makes them again where they were (or, before the find, the cat
+    // where she last sat).
+    s += g + ".seekCallMetres = " + health_text(kSeekCallMetres) + "\n";
+    s += g + ".seekNearMetres = " + health_text(kSeekNearMetres) + "\n";
+    s += g + ".seekFoundMetres = " + health_text(kSeekFoundMetres) + "\n";
+    s += g + ".seekCallSeconds = " + std::to_string(kSeekCallSeconds) + "\n";
+    s += g + ".seekSpeed = " + health_text(kSeekSpeed) + "\n";
+    s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
+    s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
+    s += g + ".seekCat = \"" + std::string(kSeekCat) + "\"\n";
+    s += g + ".seekKittens = {";
+    for (std::size_t i = 0; i < sizeof(kSeekKittens) / sizeof(kSeekKittens[0]); ++i) {
+        s += std::string(i ? ", " : " ") + "\"" + kSeekKittens[i] + "\"";
+    }
+    s += " }\n";
+    s += g + ".seek = {}\n";
+    // One animal: a BasicEntity on a cat definition, facing `face` (a unit vector, or nil
+    // for north), at `scale`, with `clip` looping on layer 0. Nil when the engine would not.
+    s += "function " + g + ".SeekAnimal(name, model, x, y, z, face, scale, clip)\n";
+    s += "\tlocal ok, ent = pcall(System.SpawnEntity, {\n";
+    s += "\t\tclass = \"BasicEntity\", name = name, position = { x = x, y = y, z = z },\n";
+    s += "\t\torientation = { x = face and face.x or 0, y = face and face.y or 1, z = 0 },\n";
+    s += "\t\tscale = { x = scale, y = scale, z = scale },\n";
+    s += "\t\tproperties = { object_Model = model },\n";
+    s += "\t})\n";
+    s += "\tif not ok or ent == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE seek animal \" .. name .. \" could not be made: \" .. tostring(ent))\n";
+    s += "\t\treturn nil\n";
+    s += "\tend\n";
+    s += "\tpcall(function() ent:StartAnimation(0, clip, 0, 0.2, 1.0, true) end)\n";
+    s += "\treturn ent\n";
+    s += "end\n";
+    s += "\n";
+    // The clip on an animal changed, and where it faces (SetDirectionVector where the entity
+    // has it; the probes set the facing at spawn, so a cat that will not turn is only a cat
+    // galloping sideways).
+    s += "function " + g + ".SeekPose(ent, clip, face)\n";
+    s += "\tif ent == nil then return end\n";
+    s += "\tpcall(function() ent:StartAnimation(0, clip, 0, 0.2, 1.0, true) end)\n";
+    s += "\tif face ~= nil then pcall(function() ent:SetDirectionVector({ x = face.x, y = face.y, z = 0 }) end) end\n";
+    s += "end\n";
+    s += "\n";
+    // A unit vector from a to b on the flat, or nil when they are the same point.
+    s += "function " + g + ".SeekFace(a, b)\n";
+    s += "\tlocal dx, dy = b.x - a.x, b.y - a.y\n";
+    s += "\tlocal len = math.sqrt(dx * dx + dy * dy)\n";
+    s += "\tif len < 0.01 then return nil end\n";
+    s += "\treturn { x = dx / len, y = dy / len }\n";
+    s += "end\n";
+    s += "\n";
+    // The litter round the point: the kitten definitions in turn, lying, each a little way
+    // off the point on its own side, with the mother's position left for her.
+    s += "function " + g + ".SeekLitter(id, at)\n";
+    s += "\tlocal clips = { \"relaxed_idle_lying\", \"relaxed_idle_lying_side\", \"relaxed_idle_lying_side_var01\", \"relaxed_idle_lying\" }\n";
+    s += "\tlocal out = {}\n";
+    s += "\tlocal n = #" + g + ".seekKittens\n";
+    s += "\tfor i, model in ipairs(" + g + ".seekKittens) do\n";
+    s += "\t\tlocal a = (i - 1) / n * 2 * math.pi + 0.6\n";
+    s += "\t\tlocal x = at.x + math.cos(a) * " + g + ".seekKittenSpread\n";
+    s += "\t\tlocal y = at.y + math.sin(a) * " + g + ".seekKittenSpread\n";
+    s += "\t\tlocal z = " + g + ".Ground(x, y, at.z)\n";
+    s += "\t\tlocal face = { x = -math.cos(a), y = -math.sin(a) }\n";
+    s += "\t\tlocal ent = " + g + ".SeekAnimal(\"mn_seek_\" .. id .. \"_kit\" .. i, model, x, y, z, face, " + g +
+         ".seekKittenScale, clips[(i - 1) % #clips + 1])\n";
+    s += "\t\tif ent ~= nil then out[#out + 1] = ent end\n";
+    s += "\tend\n";
+    s += "\treturn out\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".WatchSeek(id, q, pp)\n";
+    s += "\tif q.spot == nil then return end\n";
+    s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\tlocal S = " + g + ".seek[id]\n";
+    s += "\tif S == nil then\n";
+    s += "\t\tS = { points = {}, leg = 1, calledAt = 0 }\n";
+    s += "\t\tfor _, pt in ipairs(q.path or {}) do S.points[#S.points + 1] = { x = pt[1], y = pt[2], z = pt[3] } end\n";
+    s += "\t\tS.points[#S.points + 1] = { x = q.spot[1], y = q.spot[2], z = q.spot[3] }\n";
+    // Found already (a load, or the watch armed again): the family lies at the spot.
+    s += "\t\tif f.seen then S.leg = #S.points; S.settled = true end\n";
+    s += "\t\t" + g + ".seek[id] = S\n";
+    s += "\tend\n";
+    s += "\tlocal last = #S.points\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    // A spawned entity swept by a load: made again where she was, when Henry is near enough
+    // to hear her. Before the first spawn the same test is the spawn.
+    s += "\tlocal standing = nil\n";
+    s += "\tif S.cat ~= nil then pcall(function() standing = System.GetEntityByName(\"mn_seek_\" .. id) end) end\n";
+    s += "\tif standing == nil then\n";
+    s += "\t\tS.cat = nil\n";
+    s += "\t\tS.kittens = nil\n";
+    s += "\t\tS.moving = nil\n";
+    s += "\t\tlocal at = S.points[S.leg]\n";
+    s += "\t\tlocal d = math.sqrt((pp.x - at.x) ^ 2 + (pp.y - at.y) ^ 2)\n";
+    s += "\t\tif d > " + g + ".seekCallMetres then return end\n";
+    s += "\t\tlocal z = " + g + ".Ground(at.x, at.y, at.z)\n";
+    s += "\t\tlocal face = " + g + ".SeekFace(at, pp)\n";
+    s += "\t\tS.cat = " + g + ".SeekAnimal(\"mn_seek_\" .. id, " + g + ".seekCat, at.x, at.y, z, face, 1.0,\n";
+    s += "\t\t\tS.settled and \"relaxed_idle_lying\" or \"relaxed_idle_sitting\")\n";
+    s += "\t\tif S.cat == nil then return end\n";
+    s += "\t\tif S.settled then S.kittens = " + g + ".SeekLitter(id, { x = at.x, y = at.y, z = z }) end\n";
+    s += "\t\tS.calledAt = now - " + g + ".seekCallSeconds + 1\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" made at point \" .. S.leg .. \" of \" .. last\n";
+    s += "\t\t\t.. \" \" .. string.format(\"%.1f,%.1f,%.1f\", at.x, at.y, z) .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\"\n";
+    s += "\t\t\t.. (S.settled and \", with the litter\" or \"\"))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    // On her way between points: the position moved along the leg each quick tick.
+    s += "\tif S.moving ~= nil then\n";
+    s += "\t\tlocal m = S.moving\n";
+    s += "\t\tlocal t = m.len > 0 and (now - m.at) * " + g + ".seekSpeed / m.len or 1\n";
+    s += "\t\tif t >= 1 then\n";
+    s += "\t\t\tlocal z = " + g + ".Ground(m.to.x, m.to.y, m.to.z)\n";
+    s += "\t\t\tpcall(function() S.cat:SetWorldPos({ x = m.to.x, y = m.to.y, z = z }) end)\n";
+    s += "\t\t\tS.moving = nil\n";
+    s += "\t\t\tif S.leg == last then\n";
+    s += "\t\t\t\tS.settled = true\n";
+    s += "\t\t\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_lying\", " + g + ".SeekFace(m.to, pp))\n";
+    s += "\t\t\t\tS.kittens = " + g + ".SeekLitter(id, { x = m.to.x, y = m.to.y, z = z })\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" settled at the spot with \" .. #S.kittens .. \" kittens\")\n";
+    s += "\t\t\telse\n";
+    s += "\t\t\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_sitting\", " + g + ".SeekFace(m.to, pp))\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" at point \" .. S.leg .. \" of \" .. last)\n";
+    s += "\t\t\tend\n";
+    s += "\t\t\tS.calledAt = now - " + g + ".seekCallSeconds + 2\n";
+    s += "\t\telse\n";
+    s += "\t\t\tlocal x = m.from.x + (m.to.x - m.from.x) * t\n";
+    s += "\t\t\tlocal y = m.from.y + (m.to.y - m.from.y) * t\n";
+    s += "\t\t\tlocal z = " + g + ".Ground(x, y, m.from.z + (m.to.z - m.from.z) * t)\n";
+    s += "\t\t\tpcall(function() S.cat:SetWorldPos({ x = x, y = y, z = z }) end)\n";
+    s += "\t\t\t" + g + ".watchQuick = true\n";
+    s += "\t\tend\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal at = S.points[S.leg]\n";
+    s += "\tlocal d = math.sqrt((pp.x - at.x) ^ 2 + (pp.y - at.y) ^ 2)\n";
+    // At the end of the path: the find, once, when Henry stands over them.
+    s += "\tif S.settled then\n";
+    s += "\t\tif not f.seen and d <= " + g + ".seekFoundMetres then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" found at \" .. string.format(\"%.1f\", d) .. \"m\")\n";
+    s += "\t\t\tpcall(" + g + ".StateQuest, id, \"seen\")\n";
+    s += "\t\t\t" + g + ".Token(q)\n";
+    s += "\t\tend\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    // Sitting and calling: on to the next point when he is close, else a call now and then
+    // while he is within hearing, and a quick tick while he is near enough to close in.
+    s += "\tif d <= " + g + ".seekNearMetres then\n";
+    s += "\t\tlocal to = S.points[S.leg + 1]\n";
+    s += "\t\tlocal len = math.sqrt((to.x - at.x) ^ 2 + (to.y - at.y) ^ 2)\n";
+    s += "\t\tS.moving = { from = { x = at.x, y = at.y, z = " + g + ".Ground(at.x, at.y, at.z) }, to = to, at = now, len = len }\n";
+    s += "\t\tS.leg = S.leg + 1\n";
+    s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_gallop\", " + g + ".SeekFace(at, to))\n";
+    s += "\t\t" + g + ".watchQuick = true\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" moves off to point \" .. S.leg .. \" of \" .. last .. \", \" .. string.format(\"%.1f\", len) .. \"m\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
+    s += "\t\tS.calledAt = now\n";
+    s += "\t\t" + g + ".Sound(S.cat, q.cue)\n";
+    s += "\tend\n";
+    s += "\tif d <= 3 * " + g + ".seekNearMetres then " + g + ".watchQuick = true end\n";
     s += "end\n";
     s += "\n";
     // A return's grave: see WatchSpot.

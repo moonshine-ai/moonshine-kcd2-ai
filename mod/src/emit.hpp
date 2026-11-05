@@ -522,6 +522,30 @@ constexpr double kCurseMetres = 40.0;
 constexpr int kCurseHours = 48;
 constexpr double kCoughMetres = 8.0;
 constexpr int kCoughSeconds = 18;
+// A seek (npcdb.hpp path, Sweepings and Strays): the giver's animal is the mod's own, a
+// BasicEntity on the game's cat character (kSeekCat) spawned at the first point of the
+// path once Henry is within kSeekCallMetres of it, sitting and calling (cue_sound, every
+// kSeekCallSeconds while he is within hearing). When he is within kSeekNearMetres she goes
+// on to the next point at kSeekSpeed metres a second (galloping; the position is moved
+// each quick tick) and sits and calls again; at the last point (spot_pos) she lies down
+// and the litter is spawned round her (the kSeekKittens definitions, at kSeekKittenScale,
+// kSeekKittenSpread apart). Henry within kSeekFoundMetres of the litter is the find: the
+// store's seen, the graph's token (log_found). The family stands until the hand-in,
+// spawned again if a load swept it and he comes back.
+constexpr double kSeekCallMetres = 40.0;
+constexpr double kSeekNearMetres = 5.0;
+constexpr double kSeekFoundMetres = 4.0;
+constexpr int kSeekCallSeconds = 6;
+constexpr double kSeekSpeed = 2.5;
+constexpr double kSeekKittenScale = 0.3;
+constexpr double kSeekKittenSpread = 0.35;
+constexpr const char* kSeekCat = "Objects/characters/animals/cat/cat.cdf";
+constexpr const char* kSeekKittens[] = {
+    "Objects/characters/animals/cat/moonshine_kitten_tabby.cdf",
+    "Objects/characters/animals/cat/moonshine_kitten_ginger.cdf",
+    "Objects/characters/animals/cat/moonshine_kitten_white.cdf",
+    "Objects/characters/animals/cat/moonshine_kitten_black.cdf",
+};
 // A find's keepsake (npcdb.hpp keepsake_class): laid at accept, and if that failed (the
 // spot too far out to place at, a load that wiped it) laid again from the watch once Henry
 // is within kKeepsakeMetres of the spot without it.

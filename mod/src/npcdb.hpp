@@ -492,6 +492,16 @@ struct Quest {
     std::string cue_sound;
     std::string loot_classes;         // item class guids, space-separated
     std::string log_left;
+    // A seek (kind "seek", quest-design/stories.md "Sweepings and Strays"): a creature of
+    // the giver's (the item, "cat") gone missing and last seen about a place; no target.
+    // The Lua spawns the mod's own animal at the first point of `path` ("x,y,z;x,y,z",
+    // the waypoints before `spot_pos`) once Henry is near, plays `cue_sound` from it on
+    // an interval, moves it on to the next point as he comes close, and at `spot_pos` the
+    // animal settles with its litter; Henry standing over them is the find (the travel's
+    // `seen` in the store, the token, and `log_found` as the objective's update). Henry's
+    // three rows at the giver's are the travel's (tell, lie, quiet).
+    std::string path;
+    std::string log_found;
     // A mind (kind "mind"): look in on the target `count` times, hours of game time apart.
     // The target's menu is his own: Henry's `check` and one reply per visit (the sequences
     // are gated on the visit count and whether the next is due, dialogue globals the Lua
@@ -605,6 +615,7 @@ struct Quest {
     bool is_ambush() const { return kind == "ambush"; }
     bool is_buy() const { return kind == "buy"; }
     bool is_retrieve() const { return kind == "retrieve"; }
+    bool is_seek() const { return kind == "seek"; }
     // A leave or a return: an errand to a place, with a thing to put down there.
     bool is_spot() const { return is_leave() || is_return(); }
     // Whether the quest's item is a Document of the mod's own with a page the generator
@@ -651,11 +662,12 @@ struct Quest {
     // A find whose marker is a keepsake laid at the spot the things grow (above).
     bool has_keepsake() const { return is_find() && !keepsake_class.empty() && !spot_pos.empty(); }
     // Whether the Lua makes a token item for the graph to see: a pray's kneeling, a leave's
-    // or a return's thing put down, an ambush sprung, a helper named by the giver, a
+    // or a return's thing put down, a seek's creature found, an ambush sprung, a helper named by the giver, a
     // dictated letter written. Only when the journal has the line it would write.
     bool has_token() const {
         return (is_pray() && !log_prayed.empty()) || (is_spot() && !log_left.empty()) ||
-               (is_ambush() && !log_ambushed.empty()) || has_helper() || has_written_log() || has_expose();
+               (is_seek() && !log_found.empty()) || (is_ambush() && !log_ambushed.empty()) ||
+               has_helper() || has_written_log() || has_expose();
     }
     // A retrieve whose holder can be caught where he should not be (above): the witness,
     // the row and the journal's lines all written, and a night window to catch him in.

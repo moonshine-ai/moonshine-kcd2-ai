@@ -2261,8 +2261,9 @@ TEST_CASE("with guessing off, a look still writes the opening list, but does not
 }
 
 TEST_CASE("the truth told, the reminder goes and the giver's next scene is there to ask in the same conversation") {
-    // Sweepings and Strays (notes.md 8 Oct 2026): Anna's A Notched Ear follows it once the
-    // truth is told, but the plan is fixed when a conversation opens, so the hand-in left
+    // Sweepings and Strays (notes.md 8 Oct 2026): Anna's second scene (then A Notched Ear,
+    // now the seek Plump as a Friar) follows it once the truth is told, but the plan is
+    // fixed when a conversation opens, so the hand-in left
     // "Remind me what it is you need of me." on the list and the second scene waited for
     // Henry to happen back -- "just talk and return". Now the ending replans the
     // conversation: the reminder goes with the errand, the next scene's offer is said in
@@ -2280,25 +2281,29 @@ TEST_CASE("the truth told, the reminder goes and the giver's next scene is there
     street.item_name = "word";
     street.reward_groschen = 14;
     street.offer = "Matilda feeds every stray and must know something. Go find out what she's hiding.";
-    street.thanks = "The bailiff's house? Sakra, I knew there was devilry afoot! Here are a few groschen.";
+    street.thanks = "Feeding her! The pair of them, behind my back. Here's your coin.";
     // Written for leading on: said in `thanks`'s place on the row, as on the greeting.
-    street.thanks_onward = "The bailiff's house? Sakra, I knew it! Here are a few groschen -- and wait.";
-    street.tell = "Matilda saw Kunigunde shut the cat inside the bailiff's house.";
+    street.thanks_onward = "Feeding her! The pair of them, behind my back. Here's your coin -- and wait.";
+    street.tell = "Matilda and Kunigunde have both been feeding your cat. She last saw her slip into the hen yards.";
     street.lie = "Matilda hasn't seen your cat at all.";
-    street.quiet = "I know what happened to the cats, but I'm keeping it to myself.";
+    street.quiet = "I know what happened to the cat, but I'm keeping it to myself.";
     Quest notched = street;
-    notched.id = "37214dc9cf7b";
-    notched.name = "A Notched Ear";
-    notched.target_soul = "kkut_woman_226";
-    notched.target_name = "Kunigunde";
+    notched.id = "f90334f5d7e8";
+    notched.kind = "seek";
+    notched.name = "Plump as a Friar";
+    notched.target_soul.clear();
+    notched.target_name.clear();
+    notched.item_name = "cat";
     notched.reward_groschen = 0;
+    notched.reward_text = "a hot supper from the kitchen";
+    notched.spot_text = "the hen yards behind the houses on Wine Street";
     notched.after_quest_id = street.id;
     notched.after_how = "truth";
-    notched.offer = "Kunigunde claims she has an old pet. Get the truth, and I'll give you a hot supper.";
-    notched.offer_2 = "The bailiff's house is in the marketplace, right by the tavern.";
-    notched.tell = "It's a stray with a notched ear that came in the spring.";
-    notched.lie = "She says she's had the cat for years.";
-    notched.quiet = "I found out about the cat, but I'm keeping it to myself.";
+    notched.offer = "Matilda says my Maggie went off into the hen yards behind the houses on Wine Street. Look for her there, and there's a hot supper in it.";
+    notched.offer_2 = "The yards are behind the houses north of here, back of Wine Street.";
+    notched.tell = "I found her. She's lying up by the hen coops with a litter of newborn kittens.";
+    notched.lie = "I looked all through those hen yards. There's no sign of her.";
+    notched.quiet = "I went and I looked. What I found is my own business.";
 
     Fixture f(false);
     f.session.set_persona_source(
@@ -2334,7 +2339,7 @@ TEST_CASE("the truth told, the reminder goes and the giver's next scene is there
     f.game.picked(2, "tell", street.tell);
     f.drain(tailer);
     CHECK(f.said("picked as tell, answered with the writer's answer to tell as written"));
-    CHECK(f.said("A Notched Ear (37214dc9cf7b) to ask next: its offer is said with the thanks"));
+    CHECK(f.said("Plump as a Friar (f90334f5d7e8) to ask next: its offer is said with the thanks"));
     REQUIRE(f.recorded.size() == 1);
     CHECK(f.recorded[0] == std::make_pair(street.id, std::string(kQuestComplete)));
     // One reply in two beats: the thanks, then the next scene's offer; the complete owed
@@ -2347,7 +2352,7 @@ TEST_CASE("the truth told, the reminder goes and the giver's next scene is there
     // The list after: the accepting row first, no reminder, none of the endings again, and
     // no offer of help -- the offer has been made.
     REQUIRE_FALSE(f.game.menu().empty());
-    CHECK(f.game.menu()[0] == "I'll go to Kunigunde and get the truth of it for you.");
+    CHECK(f.game.menu()[0] == "I'll go and look for your cat at the hen yards behind the houses on Wine Street.");
     for (const std::string& row : f.game.menu()) {
         CHECK(row != kRemindRow);
         CHECK(row != kFirstRoundSeeds[0]);

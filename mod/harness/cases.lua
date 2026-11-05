@@ -3854,4 +3854,103 @@ case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first,
     check(E.find("BRIDGE lip stopped -- next row") or true, "the drop logged when a clip was on")
 end)
 
+-- -------------------------------------------------------------------- Seek
+-- Sweepings and Strays' second scene (quest-design/stories.md): Anna's cat, the mod's own,
+-- made at the first point of the path when Henry comes within hearing, calling, moving on
+-- to the next point as he comes close, and lying down with her litter at the spot; Henry
+-- over the litter is the find.
+case("Seek: the cat is made within hearing, calls, moves on as Henry closes, settles with the litter at the spot, and is found there", function(E, M, check)
+    local id, q = byKind(M, "seek")
+    check(q ~= nil and q.spot ~= nil and q.path ~= nil and #q.path >= 1, "a seek with a spot and a path")
+    if q == nil or q.spot == nil then return end
+    local first = q.path[1]
+    local name = "mn_seek_" .. id
+    M.npc = E.soul(q.giver)
+    -- Far off: nothing is made.
+    player:SetWorldPos({ x = first[1] - M.seekCallMetres - 20, y = first[2], z = first[3] })
+    M.QuestCommand(id, "accept")
+    check(M.watching == true, "the watch armed at accept")
+    E.advance(2100)
+    check(System.GetEntityByName(name) == nil, "no cat from afar")
+    -- Within hearing: the cat at the first point, sitting, facing Henry, and calling.
+    player:SetWorldPos({ x = first[1] - M.seekCallMetres + 5, y = first[2], z = first[3] })
+    local mark = E.mark()
+    E.advance(2100)
+    local cat = System.GetEntityByName(name)
+    check(cat ~= nil, "the cat stands once Henry is within hearing")
+    if cat == nil then return end
+    check(cat.spec.class == "BasicEntity" and cat.spec.properties.object_Model == M.seekCat, "a BasicEntity on the game's cat")
+    check(cat.spec.scale.x == 1.0, "full grown")
+    check(math.abs(cat.pos.x - first[1]) < 0.01 and math.abs(cat.pos.y - first[2]) < 0.01, "at the first point of the path")
+    check(cat.spec.orientation.x < -0.99, "facing Henry")
+    check(cat.anims[1] ~= nil and cat.anims[1].clip == "relaxed_idle_sitting", "sitting")
+    check(E.count("BRIDGE quest " .. id .. " cat made at point 1", mark) == 1, "said once")
+    E.advance(M.seekCallSeconds * 1000 + 2100)
+    check(#cat.sounds >= 1 and cat.sounds[1] == q.cue, "she calls, with the quest's cue")
+    local calls = #cat.sounds
+    E.advance(M.seekCallSeconds * 1000 + 100)
+    check(#cat.sounds > calls, "and again after the interval")
+    check(E.count("BRIDGE quest " .. id .. " cat made", mark) == 1, "not made again while she stands")
+    -- Henry comes close: she gallops to the next point, the position moved along the way.
+    player:SetWorldPos({ x = first[1] - M.seekNearMetres + 1, y = first[2], z = first[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(E.find("BRIDGE quest " .. id .. " cat moves off to point 2", mark), "she moves off")
+    check(cat.anims[#cat.anims].clip == "relaxed_idle_gallop", "galloping")
+    check(M.watchQuick == true, "the watch ticking quickly while she runs")
+    local nextPt = q.path[2] or q.spot
+    local len = math.sqrt((nextPt[1] - first[1]) ^ 2 + (nextPt[2] - first[2]) ^ 2)
+    E.advance(1100)
+    local part = math.sqrt((cat.pos.x - first[1]) ^ 2 + (cat.pos.y - first[2]) ^ 2)
+    check(part > 0.5 and part < len, "part of the way there after a second, " .. string.format("%.1f of %.1f", part, len))
+    E.advance(math.ceil(len / M.seekSpeed) * 1000 + 2100)
+    check(math.abs(cat.pos.x - nextPt[1]) < 0.01 and math.abs(cat.pos.y - nextPt[2]) < 0.01, "arrived at the next point")
+    -- On along the path to the spot, Henry following; at the spot she lies down and the
+    -- litter is made round her.
+    local points = {}
+    for _, p in ipairs(q.path) do points[#points + 1] = p end
+    points[#points + 1] = q.spot
+    for i = 2, #points - 1 do
+        local here = points[i]
+        player:SetWorldPos({ x = here[1] - M.seekNearMetres + 1, y = here[2], z = here[3] })
+        local to = points[i + 1]
+        local l = math.sqrt((to[1] - here[1]) ^ 2 + (to[2] - here[2]) ^ 2)
+        E.advance(2100 + math.ceil(l / M.seekSpeed) * 1000 + 2100)
+        check(math.abs(cat.pos.x - to[1]) < 0.01 and math.abs(cat.pos.y - to[2]) < 0.01, "arrived at point " .. (i + 1))
+    end
+    check(E.find("BRIDGE quest " .. id .. " cat settled at the spot with " .. #M.seekKittens .. " kittens", mark), "settled with the litter")
+    check(cat.anims[#cat.anims].clip == "relaxed_idle_lying", "lying down")
+    local kit = System.GetEntityByName(name .. "_kit1")
+    check(kit ~= nil and kit.spec.properties.object_Model == M.seekKittens[1] and kit.spec.scale.x == M.seekKittenScale,
+          "a kitten of the mod's own, small")
+    check(kit ~= nil and math.sqrt((kit.pos.x - q.spot[1]) ^ 2 + (kit.pos.y - q.spot[2]) ^ 2) < M.seekKittenSpread + 0.01, "beside her")
+    check(M.state.quests[id].seen ~= true, "not found until Henry stands over them")
+    -- Henry stands over them: seen in the store (flag s), the token for the graph, once.
+    player:SetWorldPos({ x = q.spot[1] + 1, y = q.spot[2], z = q.spot[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(M.state.quests[id].seen == true, "found, in the store")
+    check(M.QuestFlagLetters(M.state.quests[id]) == "s", "the letter s, got " .. M.QuestFlagLetters(M.state.quests[id]))
+    check(E.count("BRIDGE quest token made", mark) == 1, "the token made")
+    E.advance(4100)
+    check(E.count("BRIDGE quest token made", mark) == 1, "once")
+    check(M.Count(player, q.token) == 0, "and gone again")
+    -- A load sweeps the family; the next tick with Henry near makes them again at the spot.
+    E.entities[name] = nil
+    E.entities[name .. "_kit1"] = nil
+    mark = E.mark()
+    E.advance(2100)
+    local again = System.GetEntityByName(name)
+    check(again ~= nil and math.abs(again.pos.x - q.spot[1]) < 0.01, "made again at the spot after a load")
+    check(again ~= nil and again.anims[1].clip == "relaxed_idle_lying", "lying, as she was")
+    check(System.GetEntityByName(name .. "_kit1") ~= nil, "with the litter")
+    check(E.find("with the litter", mark), "and said so")
+    check(E.count("BRIDGE quest token made", mark) == 0, "and not found twice")
+    -- Told: the plain ending, and the watch lets the errand go.
+    M.QuestCommand(id, "complete")
+    check(M.state.quests[id].done == true, "done")
+    local pending = M.WatchPending()
+    for _, p in ipairs(pending) do check(p ~= id, "no longer watched") end
+end)
+
 return { cases = cases, order = order }

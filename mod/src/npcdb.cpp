@@ -227,9 +227,9 @@ std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Per
         // ever run the errand; the five Trosky givers and the Kuttenberg ones all have one.
         if (q.level.empty()) continue;
         if (!renamed.count(q.giver_soul)) continue;
-        // A find, a pray, a leave or a return has no target at all; every other kind needs
-        // a renamed one.
-        if (q.is_find() || q.is_pray() || q.is_spot()) {
+        // A find, a pray, a leave, a return or a seek has no target at all; every other
+        // kind needs a renamed one.
+        if (q.is_find() || q.is_pray() || q.is_spot() || q.is_seek()) {
             q.target_soul.clear();
             q.target_name.clear();
             q.target_guid.clear();
@@ -591,6 +591,8 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "cue_sound") return &q.cue_sound;
         if (field == "loot_classes") return &q.loot_classes;
         if (field == "log_left") return &q.log_left;
+        if (field == "path") return &q.path;
+        if (field == "log_found") return &q.log_found;
         if (field == "check") return &q.target_check;
         if (field == "check_reply_1") return &q.target_check_reply[0];
         if (field == "check_reply_2") return &q.target_check_reply[1];
@@ -839,6 +841,9 @@ void read_brawlers(sqlite3* db, std::vector<Quest>& quests) {
         if (q.is_ambush() && q.spot_pos.empty()) {
             throw std::runtime_error("quest " + q.id + " is an ambush with no spot_pos");
         }
+        if (q.is_seek() && q.spot_pos.empty()) {
+            throw std::runtime_error("quest " + q.id + " is a seek with no spot_pos");
+        }
         if (q.is_buy() && q.carry_class.empty()) {
             throw std::runtime_error("quest " + q.id + " is a buy with no carry_class");
         }
@@ -956,9 +961,9 @@ std::vector<std::string> Quest::resolutions() const {
     // here either way.
     std::vector<std::string> out;
     if (is_find()) return out;   // brought is the plain completion, and the only one
-    if (is_travel() || is_spot()) {
+    if (is_travel() || is_spot() || is_seek()) {
         // Told as it was is the plain completion; the lie and the silence have their own.
-        // (A leave's and a return's rows at the giver's are the travel's.)
+        // (A leave's, a return's and a seek's rows at the giver's are the travel's.)
         if (!log_completed_lied.empty()) out.emplace_back("lied");
         if (!log_completed_quiet.empty()) out.emplace_back("quiet");
         return out;
