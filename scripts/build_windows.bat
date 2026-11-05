@@ -99,7 +99,9 @@ if not defined MOONSHINE_ROOT set "MOONSHINE_ROOT=%ROOT%\third_party\moonshine"
 set "MOONSHINE="
 set "MROOT=%MOONSHINE_ROOT:\=/%"
 if exist "%MOONSHINE_ROOT%\core\build\Release\moonshine.dll" (
-    set "MOONSHINE=-DMOONSHINE_ROOT=%MROOT% -DMOONSHINE_TTS=OFF"
+    rem Quoted: a checkout under a home folder with a space in it (C:\Users\Pete Warden on
+    rem wl2) otherwise reaches cmake as two arguments, and the ear is silently left out.
+    set "MOONSHINE=-DMOONSHINE_ROOT="%MROOT%" -DMOONSHINE_TTS=OFF"
     echo ear: Moonshine Voice from %MROOT%
 ) else (
     echo no moonshine.dll under %MROOT%; building without the ear ^(scripts\fetch_moonshine.ps1^)

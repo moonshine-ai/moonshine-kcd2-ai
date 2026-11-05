@@ -345,7 +345,8 @@ gives byte-identical paks on any machine.
 ### The installer (Windows)
 
 A release is one command from this checkout, with ssh to the Windows build machine
-(`wl1`, its copy of the tree under `kcd2ai`) and the R2 token in `CLOUDFLARE_*`:
+(`wl1`, its copy of the tree under `kcd2ai`; `RELEASE_HOST=wl2` names the second laptop,
+set up the same way) and the R2 token in `CLOUDFLARE_*`:
 
 ```sh
 scripts/release.sh              # the next number; --version 1.0.0 for a particular one
