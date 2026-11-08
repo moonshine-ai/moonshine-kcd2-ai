@@ -374,6 +374,19 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
         add("hook", hook_line);
     }
 
+    // A soul the generator never wrote for: a name, a trade, perhaps a sister and a
+    // trouble, and the model left to make up the rest. Told so, as the stranger's sheet
+    // is, rather than left to fill the silence with the town's affairs: Else Mannlicher,
+    // with a sheet of three lines, opened on the timber trade the man before her had been
+    // full of (bugs.txt 5 Nov 2026). Here, closing the part of the sheet that is the same
+    // every time, so "named here" covers all of it.
+    if (soul.card.empty()) {
+        add("unwritten",
+            "That is all that is known of you. You have little to say about yourself, and "
+            "nothing to say of any trade, errand or affair that is not named here: keep to "
+            "small matters and to what is said to you.");
+    }
+
     // What they remember of the player, after who they are and before what is wanted of
     // them, so the quest paragraph reads against what has already been said about it. It
     // changes with every conversation, like the quest, so it belongs below everything that

@@ -851,6 +851,29 @@ std::string mark_hidden_class(const Quest& quest) {
 
 std::string mark_hidden_name(const Quest& quest) { return "hidden_" + quest_node(quest.id); }
 
+std::string giver_closed_class(const Quest& quest) {
+    // The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing
+    // space"): the same shape under 43 (the letter C) for the giver gone where Henry may
+    // not follow and 4f (O) for him back in the open. Made by the Lua's WatchGiver while
+    // the errand is still to be taken, for the graph's two triggers on the run's head,
+    // whose giverHidden state takes the QuestGiver marker off the map and puts it back.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4300-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string giver_closed_name(const Quest& quest) { return "closed_" + quest_node(quest.id); }
+
+std::string giver_open_class(const Quest& quest) {
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4f00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string giver_open_name(const Quest& quest) { return "open_" + quest_node(quest.id); }
+
 std::string hail_node(const std::string& quest_id) { return quest_node(quest_id) + "_hail"; }
 
 std::string paper_class(const Quest& quest) {
@@ -1492,7 +1515,11 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // (an ItemOnGroundAsset, behaviors.md §10.4; the Lua lays it at accept): the first
     // marker on a place rather than a soul.
     const bool keepsake = quest.has_keepsake();
-    const char* marker = keepsake ? "keepsake" : (find || pray || spot || seek) ? "giver" : "target";
+    // A seek whose giver cannot say where the animal went is marked on the neighbours who
+    // can (Quest::clue_guids), so the map says who to ask; one whose giver names the place
+    // is marked on the giver like a pray.
+    const bool clues = seek && !quest.clue_guids.empty();
+    const char* marker = keepsake ? "keepsake" : clues ? "clues" : (find || pray || spot || seek) ? "giver" : "target";
     if (quest.item_class.empty() && !thingless) {
         throw std::runtime_error("quest " + quest.id + " names no item class");
     }
@@ -2462,6 +2489,15 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<ItemOnGroundAsset Name=\"keepsake\" ItemClassGuids=\"" + xml_escape(quest.keepsake_class) +
              "\" />\r\n";
     }
+    // The seek's clue-holders, one asset of several souls as the holder's household is.
+    if (clues) {
+        std::string guids;
+        for (const std::string& g : quest.clue_guids) {
+            if (!guids.empty()) guids += ' ';
+            guids += g;
+        }
+        s += t(4) + "<SoulAsset Name=\"clues\" SharedSoulGuids=\"" + xml_escape(guids) + "\" />\r\n";
+    }
     // The one who can let Henry in, and the holder's household her door opens (the holder,
     // everyone who sleeps under his roof, and her).
     // An exposure's is the witness's household and the holder in it (npcdb read_helper).
@@ -2743,7 +2779,7 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             names.insert((*it)[2].str());
         }
     }
-    for (const char* alias : {"target", "onward", "keepsake", "brawlers", "helper", "holderHousehold"}) names.insert(alias);
+    for (const char* alias : {"target", "onward", "keepsake", "brawlers", "helper", "holderHousehold", "clues"}) names.insert(alias);
     const std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kHelperObjective};
     auto rewrite = [&](std::string& text) {
         for (const std::string& name : names) {
@@ -2989,6 +3025,44 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
         s += t(4) + "</Function>\r\n";
         marker_on = "giverMarkerDay.bool";
     }
+    // And off while he stands where Henry may not go (bugs.txt 7 Nov 2026, "Shield off when
+    // in trespassing space"; emit.hpp giver_closed_class): the Lua's WatchGiver reads the
+    // trespass labels under him each tick and on a change makes one token, closed or open,
+    // for the two triggers here; the giverHidden state they set and clear is ANDed against
+    // the marker, the shape of the street night's markShown/markHidden on the holder. Live
+    // while the quest is None, as the marker is; a state saved mid-hide is read back with
+    // the quest and the Lua's store agrees with it (WatchGiver's `giverHidden`), so a load
+    // puts no second token where the map already agrees. The player's soul is named for
+    // the triggers' Inventory (assets, below: wants_player).
+    s += t(4) + "<ObjectProperties Name=\"giverPlayerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+    s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+    s += t(4) + "</ObjectProperties>\r\n";
+    for (int i = 0; i < 2; ++i) {
+        const std::string which = i == 0 ? "giverClosed" : "giverOpen";
+        const std::string cls = i == 0 ? giver_closed_class(head) : giver_open_class(head);
+        s += t(4) + "<Function Name=\"" + which + "Class\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                    "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(cls) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"" + which + "\">\r\n";
+        s += t(5) + "<Edge From=\"" + which + "Class.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"giverPlayerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"questState.None\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    }
+    s += t(4) + "<State Name=\"giverHidden\" TypeT=\"bool\">\r\n";
+    s += t(5) + "<Edge From=\"giverClosed.OnAcquire\" To=\"SetTrue\" />\r\n";
+    s += t(5) + "<Edge From=\"giverOpen.OnAcquire\" To=\"SetFalse\" />\r\n";
+    s += t(4) + "</State>\r\n";
+    s += t(4) + "<Function Name=\"giverShown\" MethodName=\"math::boolean::Not\" DeclaringType=\"math::boolean\">\r\n";
+    s += t(5) + "<Edge From=\"giverHidden.State\" To=\"Value\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<Function Name=\"giverMarkerOpen\" MethodName=\"math::boolean::And\" DeclaringType=\"math::boolean\">\r\n";
+    s += t(5) + "<Edge From=\"" + marker_on + "\" To=\"A\" />\r\n";
+    s += t(5) + "<Edge From=\"giverShown.bool\" To=\"B\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    marker_on = "giverMarkerOpen.bool";
     s += t(4) + "<ShowMapMarker Name=\"giverMarker\">\r\n";
     s += t(5) + "<Asset Name=\"MarkerObject\" Alias=\"giver\" />\r\n";
     s += t(5) + "<Constant Name=\"MarkerType\" Value=\"QuestGiver\" />\r\n";
@@ -3018,16 +3092,17 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     s += t(3) + "<Assets>\r\n";
     s += t(4) + "<SoulAsset Name=\"giver\" SharedSoulGuids=\"" + xml_escape(head.giver_guid) +
          "\" />\r\n";
-    bool wants_player = false;
-    for (const LegOut& leg : legs) {
-        s += leg.assets_a;
-        wants_player = wants_player || leg.wants_player;
-    }
     // The player's soul, as every shipped graph names it (Haste.xml, Barbora.xml). Every
     // ItemDescriptorTrigger on Henry's pocket needs it: the find's went without for a day
     // (6 Oct 2026) and its playerSoul.Inventory watched nothing -- no "n/5", no Gathered,
     // no "Return to Joan" -- while the same trigger on the pray and ambush tokens, whose
     // kinds name the asset, fired. Four in-game passes bisected everything else first.
+    // Since the giver's marker gate (giverClosed / giverOpen, above) every run has one.
+    bool wants_player = true;
+    for (const LegOut& leg : legs) {
+        s += leg.assets_a;
+        wants_player = wants_player || leg.wants_player;
+    }
     if (wants_player) {
         s += t(4) + "<SoulAsset Name=\"player\" SharedSoulGuids=\"" + std::string(kPlayerSoulGuid) + "\" />\r\n";
     }
@@ -4681,7 +4756,7 @@ std::string letter_page(const Quest& quest) {
 std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests) {
     const std::vector<const CustomItem*> used = custom_items_used(quests);
     const std::vector<const RepricedItem*> repriced = repriced_items_used(quests);
-    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows;
+    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads;
     for (const Quest& q : quests) {
         if (q.has_document()) letters.push_back(&q);
         if (q.has_token()) tokens.push_back(&q);
@@ -4690,8 +4765,10 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         if (!q.hail.empty()) hails.push_back(&q);
         if (q.has_follow()) follows.push_back(&q);
     }
+    // The giver's marker gate (emit.hpp giver_closed_class): two tokens per run, the head's.
+    for (const QuestRun& run : quest_runs(quests)) heads.push_back(run.legs.front());
     if (used.empty() && repriced.empty() && letters.empty() && tokens.empty() && keys.empty() && hails.empty() &&
-        follows.empty()) {
+        follows.empty() && heads.empty()) {
         return {};
     }
     // The shape of item__aux.xml and the other shipped fragments: the same root as
@@ -4811,6 +4888,20 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
                  xml_escape(mclass) + "\" Name=\"" + xml_escape(modid + "_" + mname) + "\" />\r\n";
         }
     }
+    // The giver's marker gate: the closed and open tokens, the same row under the head's
+    // two classes, made by the Lua's WatchGiver as the giver steps in and out of where
+    // Henry may not go (emit.hpp, giver_closed_class).
+    for (const Quest* q : heads) {
+        for (int i = 0; i < 2; ++i) {
+            const std::string gname = i == 0 ? giver_closed_name(*q) : giver_open_name(*q);
+            const std::string gclass = i == 0 ? giver_closed_class(*q) : giver_open_class(*q);
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, gname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, gname)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
+                 xml_escape(gclass) + "\" Name=\"" + xml_escape(modid + "_" + gname) + "\" />\r\n";
+        }
+    }
     // A chest's paper: a Document of the letters' shape (a loose sheet rather than a folded
     // one), laid in the chest beside the thing by the watch, and worth nothing.
     for (const Quest* q : papers) {
@@ -4903,6 +4994,13 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         rows.emplace_back(item_info_key(modid, mark_shown_name(q)), q.target_name + " is on his way for the night.");
         rows.emplace_back(item_ui_key(modid, mark_hidden_name(q)), "A night's end");
         rows.emplace_back(item_info_key(modid, mark_hidden_name(q)), q.target_name + "'s night is not to be watched.");
+    }
+    for (const QuestRun& run : quest_runs(quests)) {
+        const Quest& q = *run.legs.front();
+        rows.emplace_back(item_ui_key(modid, giver_closed_name(q)), "A door closed");
+        rows.emplace_back(item_info_key(modid, giver_closed_name(q)), q.giver_name + " is somewhere Henry may not go.");
+        rows.emplace_back(item_ui_key(modid, giver_open_name(q)), "A door open");
+        rows.emplace_back(item_info_key(modid, giver_open_name(q)), q.giver_name + " is out where Henry may come.");
     }
     for (const Quest& q : quests) {
         if (!q.has_chest()) continue;
@@ -5763,6 +5861,12 @@ std::string state_lua(const std::string& g) {
     // The street night's marker on him or off (WatchMarker; bugs.txt 28 Oct 2026).
     s += "\tif command == \"marked\" then facts.marked = true end\n";
     s += "\tif command == \"unmarked\" then facts.marked = false end\n";
+    // The giver's marker gate (WatchGiver): what the map has of the giver's marker before
+    // the accept, hidden where he stands in a trespass area. Facts for a quest not yet
+    // accepted carry no stage (QuestLine reads none without `accepted`), so the app sees
+    // nothing of them.
+    s += "\tif command == \"closed\" then facts.giverHidden = true end\n";
+    s += "\tif command == \"open\" then facts.giverHidden = false end\n";
     s += "\tif command == \"named\" then facts.accepted = true; facts.named = true end\n";
     s += "\tif command == \"letin\" then facts.letin = true end\n";
     s += "\tif command == \"keyed\" then facts.keyed = true end\n";
@@ -7003,6 +7107,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- path once Henry is near, plays cue from it, moves it on as he comes close, and\n";
     s += "-- settles it with its litter at spot; Henry standing over them makes the token.\n";
     s += g + ".quests = {\n";
+    std::set<std::string> run_heads;
+    for (const QuestRun& run : quest_runs(quests)) run_heads.insert(run.legs.front()->id);
     for (const Quest& q : quests) {
         s += "\t[\"" + lua_escape(q.id) + "\"] = { kind = \"" + lua_escape(q.kind) + "\", giver = \"" +
              lua_escape(q.giver_soul) +
@@ -7115,6 +7221,13 @@ std::string emit_conversation_lua(const std::string& modid,
         if (!q.dress_target.empty()) {
             // A clothing preset put on the holder once a session (WatchDress).
             s += ", dress = \"" + lua_escape(q.dress_target) + "\"";
+        }
+        if (run_heads.count(q.id)) {
+            // The giver's marker gate (WatchGiver; emit.hpp giver_closed_class): the two
+            // tokens for the head's giverClosed and giverOpen triggers, on the run's head
+            // only, whose QuestGiver marker it is.
+            s += ", giverClosed = \"" + lua_escape(giver_closed_class(q)) + "\", giverOpen = \"" +
+                 lua_escape(giver_open_class(q)) + "\"";
         }
         // An unyielding holder (In the Stocks): the menu's rows are refusals, and the store
         // notes the rebuff (QuestRebuffed) for the app's giver to send Henry at the chest.
@@ -11463,6 +11576,53 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn p\n";
     s += "end\n";
     s += "\n";
+    // Whether the player is Henry. The game has a second playable soul, Godwin
+    // (player_bohuta in Libs/Tables/player.xml, soul 4666cffb-...), who takes the controls
+    // for the interludes of Wedding Crashers, Divine Messenger and the Kuttenberg raid; the
+    // row that makes him the player turns the game's own quest givers, fast travel and
+    // clothes-changing off (QuestGiversEnabled="false"), and his part is played among souls
+    // this mod renames (the Zhelejov inn and barn, the Uzhitz tailor's). Every mod quest
+    // graph binds its player asset to Henry's soul and the app's approach prose names
+    // Henry, so while he is not the player nothing of ours should be offered: no Talk, no
+    // look-ahead, no hail, no watch. The player entity is the same global either way; what
+    // differs is the soul in it, read by its ui name key (GetNameStringId: char_26_uiName
+    // for Henry, char_BOHUTA_uiName for Godwin, the skald_character rows). Henry's key has
+    // not been read off a live player, so the test is for the other man and fails open:
+    // a key the list does not name, an empty one, or a soul that will not say, is Henry.
+    // Read at most once a second, since GetActions asks every frame, and said in the log
+    // when the answer changes (and the first time), so a session's log carries the key.
+    s += g + ".otherPlayers = { \"bohuta\" }\n";
+    s += g + ".playerWho = nil\n";
+    s += g + ".playerWhoAt = -1\n";
+    s += "function " + g + ".IsHenry(p)\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    s += "\tif " + g + ".playerWho ~= nil and now >= " + g + ".playerWhoAt and now - " + g + ".playerWhoAt < 1 then\n";
+    s += "\t\treturn " + g + ".playerWho == \"henry\"\n";
+    s += "\tend\n";
+    s += "\tif p == nil or p.soul == nil then p = rawget(_G, \"player\") end\n";
+    s += "\tlocal key = nil\n";
+    s += "\tpcall(function() if p ~= nil and p.soul ~= nil then key = p.soul:GetNameStringId() end end)\n";
+    s += "\tlocal who = \"henry\"\n";
+    s += "\tif type(key) == \"string\" then\n";
+    s += "\t\tlocal low = string.lower(key)\n";
+    s += "\t\tfor _, other in ipairs(" + g + ".otherPlayers) do\n";
+    s += "\t\t\tif string.find(low, other, 1, true) ~= nil then who = other end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    // The game's own word for it, where the soul will answer for a Game-class context.
+    s += "\tif who == \"henry\" then\n";
+    s += "\t\tpcall(function()\n";
+    s += "\t\t\tif p ~= nil and p.soul ~= nil and p.soul:HasScriptContext(\"player_bohuta\") == true then who = \"bohuta\" end\n";
+    s += "\t\tend)\n";
+    s += "\tend\n";
+    s += "\tif who ~= " + g + ".playerWho then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE player \" .. who .. \" name=\" .. tostring(key))\n";
+    s += "\tend\n";
+    s += "\t" + g + ".playerWho = who\n";
+    s += "\t" + g + ".playerWhoAt = now\n";
+    s += "\treturn who == \"henry\"\n";
+    s += "end\n";
+    s += "\n";
     // How many of an item class someone carries, or -1 when it cannot be asked. No class
     // (a travel's) is none carried.
     s += "function " + g + ".Count(who, item)\n";
@@ -11737,6 +11897,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // loop, so a town with a hail in it is watched from the world's arrival on.
     s += "\t\tlocal pre = (q.hail ~= nil and not (type(f) == \"table\" and (f.accepted or f.done)))\n";
     s += "\t\t\tor (q.dress ~= nil and " + g + ".dressed[id] == nil)\n";
+    // And every run's head while its giver's marker is up (WatchGiver): the gate reads where
+    // he stands each tick.
+    s += "\t\t\tor (q.giverClosed ~= nil and not (type(f) == \"table\" and (f.accepted or f.done)))\n";
     s += "\t\tif pre then out[#out + 1] = id end\n";
     s += "\t\tif type(f) == \"table\" and f.accepted and not f.done and not pre then\n";
     s += "\t\t\tif q.kind == \"travel\" and not f.seen then out[#out + 1] = id end\n";
@@ -11809,6 +11972,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"BRIDGE watch idle, nothing to look at\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    // Not Henry's hour (IsHenry): the loop keeps ticking, since he will be back, but
+    // nobody is hailed, dressed, caught, cursed or trapped for the other man.
+    s += "\tif not " + g + ".IsHenry() then\n";
+    s += "\t\tScript.SetTimer(2000, " + g + ".WatchTick)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     s += "\tlocal pp = nil\n";
     s += "\tpcall(function() pp = " + g + ".Player():GetWorldPos() end)\n";
     s += "\t" + g + ".watchQuick = false\n";
@@ -11817,7 +11986,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal q = " + g + ".quests[id]\n";
     s += "\t\t\tif q.hail ~= nil then pcall(" + g + ".WatchHail, id, q, pp) end\n";
     s += "\t\t\tif q.dress ~= nil then pcall(" + g + ".WatchDress, id, q, pp) end\n";
-    s += "\t\t\tif q.kind == \"travel\" then " + g + ".WatchTravel(id, q, pp)\n";
+    s += "\t\t\tif q.giverClosed ~= nil then pcall(" + g + ".WatchGiver, id, q) end\n";
+    // The kinds' own watches are for an errand under way (every kind's line of WatchPending
+    // is under `accepted`); a head pending only for its hail or its marker gate is not
+    // theirs to look at, and a find's keepsake watch would read a spot it has no business with.
+    s += "\t\t\tlocal f = (" + g + ".state.quests or {})[id]\n";
+    s += "\t\t\tif type(f) ~= \"table\" or not f.accepted then\n";
+    s += "\t\t\telseif q.kind == \"travel\" then " + g + ".WatchTravel(id, q, pp)\n";
     s += "\t\t\telseif q.kind == \"beat\" then " + g + ".WatchBeat(id, q)\n";
     s += "\t\t\telseif q.kind == \"pray\" then " + g + ".WatchPray(id, q, pp)\n";
     s += "\t\t\telseif q.kind == \"leave\" or q.kind == \"return\" then " + g + ".WatchSpot(id, q, pp)\n";
@@ -12510,6 +12685,62 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" marker \" .. (want and \"on\" or \"off\") .. \" \" .. q.target)\n";
     s += "\tpcall(" + g + ".StateQuest, id, want and \"marked\" or \"unmarked\")\n";
     s += "\t" + g + ".Token(q, want and q.markShown or q.markHidden)\n";
+    s += "end\n";
+    // The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing space";
+    // emit.hpp giver_closed_class). While the errand is still to be taken, the labels under
+    // the giver are read each tick: he is `closed` where Henry reaching him would be
+    // trespass by the game's own rule (Trespass, below), `open` elsewhere. A reading that
+    // differs from the store's `giverHidden` must hold for two ticks before it counts, so a
+    // doorway does not flicker the marker; then one token of the closed or open class goes
+    // to the graph's trigger and the store is told. A giver the level cannot place (not
+    // loaded, dead, no labels) changes nothing. The where-by-hour pass of 7 Nov 2026 read
+    // every soul's labels from one spot, so the far ones answer too.
+    s += g + ".giverPending = {}\n";
+    s += "function " + g + ".WatchGiver(id, q)\n";
+    s += "\tif q.giverClosed == nil or q.giverOpen == nil then return end\n";
+    s += "\tlocal f = ((" + g + ".state or {}).quests or {})[id]\n";
+    s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
+    s += "\tlocal gp = nil\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tlocal e = System.GetEntityByName(q.giver)\n";
+    s += "\t\tif e == nil or (e.actor ~= nil and e.actor:IsDead()) then return end\n";
+    s += "\t\tgp = e:GetWorldPos()\n";
+    s += "\tend)\n";
+    s += "\tif gp == nil then return end\n";
+    s += "\tlocal closed = " + g + ".Trespass(gp)\n";
+    s += "\tif closed == nil then return end\n";
+    s += "\tlocal has = (type(f) == \"table\" and f.giverHidden == true)\n";
+    s += "\tif closed == has then " + g + ".giverPending[id] = nil; return end\n";
+    s += "\tif " + g + ".giverPending[id] ~= closed then " + g + ".giverPending[id] = closed; return end\n";
+    s += "\t" + g + ".giverPending[id] = nil\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" giver \" .. (closed and \"closed\" or \"open\") .. \" \" .. q.giver\n";
+    s += "\t\t.. string.format(\" at %.1f,%.1f,%.1f\", gp.x, gp.y, gp.z))\n";
+    s += "\tpcall(" + g + ".StateQuest, id, closed and \"closed\" or \"open\")\n";
+    s += "\t" + g + ".Token(q, closed and q.giverClosed or q.giverOpen)\n";
+    s += "end\n";
+    // Whether Henry standing at p would be trespassing, as AI/crime/determineTrespassReaction.xml
+    // decides it: inside a `private` area; with no `publicServiceTrespassOverride` or
+    // `antitrespass` area over the point (a taproom, a shop floor, a room he has paid for);
+    // and, where the only severity label is `semipublic` (a farmstead's yard), by night
+    // only. Where a yard's `semipublic` lies over a house's `personal` the house wins
+    // (trespass_nested_probe, 7 Nov 2026), which the rule reads as it stands. nil when the
+    // level cannot say.
+    s += "function " + g + ".Trespass(p)\n";
+    s += "\tlocal function label(l)\n";
+    s += "\t\tlocal ok, r = pcall(function() return XGenAIModule.IsPointInAreaWithLabel(p, l) end)\n";
+    s += "\t\tif not ok then return nil end\n";
+    s += "\t\treturn r == true\n";
+    s += "\tend\n";
+    s += "\tlocal private = label(\"private\")\n";
+    s += "\tif private == nil then return nil end\n";
+    s += "\tif not private then return false end\n";
+    s += "\tif label(\"publicServiceTrespassOverride\") or label(\"antitrespass\") then return false end\n";
+    s += "\tif label(\"semipublic\") and not (label(\"semipersonal\") or label(\"personal\") or label(\"prohibited\")) then\n";
+    s += "\t\tlocal night = false\n";
+    s += "\t\tpcall(function() night = Calendar.IsNightTimeOfDay() == true end)\n";
+    s += "\t\treturn night\n";
+    s += "\tend\n";
+    s += "\treturn true\n";
     s += "end\n";
     // The morning: the hour past the window's end, and the world clock kFollowClearHours
     // on from the night's last word (the warning or the sighting; the store's followedAt
@@ -14119,6 +14350,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "\n";
     s += "function " + g + ".OnConversation(npc, user, slotId)\n";
+    // The prompt is never offered to the other player (AddConversationAction), so this is
+    // for a call from elsewhere -- a hook, a probe -- with the record untouched.
+    s += "\tif not " + g + ".IsHenry(user) then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE conversation refused, the player is not Henry\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     // Both fields on the one line, so the app has the look at the moment it picks the
     // greeting rather than a marker later. The soul id is a name to nobody -- it is the
     // key npcs.sqlite is built on, which is why it is what gets logged.
@@ -14271,6 +14508,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "function " + g + ".AddConversationAction(npc, user, firstFast, output)\n";
     s += "\tif user == nil or user.actor == nil or npc.actor == nil then return end\n";
     s += "\tif " + g + ".namedSouls[npc:GetName()] ~= true then return end\n";
+    // Nothing on anyone while the player is not Henry (IsHenry): no prompt, no look-ahead,
+    // no holder role granted, as the game offers no quest givers to the other man either.
+    s += "\tif not " + g + ".IsHenry(user) then return end\n";
     s += "\tif not user.actor:CanInteractWith(npc.id) then return end\n";
     s += "\tif npc.actor:IsDead() or npc.actor:IsUnconscious() then return end\n";
     s += "\n";

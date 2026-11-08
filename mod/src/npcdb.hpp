@@ -402,6 +402,12 @@ struct Quest {
     std::string spot_pos;
     std::string spot_text;
     std::string log_prayed;
+    // A seek whose giver cannot say where the animal went (`spot_text` empty; the slate's
+    // place `unsaid`): the neighbours who can, the story circle's members referring to this
+    // quest (npc_circle_member), by soul_id. The objective's marker while the errand is open
+    // sits on them rather than on the giver, so the map says who to ask (bugs.txt 5 Nov
+    // 2026: "the people to talk to should be marked on the map"). Empty for any other quest.
+    std::vector<std::string> clue_guids;
     // The giver's hail (npc_quest_lines `hail`; notes.md 13 Oct 2026, Benesh): a line he
     // shouts when Henry comes near with the errand still unasked -- captioned and voiced
     // by the app in the giver's stand-in voice, outside any conversation. Empty for a

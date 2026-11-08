@@ -278,6 +278,9 @@ local function soulComponent(e)
     function soul:HasScriptContext(name) return self.contexts[name] == true end
     function soul:HasPerk(id) return self.perks[id] == true end
     function soul:GetId() return e.id end
+    -- The soul's ui name key (char_26_uiName on Henry, char_BOHUTA_uiName on Godwin, a
+    -- mod's own key on a renamed soul); nil until a case or makePlayer says.
+    function soul:GetNameStringId() return self.nameKey end
     function soul:GetStatLevel() return 1 end
     function soul:GetSocialClass() return { Id = 1, Name = "townsman" } end
     function soul:DealDamage(hp) e.alive = false end
@@ -379,6 +382,7 @@ end
 -- The player. One entity with a human component the dialogue state lives on.
 function Engine.makePlayer()
     local p = Engine.soul("dude", { pos = { x = 0, y = 0, z = 0 } })
+    p.soul.nameKey = "char_26_uiName" -- Henry's, as the skald_character table has it
     p.human = {}
     function p.human:IsInDialog() return Engine.dialog.open end
     function p.human:IsWeaponDrawn() return false end
@@ -745,6 +749,7 @@ function Engine.installGlobals()
     Calendar = {
         GetWorldTime = function() return Engine.worldTime() end,
         GetWorldHourOfDay = function() return Engine.hour end,
+        IsNightTimeOfDay = function() return Engine.hour >= 22 or Engine.hour < 5 end,
         -- The clock put forward (what player.lua does for a wait): the world seconds move
         -- by the difference, and the hour with them.
         SetWorldTime = function(t)
@@ -801,8 +806,12 @@ function Engine.installGlobals()
     -- The level's area labels at a point (`interior`), as the mod's Indoors asks them: a
     -- case sets Engine.interior to true or false to label every point so, and nil (reset's
     -- default) is a level that cannot say, which the mod reports as unlabelled.
+    -- Engine.labels, when a case sets it, is the set of labels true at every point (the
+    -- trespass labels the mod's Trespass reads: private, personal, antitrespass...), and
+    -- any label not in it is false.
     XGenAIModule = {
         IsPointInAreaWithLabel = function(p, label)
+            if Engine.labels ~= nil then return Engine.labels[label] == true end
             if Engine.interior == nil then error("no area labels") end
             return label == "interior" and Engine.interior == true
         end,
@@ -904,6 +913,7 @@ function Engine.reset()
     Engine.consoled = {}
     Engine.mounted = false
     Engine.interior = nil
+    Engine.labels = nil
     player = Engine.makePlayer()
     Moonshine.active = false
     Moonshine.npc = nil

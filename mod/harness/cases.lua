@@ -3109,6 +3109,78 @@ case("Hail hours: a giver with a day written is not hailed outside it (asleep, a
     check(E.count(said, mark) == 1, "hailed at eleven in the morning")
 end)
 
+-- The game's second playable soul, Godwin (player_bohuta), takes the controls for the
+-- interludes of the main quest, among souls this mod renames; the game turns its own quest
+-- givers off for him, and so does the mod: no prompt, no look, no hail, no conversation
+-- while the player's soul is not Henry's, read by its ui name key (IsHenry), and all of it
+-- back when Henry is. A soul that will not say, or says a key the mod does not know, is
+-- Henry: the gate fails open.
+case("Godwin: nothing is offered, looked at, hailed or begun while the player is not Henry, and all of it comes back", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil or q.hail == nil then check(false, "In the Stocks has a hail") return end
+    local benesh = E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    local hail = "BRIDGE quest " .. id .. " hail"
+    -- Two looks, since Benesh holds another errand's thing and the first look at a holder
+    -- grants his role and offers nothing; the look-ahead is not repeated inside lookAgain.
+    local function offered()
+        M.lookAt = nil
+        E.look(benesh)
+        return #E.look(benesh)
+    end
+    -- Henry, by his key: the prompt, the look and the hail as ever. The answer is kept a
+    -- second and said when it changes; forgotten here so this case sees the first reading.
+    check(player.soul:GetNameStringId() == "char_26_uiName", "the harness player is Henry by key")
+    M.playerWho = nil
+    local mark = E.mark()
+    check(offered() == 1, "Henry is offered the prompt")
+    check(E.find("BRIDGE look npc=" .. q.giver, mark), "and the look goes to the app")
+    check(E.find("BRIDGE player henry name=char_26_uiName", mark), "the player said as Henry, with his key, the first time he is read")
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
+    M.WatchArm("world")
+    E.advance(2100)
+    check(E.count(hail, mark) == 1, "hailed as Henry")
+    -- Godwin: the cache is a second old at most; then nothing, and the loop stays up.
+    player.soul.nameKey = "char_BOHUTA_uiName"
+    mark = E.mark()
+    E.advance(1100)
+    check(offered() == 0, "no prompt for Godwin")
+    check(not E.find("BRIDGE look npc=", mark), "no look for Godwin")
+    check(E.find("BRIDGE player bohuta name=char_BOHUTA_uiName", mark), "the change said once, with the key")
+    player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
+    E.advance(M.hailAgain * 1000 + 100)
+    player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
+    E.advance(4200)
+    check(E.count(hail, mark) == 0, "not hailed as Godwin")
+    check(M.watching == true, "the watch loop still up for Henry's return")
+    check(E.count("BRIDGE player", mark) == 1, "the player read once a second at most, said once")
+    -- A conversation begun some other way is refused with the record untouched.
+    local before = E.mark()
+    M.OnConversation(benesh, player, 0)
+    check(E.find("BRIDGE conversation refused, the player is not Henry", before), "a conversation refused")
+    check(not E.find("BRIDGE begin npc=", before) and M.active ~= true, "no begin, no session")
+    -- The game's own word, where the key does not say: the context names him too.
+    player.soul.nameKey = "char_26_uiName"
+    player.soul.contexts["player_bohuta"] = true
+    E.advance(1100)
+    check(offered() == 0, "no prompt on the player_bohuta context alone")
+    player.soul.contexts["player_bohuta"] = nil
+    -- A soul that will not say is Henry: the gate fails open.
+    player.soul.nameKey = nil
+    E.advance(1100)
+    mark = E.mark()
+    check(offered() == 1, "a player without a key is Henry")
+    check(E.find("BRIDGE player henry name=nil", mark), "said as Henry, with nothing for a key")
+    -- Henry back: the prompt, and the hail again once he has been away.
+    player.soul.nameKey = "char_26_uiName"
+    player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
+    E.advance(M.hailAgain * 1000 + 100)
+    player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
+    mark = E.mark()
+    E.advance(2100)
+    check(E.count(hail, mark) == 1, "hailed again as Henry")
+    check(offered() == 1, "and offered the prompt again")
+end)
+
 case("Watch: the loop a load wiped is armed again from the player's first key, and the hail comes", function(E, M, check)
     -- The loop armed as the world arrives rides a timer the load then wipes, and until
     -- the first conversation re-armed it from the pump nobody watched the town: Benesh
@@ -3674,6 +3746,89 @@ case("Marker: a followed holder's marker goes on him at his homecoming hour and 
     E.hour = 21.5
     E.advance(2100)
     check(E.count(on, mark) == 3 and M.state.quests[id].marked == true, "on again the evening after")
+end)
+
+-- The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing space"):
+-- while the errand is still to be taken, the labels under the giver are read each tick,
+-- and when he stands where Henry would trespass by the game's rule (private, no override,
+-- not a semipublic-only yard by day) one closed token goes to the graph, one open token
+-- when he comes out; a reading must hold for two ticks before it counts, and nothing is
+-- made once the quest is accepted.
+case("Marker: a giver's marker comes off while he stands in a trespass area and goes back when he comes out, by one token each way, two ticks to be sure, and not once the errand is taken", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil then check(true, "no In the Stocks in this data"); return end
+    check(q.giverClosed == "6d6f6f6e-7368-4300-8000-" .. id and q.giverOpen == "6d6f6f6e-7368-4f00-8000-" .. id,
+          "the two tokens are the quest's own class under the C and O prefixes")
+    local heads, legs = 0, 0
+    for _, other in pairs(M.quests) do
+        if other.giverClosed ~= nil then heads = heads + 1 else legs = legs + 1 end
+    end
+    check(heads > 0, "every run's head carries the gate (" .. heads .. " heads, " .. legs .. " later scenes without)")
+    -- The rule, point by point.
+    E.labels = { private = true, personal = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == true, "a personal room with no override is trespass")
+    E.labels = { private = true, personal = true, publicServiceTrespassOverride = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == false, "a taproom (the override) is not")
+    E.labels = { private = true, personal = true, antitrespass = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == false, "nor a room Henry has rented (antitrespass)")
+    E.labels = { interior = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == false, "nor an un-areaed room")
+    E.labels = {}
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == false, "nor the street")
+    E.hour = 12
+    E.labels = { private = true, semipublic = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == false, "a semipublic-only yard is open by day")
+    E.hour = 23
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == true, "and trespass by night")
+    E.hour = 12
+    E.labels = { private = true, semipublic = true, personal = true }
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == true, "a yard over a house reads as the house (the nested probe)")
+    E.labels = nil
+    E.interior = nil
+    check(M.Trespass({ x = 0, y = 0, z = 0 }) == nil, "a level with no labels cannot say")
+    -- The watch: the giver in the open, nothing; indoors, one closed token after two ticks.
+    E.labels = {}
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 500, y = 500, z = 0 })
+    M.WatchArm("world")
+    check(M.watching == true, "the watch is armed with nothing accepted, for the gate")
+    local mark = E.mark()
+    local closed, open = "BRIDGE quest " .. id .. " giver closed " .. q.giver, "BRIDGE quest " .. id .. " giver open " .. q.giver
+    E.advance(4500)
+    check(not E.find(closed, mark) and not E.find(open, mark), "in the open the map agrees already: no token")
+    E.labels = { private = true, personal = true }
+    E.advance(2100)
+    check(not E.find(closed, mark), "one reading indoors is not yet believed")
+    E.advance(2100)
+    check(E.count(closed, mark) == 1 and M.state.quests[id].giverHidden == true, "two readings: closed, in the store")
+    check(E.count("BRIDGE quest token made", mark) == 1, "the closed token made for Henry's pocket")
+    E.advance(2100)
+    check(M.Count(player, q.giverClosed) == 0 and M.Count(player, q.giverOpen) == 0, "and gone a moment later")
+    E.advance(4500)
+    check(E.count(closed, mark) == 1, "no second token while he stays in")
+    -- A step to the door and back: one tick in the open is not believed either.
+    E.labels = {}
+    E.advance(2100)
+    E.labels = { private = true, personal = true }
+    E.advance(2100)
+    check(not E.find(open, mark), "a tick at the door does not open him")
+    E.advance(2100)
+    check(not E.find(open, mark) and M.giverPending[id] == nil, "and the doubt is dropped when the next reading agrees with the store")
+    -- Out for good: one open token.
+    E.labels = {}
+    E.advance(2100)
+    E.advance(2100)
+    check(E.count(open, mark) == 1 and M.state.quests[id].giverHidden == false, "out: open, in the store")
+    check(E.count("BRIDGE quest token made", mark) == 2, "the open token made")
+    E.advance(2100)
+    check(M.Count(player, q.giverOpen) == 0, "and gone")
+    -- Accepted: the objective's marker takes over, the gate is quiet.
+    E.labels = { private = true, personal = true }
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    E.advance(4500)
+    E.advance(2100)
+    check(E.count(closed, mark) == 1, "nothing more once the errand is taken")
 end)
 
 -- The bedside on top of the catching (notes.md 22 Oct 2026): the catching itself says

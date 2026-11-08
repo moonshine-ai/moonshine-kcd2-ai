@@ -1286,15 +1286,22 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                     hush_all();
                 }
                 // The player skipped the line: hushed when it was seen, if the loop was held
-                // in the model then (skipped_since), else now. A line spoken whole -- a reply
-                // guessed ahead, a greeting -- is only ever skipped here.
+                // in the model then (skipped_since), and again now. Again, because the early
+                // hush emptied the queue as it stood then, and the lines the mod showed
+                // before this skip -- the beats of a written reply, each a voice marker the
+                // loop is only now reaching -- were not in it yet: a player tapping through
+                // Ernest's reading of the letter while the model held the loop had every
+                // beat hushed before it was queued and then queued and played whole (bugs.txt
+                // 5 Nov 2026). Anything queued at this point in the log is from a marker
+                // before the skip, and is what the skip was of. A line spoken whole -- a
+                // reply guessed ahead, a greeting -- is only ever skipped here.
                 if (event.marker == Marker::Skipped) {
                     if (skips_early > 0) {
                         --skips_early;
                     } else if (speaker) {
                         std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
-                        hush_all();
                     }
+                    hush_all();
                 }
                 // Henry's own line goes to the voice from its said marker, not from the
                 // voice marker the mod writes a line behind it. The said marker is answered

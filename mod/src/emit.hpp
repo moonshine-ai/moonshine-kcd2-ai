@@ -192,6 +192,19 @@ std::string mark_shown_name(const Quest& quest);
 std::string mark_hidden_class(const Quest& quest);
 std::string mark_hidden_name(const Quest& quest);
 
+// The giver's marker gate (bugs.txt 7 Nov 2026): while the errand is still to be taken,
+// the QuestGiver marker on him is off the map when he stands where Henry would be
+// trespassing to reach him, by the game's own rule (AI/crime/determineTrespassReaction.xml:
+// a `private` area, no `publicServiceTrespassOverride` or `antitrespass` over it, and not
+// a `semipublic`-only one by day), and back when he comes out. The Lua's WatchGiver reads
+// the labels under him every tick and, on a change held for two ticks, makes one token of
+// the closed or open class for the head's giverClosed / giverOpen triggers, whose
+// giverHidden state the marker's IsActive is ANDed against. Two tokens per run.
+std::string giver_closed_class(const Quest& quest);
+std::string giver_closed_name(const Quest& quest);
+std::string giver_open_class(const Quest& quest);
+std::string giver_open_name(const Quest& quest);
+
 // Libs/Tables/item/item__<modid>.xml -- the mod's own item classes, for the things a
 // favour is about that the shipped tables have no carriable row for (a saw). Empty when
 // no quest names one, and then no file is written. The rows the inventory shows for them

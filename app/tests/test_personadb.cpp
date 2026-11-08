@@ -815,16 +815,24 @@ TEST_CASE("the parts are labelled with where they came from, and the state comes
         return found;
     };
 
-    // Bartel has kin and a hook and nothing written, so both are spelled out.
+    // Bartel has kin and a hook and nothing written, so both are spelled out, and the sheet
+    // then says that is all there is (bugs.txt 5 Nov 2026: Else Mannlicher, three lines to
+    // her name, opened on the timber trade the man before her had been full of).
     CHECK(labels("kkut_additive_man_47") ==
-          std::vector<std::string>{"who", "kin", "hook", "approach"});
+          std::vector<std::string>{"who", "kin", "hook", "unwritten", "approach"});
+    CHECK(personas.persona("kkut_additive_man_47", {}, "").sheet.find(
+              "That is all that is known of you.") != std::string::npos);
     // James Cook has a card, which stands in for the bio and says whatever the hook would have.
     CHECK(labels("kkut_additive_man_208") == std::vector<std::string>{"who", "card", "approach"});
     // Nicholas Fuller has a bio and no card, which is the path that stops there: kin and hook are
     // skipped because four hundred tokens have already been spent describing him.
     CHECK(labels("kkut_additive_man_209") == std::vector<std::string>{"who", "bio", "approach"});
-    // And the soul nobody wrote anything about is two lines: who they are, and who walked up.
-    CHECK(labels("kkut_nameless_99") == std::vector<std::string>{"who", "approach"});
+    // And the soul nobody wrote anything about is three lines: who they are, that this is
+    // all of it, and who walked up.
+    CHECK(labels("kkut_nameless_99") == std::vector<std::string>{"who", "unwritten", "approach"});
+    // A card says it all, so nothing is added to one.
+    CHECK(personas.persona("kkut_additive_man_208", {}, "").sheet.find("That is all that is known") ==
+          std::string::npos);
 
     // Last in every case. Everything before it is the same text for this soul every time and so
     // is worth prefilling; this changes with every conversation, and put anywhere else it would
