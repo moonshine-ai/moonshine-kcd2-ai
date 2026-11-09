@@ -4009,6 +4009,32 @@ case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first,
     check(E.find("BRIDGE lip stopped -- next row") or true, "the drop logged when a clip was on")
 end)
 
+case("Mouth: the skip button in the game's own voiced Talk writes the skipped marker and drops the queue", function(E, M, check)
+    -- Father Ernest's reading (bugs.txt 5 and 8 Nov 2026): four rows tapped through, and
+    -- the app, told of no skip, queued and spoke all four. Outside a session the press is
+    -- the game's; the mod only says it happened, with no turn, and lets go of the mouth.
+    local ernest = E.soul("kkut_man_2", { pos = { x = 2, y = 0, z = 0 } })
+    check(M.active ~= true, "no session")
+    M.Voice("male", "For the soul of her brother Matthew, abandoned at Nicopolis.", "kkut_man_2")
+    M.Voice("male", "A black sickness on the Turks.", "kkut_man_2")
+    check(M.voicedTalk == true and M.lipKey ~= nil and #M.lipQueue == 1, "a voiced Talk with a line armed and one queued")
+    local mark = E.mark and E.mark() or nil
+    local taken = M.OnPlayerAction("dialog_skip", "press")
+    check(taken == false, "the press still reaches the game's own skip")
+    check(E.find("BRIDGE skipped turn=0", mark), "the skip said, with no turn of ours")
+    check(M.lipKey == nil and #M.lipQueue == 0, "the mouth off and the queue emptied")
+    M.OnPlayerAction("dialog_skip", "release")
+    -- The next row is spoken as any other.
+    M.Voice("male", "And here it is.", "kkut_man_2")
+    check(M.lipKey == M.LipKey("male", "And here it is."), "the next row's mouth armed")
+    -- Not between dialogues: with no voiced Talk up the press is nobody's.
+    M.voicedTalk = false
+    mark = E.mark and E.mark() or nil
+    M.OnPlayerAction("dialog_skip", "press")
+    check(not E.find("BRIDGE skipped turn=0", mark), "nothing said outside a voiced Talk")
+    M.OnPlayerAction("dialog_skip", "release")
+end)
+
 -- -------------------------------------------------------------------- Seek
 -- Sweepings and Strays' second scene (quest-design/stories.md): Anna's cat, the mod's own,
 -- made at the first point of the path when Henry comes within hearing, calling, moving on

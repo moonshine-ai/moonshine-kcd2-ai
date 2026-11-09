@@ -9926,7 +9926,23 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif action == \"mtalk\" then\n";
     s += "\t\treturn " + g + ".SayTalk(activation)\n";
     s += "\tend\n";
-    s += "\tif not " + g + ".active then return false end\n";
+    // The skip button in a dialogue of the game's own that the app is voicing (a holder's
+    // Talk, Father Ernest's reading of the letter: voicedTalk). The game ends its row on
+    // the press and shows the next, whose voice marker then queued behind the line still
+    // being spoken, so a player tapping through four rows heard all four in a row after
+    // the last tap (bugs.txt 5 and 8 Nov 2026; the 5 Nov fix was in the app, for a skip
+    // it had been told of, and here nothing told it). The same marker the mod's own Skip
+    // writes, with no turn, is the app's cue to hush; the mouth and its queue go as they
+    // do there. On the press, as the game takes it.
+    s += "\tif not " + g + ".active then\n";
+    s += "\t\tif " + g + ".voicedTalk and " + g + ".buttonActions[action] == true and activation == \"press\" then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE skipped turn=0\")\n";
+    s += "\t\t\tpcall(" + g + ".LipStop, \"skipped\")\n";
+    s += "\t\t\t" + g + ".lipKey = nil\n";
+    s += "\t\t\t" + g + ".lipQueue = {}\n";
+    s += "\t\tend\n";
+    s += "\t\treturn false\n";
+    s += "\tend\n";
     s += "\t" + g + ".Log(\"action \" .. tostring(action) .. \" \" .. tostring(activation))\n";
     // The pad's A (or the mouse button) with the keyboard open from the menu: the line
     // goes, as Enter sends it. The typing map binds it under the engine's own name, since
