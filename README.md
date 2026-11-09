@@ -365,8 +365,10 @@ mod that way, and the fix it was cut for never reached the tester). After a chan
 `mod/`, run `scripts/deploy_wl1.sh` (or `scripts/build_mod.sh release/mod/moonshine_names`
 and copy it over) before `scripts/release.sh`. `scripts/deploy_wl1.sh` is also the
 development deploy: it installs the working tree over the laptop's `%LOCALAPPDATA%\Moonshine`
-as `<VERSION>.<n>`, so the desktop shortcut (and `scripts/start-moonshine-on-wl1.sh`) runs
-what was just built. `--prebuilt-mod` sends the folder already under
+as `<VERSION>.<n>`, so the desktop shortcut runs what was just built; `scripts/start-moonshine-on-wl1.sh`
+(local, gitignored) runs that deploy by way of moonshine-voice-characters' `scripts/wl1_deploy.sh`
+and then opens the shortcut, so one command plays the current code and data (`--play` to
+only open it). `--prebuilt-mod` sends the folder already under
 `release/mod/moonshine_names` instead of building one -- moonshine-voice-characters'
 `scripts/wl1_deploy.sh` builds it there with the scheduler override (made on the laptop
 against its own `level.pak`, which `build_mod.sh` cannot do from a machine with no game),
