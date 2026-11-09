@@ -6,6 +6,14 @@
 #   scripts/release.sh --stage-only          everything but the upload (to run the
 #                                            verifiers against release\out first); then
 #   scripts/release.sh --publish-only --version 0.9.98
+#   scripts/release.sh --quick --version 0.9.99.7
+#                                            --stage-only for a development deploy
+#                                            (scripts/deploy_wl1.sh --fast): the build, and
+#                                            the package assembled under release\stage, with
+#                                            no installer, no preflight and no download list
+#                                            (installer\Stage.ps1 -Quick), and the tests run
+#                                            only when moonshine_tests.exe has changed
+#                                            (MOONSHINE_TESTS=changed; --skip-tests for none)
 #
 # What it does, in order, stopping at the first thing that fails:
 #
@@ -55,6 +63,8 @@ base="${base%/}"
 version=""
 stage_only=0
 publish_only=0
+quick=0
+skip_tests=0
 dirty=0
 nosign=""
 while (( $# )); do
@@ -63,16 +73,22 @@ while (( $# )); do
         --version=*) version="${1#--version=}"; shift ;;
         --stage-only) stage_only=1; shift ;;
         --publish-only) publish_only=1; shift ;;
+        --quick) quick=1; stage_only=1; shift ;;
+        --skip-tests) skip_tests=1; shift ;;
         --dirty) dirty=1; shift ;;
         --no-sign) nosign="-NoSign"; shift ;;
         -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1 (--help)" >&2; exit 2 ;;
     esac
 done
+# MOONSHINE_TESTS (build_windows.bat): always, changed or skip. A release runs them all.
+if (( skip_tests )); then tests=skip; elif (( quick )); then tests="${MOONSHINE_TESTS:-changed}"; else tests="${MOONSHINE_TESTS:-always}"; fi
 if (( stage_only && publish_only )); then echo "--stage-only and --publish-only are each other's other half" >&2; exit 2; fi
 if (( publish_only )) && [[ -z "$version" ]]; then echo "--publish-only wants --version, the number that was staged" >&2; exit 2; fi
 
-step() { printf '\n=== %s\n' "$*"; }
+# SECONDS is bash's own stopwatch: each step says how long the run has been going, so the
+# slow one is plain from the log.
+step() { printf '\n=== [%ds] %s\n' "$SECONDS" "$*"; }
 # A command on the build machine, in the checkout. Windows OpenSSH runs cmd.exe, so the
 # paths are backslashed and the chaining is cmd's.
 remote() { ssh "$host" "cd $checkout && $*"; }
@@ -126,13 +142,17 @@ fi
 [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "'$version' is not a version (digits and dots)" >&2; exit 1; }
 if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then echo "v$version is tagged already" >&2; exit 1; fi
 echo "  $current -> $version"
+# What VERSION and README.md were, to put back: not `git checkout`, which would take with it
+# any edit to README.md that is not committed yet (--dirty releases such a tree).
+saved="$(mktemp -d)"
+cp VERSION README.md "$saved/"
 printf '%s\n' "$version" > VERSION
 # README.md's one link to the installer (Step 1 of the player's guide), whatever version it named.
 sed -E "s#kcd2/[0-9.]+/Moonshine-[0-9.]+-setup\.exe#kcd2/$version/Moonshine-$version-setup.exe#g" README.md > README.md.tmp && mv README.md.tmp README.md
 spent=0
 restore() {
     if (( ! spent )); then
-        git checkout -q -- VERSION README.md
+        cp "$saved/VERSION" "$saved/README.md" .
         echo "VERSION and README.md put back to $current" >&2
     else
         echo "the upload of $version had begun; VERSION and README.md are left at $version -- finish with: scripts/release.sh --publish-only --version $version" >&2
@@ -157,8 +177,8 @@ echo "  $count files"
 # --- build, stage, installer --------------------------------------------------------------------
 step "building on $host (scripts\\build_windows.bat release)"
 log="$(mktemp -t moonshine-release-build)"
-if remote 'scripts\build_windows.bat release' > "$log" 2>&1; then
-    grep -E '^\[doctest\] (test cases|Status)' "$log" | sed 's/^/  /' || true
+if remote "set MOONSHINE_TESTS=$tests&& scripts\\build_windows.bat release" > "$log" 2>&1; then
+    grep -E '^(\[doctest\] (test cases|Status)|tests not run)' "$log" | sed 's/^/  /' || true
     rm -f "$log"
 else
     tail -n 40 "$log" >&2
@@ -167,7 +187,16 @@ else
 fi
 
 step "staging $version on $host (installer\\Stage.ps1)"
-remote "powershell -NoProfile -ExecutionPolicy Bypass -File installer\\Stage.ps1 -Version $version -DownloadBase $base $nosign"
+quick_arg=""
+if (( quick )); then quick_arg="-Quick"; fi
+remote "powershell -NoProfile -ExecutionPolicy Bypass -File installer\\Stage.ps1 -Version $version -DownloadBase $base $nosign $quick_arg"
+
+if (( quick )); then
+    trap - ERR
+    echo
+    echo "staged (quick: no installer built): $host:$checkout\\release\\stage\\Moonshine. VERSION and README.md are left at $version."
+    exit 0
+fi
 
 if (( stage_only )); then
     trap - ERR

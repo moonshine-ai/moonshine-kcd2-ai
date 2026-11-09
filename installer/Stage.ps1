@@ -48,7 +48,8 @@
 # Microsoft.Azure.ArtifactSigningClientTools); the credential is this machine's `az login`.
 # Without signing.json the build is unsigned, with a note; -NoSign forces that.
 #
-# -DownloadBase is MOONSHINE_DOWNLOAD_BASE from the environment when not given. Every copy
+# -Quick stops after the manifest (see the parameter); -DownloadBase is MOONSHINE_DOWNLOAD_BASE
+# from the environment when not given. Every copy
 # is a robocopy or a hash-checked Copy-Item, so a second run only moves what changed; the
 # big weights are the same bytes from one build to the next, and their sha256s are cached.
 # -Repo is this checkout unless told otherwise; -Python, unless told, is the interpreter the
@@ -59,7 +60,13 @@ param(
     [string]$Repo = '',
     [string]$Python = $env:PYTHON,
     [switch]$SkipInstaller,
-    [switch]$NoSign
+    [switch]$NoSign,
+    # The development deploy (scripts/deploy_wl1.sh --fast): the package is assembled and
+    # its manifest written, and that is all. No installer is built, so no download list,
+    # no vc_redist, no publish tree; and no preflight, which hashes the whole 4 GB package
+    # a second time (ten seconds) to say what the manifest step has just computed. The
+    # package is then copied over the installed copy, not installed.
+    [switch]$Quick
 )
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 has $PSScriptRoot empty while the parameter defaults are evaluated.
@@ -321,6 +328,7 @@ Get-ChildItem -LiteralPath (Join-Path $modelsOut 'stt') -Directory | Where-Objec
     ForEach-Object { Write-Output ("  removing " + $_.Name); Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 
 # --- what the installer runs or offers but does not install ---------------------------------
+if (-not $Quick) {
 Step 'extras'
 $extra = Join-Path $stage 'extra'
 Ensure-Dir $extra
@@ -331,6 +339,7 @@ if (-not (Test-Path -LiteralPath $redist) -or (Get-Item -LiteralPath $redist).Le
 }
 $sig = Get-AuthenticodeSignature -LiteralPath $redist
 if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { Fail "vc_redist.x64.exe is not signed by Microsoft ($($sig.Status))" }
+}
 
 # --- the mod -------------------------------------------------------------------------------
 # Inside the package, under mod\, which is where Fetch-Package.ps1 copies it into the game
@@ -475,6 +484,7 @@ Write-Output ("  " + $entries.Count + " files, " + [math]::Round($payload / 1GB,
 # functions are in moonshine.iss. Only the download entry carries ExternalSize, so the
 # free-space total counts each file once. Then the mod's files, from where they were
 # downloaded into the game's mods folder, for the copymod task.
+if (-not $Quick) {
 Step 'download list'
 $iss = New-Object System.Collections.Generic.List[string]
 $iss.Add('; Written by installer\Stage.ps1 from manifest.json; do not edit. Included by moonshine.iss.')
@@ -514,12 +524,14 @@ try {
 
 $total = (Get-ChildItem -LiteralPath $pkg -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Output ("package: " + [math]::Round($total / 1GB, 2) + " GB in " + $pkg)
+}
 
 # --- what goes up --------------------------------------------------------------------------
 # The manifest, and the installer once built, with its hash in the published manifest (the
 # one inside the installer cannot carry its own hash). The files the manifest points at
 # are not copied here: publish.py reads them out of the stage, by the paths and hashes the
 # manifest gives, and uploads only those the bucket does not have.
+if (-not $Quick) {
 Step 'publish tree'
 $publish = Join-Path $Repo "release\publish\$Version"
 Ensure-Dir $publish
@@ -530,9 +542,10 @@ foreach ($top in @('data', 'mod')) {
 if (Test-Path -LiteralPath (Join-Path $Repo 'release\publish\latest')) { Remove-Item -LiteralPath (Join-Path $Repo 'release\publish\latest') -Recurse -Force }
 Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $publish 'manifest.json') -Force
 Write-Output "  $publish"
+}
 
 # --- the installer -------------------------------------------------------------------------
-if ($SkipInstaller) { return }
+if ($SkipInstaller -or $Quick) { return }
 Step 'installer'
 $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $iscc) {

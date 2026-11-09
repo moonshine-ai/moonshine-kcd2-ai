@@ -4,4 +4,4 @@
 # repository's commit; the manifest's sha256 pins the exact files. Moving to a new drop is
 # an edit here.
 drop=2026-11-09-2e09d9d
-manifest_sha256=3ca0943f36d298139e89338f35bc01a3c1b3827380a2227d0a09c9bb23808985
+manifest_sha256=52ad3e596472cf172cf3b117cbd1b2ce83cfb037c07f6a95011852f5597023a5

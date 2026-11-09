@@ -374,6 +374,15 @@ only open it). `--prebuilt-mod` sends the folder already under
 against its own `level.pak`, which `build_mod.sh` cannot do from a machine with no game),
 sends the data drop, and then runs this.
 
+`scripts/deploy_wl1.sh --fast` is the loop for iterating: it stages the package with
+`release.sh --quick` (no installer, no preflight, no download list; the tests run only
+when `moonshine_tests.exe` changed since they last passed, `--skip-tests` for none) and
+copies what changed over the installed copy and into the game with robocopy, where the
+installer would hash 4 GB of unchanged models to find that nothing needed copying. It needs
+the installed copy to exist (run once without `--fast`); `scripts/start-moonshine-on-wl1.sh`
+passes it by default, `--installer` there for the full pass. Run without `--fast`, and
+for a release, nothing changes.
+
 The pieces run on their own too. With the release build, the drop, the models and a mod
 folder under `release\mod\moonshine_names` in place on the build machine:
 

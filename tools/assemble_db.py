@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import array
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -247,22 +248,130 @@ def build(out: Path, schema_sql: str, load) -> None:
     tmp = out.with_suffix(out.suffix + ".building")
     tmp.unlink(missing_ok=True)
     db = sqlite3.connect(tmp)
-    db.execute("PRAGMA journal_mode = OFF")
-    db.execute("PRAGMA synchronous = OFF")
-    db.execute(f"PRAGMA page_size = {PAGE_SIZE}")
-    db.executescript(schema_sql)
-    db.execute("BEGIN")
-    for table, cols, _pk in schema_tables(schema_sql):
-        n = load(db, table, cols)
-        print(f"  {table}: {n} rows")
-    db.commit()
-    db.execute("VACUUM")
+    try:
+        db.execute("PRAGMA journal_mode = OFF")
+        db.execute("PRAGMA synchronous = OFF")
+        db.execute(f"PRAGMA page_size = {PAGE_SIZE}")
+        db.executescript(schema_sql)
+        db.execute("BEGIN")
+        for table, cols, _pk in schema_tables(schema_sql):
+            n = load(db, table, cols)
+            print(f"  {table}: {n} rows")
+        db.commit()
+        db.execute("VACUUM")
+    except BaseException:
+        # Close and remove the half-built file here: on Windows an open handle would stop
+        # the next attempt (the build again, after load_vectors_reusing gave up) from
+        # replacing it.
+        db.close()
+        tmp.unlink(missing_ok=True)
+        raise
     ok = db.execute("PRAGMA integrity_check").fetchone()[0]
     db.close()
     if ok != "ok":
         raise SystemExit(f"integrity_check: {ok}")
     os.replace(tmp, out)
     print(f"=== {out}: {out.stat().st_size >> 20} MB ===")
+
+
+class _ReuseStale(Exception):
+    """The vectors kept from the last build are not the ones this drop would give."""
+
+
+# How many of the rows taken from the last build are checked against a fresh quantisation
+# of the drop's floats: the first of them, then every 997th. A changed embedder or quantiser
+# changes every row, so one check finds it; the rest are for a surprise.
+REUSE_FIRST_CHECKS = 200
+REUSE_EVERY = 997
+
+
+def load_vectors_reusing(db: sqlite3.Connection, drop_db: Path, old_path: Path) -> int:
+    """load_vectors, taking each row from the last build's file where the last build had
+    one for the same sha, and quantising only the rest. A sha is a hash of the text the
+    vector is of, and the table only grows (build_kcd2_knowledge.py skips a sha it has),
+    so a drop that added six thousand items to 524,000 quantises six thousand, not all of
+    them: seconds, not the eight minutes the laptop takes for the lot. The rows come out
+    in the same order and the same bytes as from a full build, so the file is the same
+    file; and a sample of the reused rows is quantised afresh and compared, so that a
+    changed embedder, quantiser or dimension is found and the whole thing built again
+    (_ReuseStale) rather than trusted."""
+    matrix = drop_db / f"{VECTOR_TABLE}.f32"
+    index = drop_db / f"{VECTOR_TABLE}.index.tsv"
+    if not matrix.exists() or not index.exists():
+        print(f"  {VECTOR_TABLE}: not in the drop; left empty", file=sys.stderr)
+        return 0
+    old: dict[bytes, tuple[int, float, bytes]] = {}
+    con = sqlite3.connect(f"file:{old_path}?mode=ro", uri=True)
+    try:
+        for sha, kept, scale, vec in con.execute(f'SELECT sha, dim, scale, vec FROM "{VECTOR_TABLE}"'):
+            old[bytes(sha)] = (kept, scale, bytes(vec))
+    except sqlite3.Error as e:
+        raise _ReuseStale(f"the last build's vectors cannot be read: {e}")
+    finally:
+        con.close()
+    sql = f'INSERT INTO "{VECTOR_TABLE}" (sha, dim, scale, vec) VALUES (?, ?, ?, ?)'
+    n = reused = checked = 0
+    with matrix.open("rb") as mf, index.open("r", encoding="utf-8") as xf:
+        header = xf.readline().rstrip("\n").split("\t")
+        if header != ["sha", "dim", "row"]:
+            raise SystemExit(f"{index.name}: unexpected header {header}")
+        batch = []
+        expect_row = 0
+        for line in xf:
+            sha, dim_s, row_s = line.rstrip("\n").split("\t")
+            dim, row = int(dim_s), int(row_s)
+            if row != expect_row:
+                raise SystemExit(f"{index.name}: row {row} where {expect_row} was expected")
+            expect_row += 1
+            raw = mf.read(dim * 4)
+            if len(raw) != dim * 4:
+                raise SystemExit(f"{matrix.name}: short read at row {row}")
+            key = bytes.fromhex(sha)
+            have = old.get(key)
+            if have is not None and have[0] == min(dim, KEEP_DIMS):
+                if checked < REUSE_FIRST_CHECKS or reused % REUSE_EVERY == 0:
+                    if quantize(raw, dim) != have:
+                        raise _ReuseStale(f"row {row} ({sha[:12]}) quantises differently now")
+                    checked += 1
+                reused += 1
+                kept, scale, q = have
+            else:
+                kept, scale, q = quantize(raw, dim)
+            batch.append((key, kept, scale, q))
+            if len(batch) >= 2000:
+                db.executemany(sql, batch)
+                n += len(batch)
+                batch = []
+        if batch:
+            db.executemany(sql, batch)
+            n += len(batch)
+        if mf.read(1):
+            raise SystemExit(f"{matrix.name}: bytes beyond the index's last row")
+    if not reused:
+        raise _ReuseStale("no row of the last build is in this drop")
+    print(f"  {VECTOR_TABLE}: {reused} rows kept from the last build ({checked} checked), "
+          f"{n - reused} quantised")
+    return n
+
+
+def vectors_key(manifest: dict, vectors_sql: str) -> str:
+    """What npcs-vectors.sqlite is a function of: the vectors' schema, the manifest's hashes
+    of the files that load into it, and the code that loads them (the quantiser's source,
+    so that changing it builds the file again). Quantising 530,000 vectors in pure Python is
+    seventy seconds, nearly all of an assemble, and the vectors change only when the
+    knowledge does, so a new drop that did not touch them reuses the file it has."""
+    h = hashlib.sha256()
+    h.update(vectors_sql.encode("utf-8"))
+    h.update(f"keep={KEEP_DIMS} page={PAGE_SIZE}\n".encode())
+    h.update(inspect.getsource(quantize).encode("utf-8"))
+    h.update(inspect.getsource(load_vectors).encode("utf-8"))
+    for table, _cols, _pk in schema_tables(vectors_sql):
+        names = ([f"{VECTOR_TABLE}.f32", f"{VECTOR_TABLE}.index.tsv"] if table == VECTOR_TABLE
+                 else [f"{table}.tsv", f"{table}.jsonl"])
+        for name in names:
+            entry = manifest["files"].get(f"db/{name}")
+            h.update(f"{name} {entry['sha256'] if entry else '-'}\n".encode())
+    return h.hexdigest()
 
 
 def assemble(drop: Path, out: Path, schema_sql: str, do_verify: bool) -> None:
@@ -281,9 +390,30 @@ def assemble(drop: Path, out: Path, schema_sql: str, do_verify: bool) -> None:
     main_sql, vectors_sql = split_schema(schema_sql)
     print(f"=== loading {drop.name} ===")
     build(out, main_sql, lambda db, table, cols: load_table(db, drop / "db", table, cols))
-    build(vectors_path(out), vectors_sql,
-          lambda db, table, cols: load_vectors(db, drop / "db") if table == VECTOR_TABLE
-          else load_table(db, drop / "db", table, cols))
+    vectors = vectors_path(out)
+    stamp = vectors.with_name(vectors.name + ".from")
+    key = vectors_key(manifest, vectors_sql)
+    if vectors.exists() and stamp.exists() and stamp.read_text().strip() == key:
+        print(f"=== {vectors}: {vectors.stat().st_size >> 20} MB, unchanged: built from these vectors already ===")
+        return
+    stamp.unlink(missing_ok=True)
+    full = lambda db, table, cols: (load_vectors(db, drop / "db") if table == VECTOR_TABLE
+                                    else load_table(db, drop / "db", table, cols))
+    if vectors.exists() and vectors.stat().st_size > 0:
+        # Not the first build: take the rows the last one made (see load_vectors_reusing).
+        stale = None
+        try:
+            build(vectors, vectors_sql,
+                  lambda db, table, cols: load_vectors_reusing(db, drop / "db", vectors)
+                  if table == VECTOR_TABLE else load_table(db, drop / "db", table, cols))
+        except _ReuseStale as e:
+            stale = str(e)
+        if stale is not None:
+            print(f"  not reusing the last build's vectors ({stale}); quantising them all")
+            build(vectors, vectors_sql, full)
+    else:
+        build(vectors, vectors_sql, full)
+    stamp.write_text(key + "\n")
 
 
 def place_voices(drop: Path, voices_out: Path) -> None:

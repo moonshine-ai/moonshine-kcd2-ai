@@ -116,6 +116,29 @@ set /a JOBS=%NUMBER_OF_PROCESSORS%/2
 if %JOBS% lss 1 set JOBS=1
 cmake --build %BUILD% --config RelWithDebInfo -j %JOBS% || exit /b 1
 
+rem The tests take twenty-odd seconds (406 cases, many of which build a database), and a
+rem deploy that changed nothing in the app does not need them again. MOONSHINE_TESTS says:
+rem   always (the default)  run them
+rem   changed               run them unless moonshine_tests.exe is no newer than the last
+rem                         run that passed (tests.passed beside it), which is to say
+rem                         unless something it is built from has changed
+rem   skip                  do not run them
+rem scripts/deploy_wl1.sh --fast sets "changed"; a release build leaves the default.
+set "TESTS=%BUILD%\RelWithDebInfo\moonshine_tests.exe"
+set "STAMP=%BUILD%\RelWithDebInfo\tests.passed"
+if /i "%MOONSHINE_TESTS%"=="skip" (
+    echo tests not run: MOONSHINE_TESTS=skip
+    exit /b 0
+)
+if /i "%MOONSHINE_TESTS%"=="changed" if exist "%STAMP%" (
+    powershell -NoProfile -Command "if ((Get-Item -LiteralPath '%TESTS%').LastWriteTimeUtc -le (Get-Item -LiteralPath '%STAMP%').LastWriteTimeUtc) { exit 0 } else { exit 1 }"
+    if not errorlevel 1 (
+        echo tests not run: moonshine_tests.exe is unchanged since the last run that passed
+        exit /b 0
+    )
+)
 echo === tests ===
-%BUILD%\RelWithDebInfo\moonshine_tests.exe
-exit /b %ERRORLEVEL%
+%TESTS%
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" echo passed> "%STAMP%"
+exit /b %RC%

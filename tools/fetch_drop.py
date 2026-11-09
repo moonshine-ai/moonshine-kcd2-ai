@@ -53,6 +53,42 @@ def read_pin(path: Path) -> tuple[str, str]:
     return pin["drop"], pin["manifest_sha256"]
 
 
+def seed_from_older_drops(out_root: Path, drop: str, manifest: dict) -> int:
+    """Put into this drop's folder the files an older drop's folder already has: a file
+    that the two manifests give the same sha256 and size is the same bytes, whatever the
+    drop is called, and a new drop named for the day and the commit differs from the last
+    in a few files of three hundred. Hard-linked where the disk allows (drops are never
+    written in place; a file is fetched whole, beside itself, and renamed over), copied
+    where not. What this puts in place is still checked against the manifest's hash by
+    the caller, like anything else found there; so a stale or damaged sibling does no
+    harm, it only costs the fetch it would have saved. Returns how many it placed."""
+    here = out_root / drop
+    placed = 0
+    want = manifest["files"]
+    for old in sorted((d for d in out_root.iterdir() if d.is_dir() and d.name != drop), reverse=True):
+        try:
+            theirs = json.loads((old / "manifest.json").read_text())["files"]
+        except (OSError, ValueError, KeyError):
+            continue
+        for rel, meta in want.items():
+            mine = here / rel
+            if mine.exists():
+                continue
+            other = theirs.get(rel)
+            if not other or other["sha256"] != meta["sha256"] or other["bytes"] != meta["bytes"]:
+                continue
+            src = old / rel
+            if not src.is_file() or src.stat().st_size != meta["bytes"]:
+                continue
+            mine.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.link(src, mine)
+            except OSError:
+                shutil.copy2(src, mine)
+            placed += 1
+    return placed
+
+
 class Source:
     """One drop at one base, reachable by copy, S3 signature, gcloud or https."""
 
@@ -157,6 +193,9 @@ def main() -> int:
     manifest = json.loads(manifest_path.read_text())
 
     if not args.assemble:
+        placed = seed_from_older_drops(Path(args.out), drop, manifest)
+        if placed:
+            print(f"=== {drop}: {placed} files already here in older drops (same sha256), linked ===")
         missing = []
         for rel, meta in sorted(manifest["files"].items()):
             p = local / rel
