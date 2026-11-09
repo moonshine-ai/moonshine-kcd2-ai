@@ -874,14 +874,16 @@ void read_brawlers(sqlite3* db, std::vector<Quest>& quests) {
 }
 
 void read_clues(sqlite3* db, std::vector<Quest>& quests) {
-    // Who knows where a seek's animal went, when the giver does not (Quest::clue_guids):
-    // the story circle's members who refer to the quest, in soul_name order so the asset is
-    // stable from run to run. A database without the circle table (the fixtures) has no
-    // clues to give, and the seek keeps its giver's marker.
+    // Who knows where a seek's animal went, when the giver does not (Quest::clues): the
+    // souls with a topic that is a clue for the quest (npc_knowledge.clue_quest, set by
+    // hand in the refined layer), one each, in soul_name order so the objectives are stable
+    // from run to run. A database from before the column (9 Nov 2026) or without the
+    // tables (the fixtures) has no clues to give, and the seek keeps its giver's marker.
     const char* sql =
-        "SELECT n.soul_id FROM npc_circle_member m JOIN npc n USING (soul_name) "
-        "WHERE m.refers_to_quest_id = ?1 AND m.role = 'member' AND n.soul_id IS NOT NULL "
-        "ORDER BY m.soul_name";
+        "SELECT k.soul_name, n.soul_id, COALESCE(g.full_name, '') FROM npc_knowledge k "
+        "JOIN npc n USING (soul_name) LEFT JOIN generated_name g ON g.soul_id = n.soul_id "
+        "WHERE k.clue_quest = ?1 AND n.soul_id IS NOT NULL "
+        "GROUP BY k.soul_name ORDER BY k.soul_name";
     sqlite3_stmt* raw_stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &raw_stmt, nullptr) != SQLITE_OK) return;
     StmtHandle stmt(raw_stmt, &sqlite3_finalize);
@@ -891,9 +893,14 @@ void read_clues(sqlite3* db, std::vector<Quest>& quests) {
         sqlite3_bind_text(stmt.get(), 1, q.id.c_str(), -1, SQLITE_TRANSIENT);
         int rc;
         while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-            const unsigned char* p = sqlite3_column_text(stmt.get(), 0);
-            const std::string guid = p ? reinterpret_cast<const char*>(p) : "";
-            if (!guid.empty() && guid != q.giver_guid) q.clue_guids.push_back(guid);
+            auto text = [&](int col) {
+                const unsigned char* p = sqlite3_column_text(stmt.get(), col);
+                return std::string(p ? reinterpret_cast<const char*>(p) : "");
+            };
+            Quest::Clue clue{text(0), text(2), text(1)};
+            if (clue.guid.empty() || clue.guid == q.giver_guid) continue;
+            if (clue.name.empty()) clue.name = clue.soul;
+            q.clues.push_back(std::move(clue));
         }
         if (rc != SQLITE_DONE) fail(db, "reading a seek's clue-holders failed");
     }

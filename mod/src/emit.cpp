@@ -876,6 +876,32 @@ std::string giver_open_name(const Quest& quest) { return "open_" + quest_node(qu
 
 std::string hail_node(const std::string& quest_id) { return quest_node(quest_id) + "_hail"; }
 
+std::string clue_class(const Quest& quest, std::size_t index) {
+    // A clue-holder's asked token (emit.hpp): the same shape under 41 (the letter A), the
+    // holder's one-based index in the byte after it, so each of a seek's holders has a
+    // class of their own for their own trigger. Made by the Lua on the app's `clue`.
+    require_identifier(quest.id, "quest id");
+    if (index == 0 || index > 255) throw std::runtime_error("quest " + quest.id + " clue index out of range");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    char byte[3];
+    std::snprintf(byte, sizeof byte, "%02zx", index);
+    return "6d6f6f6e-7368-41" + std::string(byte) + "-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string clue_name(const Quest& quest, std::size_t index) {
+    return "clue" + std::to_string(index) + "_" + quest_node(quest.id);
+}
+
+std::string clue_objective(std::size_t index) { return "ask_" + std::to_string(index); }
+
+std::string clue_objective_text(const Quest& quest, std::size_t index) {
+    // The holder's objective line: "Ask Sibyl Teller about the cat", in the book's plain
+    // imperative like the return's and the helper's.
+    const std::string& name = quest.clues.at(index - 1).name;
+    return "Ask " + name + " about the " + (quest.item_name.empty() ? std::string("animal") : quest.item_name);
+}
+
 std::string paper_class(const Quest& quest) {
     // The chest's paper: the same shape under 70 (the letter p).
     require_identifier(quest.id, "quest id");
@@ -1515,11 +1541,11 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // (an ItemOnGroundAsset, behaviors.md §10.4; the Lua lays it at accept): the first
     // marker on a place rather than a soul.
     const bool keepsake = quest.has_keepsake();
-    // A seek whose giver cannot say where the animal went is marked on the neighbours who
-    // can (Quest::clue_guids), so the map says who to ask; one whose giver names the place
-    // is marked on the giver like a pray.
-    const bool clues = seek && !quest.clue_guids.empty();
-    const char* marker = keepsake ? "keepsake" : clues ? "clues" : (find || pray || spot || seek) ? "giver" : "target";
+    // A seek whose giver cannot say where the animal went has an optional objective per
+    // neighbour who can (Quest::clues), each marked on its holder, so the map says who to
+    // ask; its own objective keeps the giver's marker like a pray's.
+    const bool clues = seek && !quest.clues.empty();
+    const char* marker = keepsake ? "keepsake" : (find || pray || spot || seek) ? "giver" : "target";
     if (quest.item_class.empty() && !thingless) {
         throw std::runtime_error("quest " + quest.id + " names no item class");
     }
@@ -1880,6 +1906,46 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
             s += t(5) + "<Edge From=\"watching.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</ItemDescriptorTrigger>\r\n";
+        }
+        if (clues) {
+            // The seek's clue-holders (Quest::clues; emit.hpp clue_class): one optional
+            // objective each, Active from the accept with the marker on the holder, Done
+            // when Henry has asked them -- the app says `@quest <id> clue` as the clue topic
+            // is picked at them, and the Lua makes a token of that holder's class, which
+            // the asked<i> trigger here sees -- and Canceled when the animal is found without them,
+            // or with the quest. The trigger is live only while its objective is, so a
+            // second asking changes nothing.
+            if (!(prayed || left || found)) {
+                s += t(4) + "<ObjectProperties Name=\"playerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+                s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+                s += t(4) + "</ObjectProperties>\r\n";
+            }
+            for (std::size_t i = 1; i <= quest.clues.size(); ++i) {
+                const std::string n = std::to_string(i);
+                s += t(4) + "<State Name=\"askState" + n + "\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
+                s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetActive\" />\r\n";
+                s += t(5) + "<Edge From=\"asked" + n + ".OnAcquire\" To=\"SetDone\" />\r\n";
+                if (found) s += t(5) + "<Edge From=\"found.OnAcquire\" To=\"SetCanceled\" />\r\n";
+                s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetCanceled\" />\r\n";
+                for (const std::string& how : ways) {
+                    s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetCanceled\" />\r\n";
+                }
+                s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetCanceled\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<" + clue_objective(i) + " Name=\"objectiveVisualClue" + n + "\"" + rfo + ">\r\n";
+                s += t(5) + "<Edge From=\"askState" + n + ".State\" To=\"Progress\" />\r\n";
+                s += t(4) + "</" + clue_objective(i) + ">\r\n";
+                s += t(4) + "<Function Name=\"clueClass" + n + "\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                            "DeclaringType=\"wh::entitymodule\">\r\n";
+                s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(clue_class(quest, i)) + "\" />\r\n";
+                s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+                s += t(4) + "</Function>\r\n";
+                s += t(4) + "<ItemDescriptorTrigger Name=\"asked" + n + "\">\r\n";
+                s += t(5) + "<Edge From=\"clueClass" + n + ".ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+                s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+                s += t(5) + "<Edge From=\"askState" + n + ".Active\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            }
         }
     } else if (ambush) {
         // Nothing to seed: the directions are made in Henry's pocket by the Lua when the
@@ -2489,14 +2555,12 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<ItemOnGroundAsset Name=\"keepsake\" ItemClassGuids=\"" + xml_escape(quest.keepsake_class) +
              "\" />\r\n";
     }
-    // The seek's clue-holders, one asset of several souls as the holder's household is.
+    // The seek's clue-holders, an asset each for their own objective's marker.
     if (clues) {
-        std::string guids;
-        for (const std::string& g : quest.clue_guids) {
-            if (!guids.empty()) guids += ' ';
-            guids += g;
+        for (std::size_t i = 1; i <= quest.clues.size(); ++i) {
+            s += t(4) + "<SoulAsset Name=\"clue" + std::to_string(i) + "\" SharedSoulGuids=\"" +
+                 xml_escape(quest.clues[i - 1].guid) + "\" />\r\n";
         }
-        s += t(4) + "<SoulAsset Name=\"clues\" SharedSoulGuids=\"" + xml_escape(guids) + "\" />\r\n";
     }
     // The one who can let Henry in, and the holder's household her door opens (the holder,
     // everyone who sleeps under his roof, and her).
@@ -2532,8 +2596,10 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
     // A street night's (has_follow) Started carries no marker: the holder's is the Lua's to
     // put on and take off with his hours (Shown/Hidden below; emit.hpp mark_shown_class).
+    // Nor does a seek's with clue-holders: the giver cannot say where, so the markers are
+    // the holders' objectives' (ask_<i> below), one each, until Henry has asked them.
     s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\"" +
-         std::string(followed ? "" : " Marker=\"" + std::string(marker) + "\"") + ">\r\n";
+         std::string(followed || clues ? "" : " Marker=\"" + std::string(marker) + "\"") + ">\r\n";
     s += t(7) + "<Log StringName=\"" + key("log_started") + "\" Text=\"" +
          xml_escape(quest.log_started) + "\" />\r\n";
     s += t(6) + "</EnumLog>\r\n";
@@ -2759,6 +2825,22 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "</Logs>\r\n";
         s += t(4) + "</Objective>\r\n";
     }
+    // A seek's clue-holders' objectives, "Ask <name> about the <animal>": IsOptional, one
+    // each, tracked with the marker on the holder from the accept until Henry has asked
+    // them or the animal is found (askState<i> above).
+    for (std::size_t i = 1; i <= (clues ? quest.clues.size() : 0); ++i) {
+        const std::string n = std::to_string(i);
+        s += t(4) + "<Objective TypeT=\"ProgressFailable\" Name=\"" + clue_objective(i) + "\" IsOptional=\"true\">\r\n";
+        s += t(5) + "<LocalizedName StringName=\"" + key(("objective_clue_" + n).c_str()) + "\" Text=\"" +
+             xml_escape(clue_objective_text(quest, i)) + "\" />\r\n";
+        s += t(5) + "<Logs>\r\n";
+        s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"clue" + n + "\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
+        s += t(5) + "</Logs>\r\n";
+        s += t(4) + "</Objective>\r\n";
+    }
     out.objectives = s;
     return out;
 }
@@ -2779,8 +2861,19 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             names.insert((*it)[2].str());
         }
     }
-    for (const char* alias : {"target", "onward", "keepsake", "brawlers", "helper", "holderHousehold", "clues"}) names.insert(alias);
-    const std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kHelperObjective};
+    for (const char* alias : {"target", "onward", "keepsake", "brawlers", "helper", "holderHousehold"}) names.insert(alias);
+    // A seek's clue-holders' assets, clue1, clue2... (one each, so they are not a fixed list).
+    static const std::regex clue_re("<SoulAsset Name=\"(clue[0-9]+)\"");
+    for (std::sregex_iterator it(leg.assets_a.begin(), leg.assets_a.end(), clue_re), end; it != end; ++it) {
+        names.insert((*it)[1].str());
+    }
+    std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kHelperObjective};
+    static const std::regex objective_re("<Objective TypeT=\"[^\"]*\" Name=\"([A-Za-z_0-9]+)\"");
+    for (std::sregex_iterator it(leg.objectives.begin(), leg.objectives.end(), objective_re), end; it != end; ++it) {
+        if (std::find(objectives.begin(), objectives.end(), (*it)[1].str()) == objectives.end()) {
+            objectives.push_back((*it)[1].str());
+        }
+    }
     auto rewrite = [&](std::string& text) {
         for (const std::string& name : names) {
             text = replace_all(text, "Name=\"" + name + "\"", "Name=\"" + name + sfx + "\"");
@@ -3203,6 +3296,13 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
             rows.emplace_back(quest_key(modid, quest.id, "objective_helper"), filled.objective_helper);
             rows.emplace_back(quest_key(modid, quest.id, "log_letin"), filled.log_letin);
             if (quest.has_key()) rows.emplace_back(quest_key(modid, quest.id, "log_keyed"), filled.log_keyed);
+        }
+    }
+    // A seek's clue-holders' objectives (emit.hpp clue_objective).
+    if (quest.is_seek()) {
+        for (std::size_t i = 1; i <= quest.clues.size(); ++i) {
+            rows.emplace_back(quest_key(modid, quest.id, "objective_clue_" + std::to_string(i)),
+                              clue_objective_text(quest, i));
         }
     }
     if (quest.is_ambush() && !quest.log_directed.empty()) {
@@ -4756,7 +4856,7 @@ std::string letter_page(const Quest& quest) {
 std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests) {
     const std::vector<const CustomItem*> used = custom_items_used(quests);
     const std::vector<const RepricedItem*> repriced = repriced_items_used(quests);
-    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads;
+    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads, clued;
     for (const Quest& q : quests) {
         if (q.has_document()) letters.push_back(&q);
         if (q.has_token()) tokens.push_back(&q);
@@ -4764,11 +4864,12 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         if (q.has_paper()) papers.push_back(&q);
         if (!q.hail.empty()) hails.push_back(&q);
         if (q.has_follow()) follows.push_back(&q);
+        if (q.is_seek() && !q.clues.empty()) clued.push_back(&q);
     }
     // The giver's marker gate (emit.hpp giver_closed_class): two tokens per run, the head's.
     for (const QuestRun& run : quest_runs(quests)) heads.push_back(run.legs.front());
     if (used.empty() && repriced.empty() && letters.empty() && tokens.empty() && keys.empty() && hails.empty() &&
-        follows.empty() && heads.empty()) {
+        follows.empty() && heads.empty() && clued.empty()) {
         return {};
     }
     // The shape of item__aux.xml and the other shipped fragments: the same root as
@@ -4902,6 +5003,18 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
                  xml_escape(gclass) + "\" Name=\"" + xml_escape(modid + "_" + gname) + "\" />\r\n";
         }
     }
+    // A seek's clue-holders' asked tokens: the same row under each holder's class, made by
+    // the Lua on the app's `clue` at that holder and gone a moment later (emit.hpp clue_class).
+    for (const Quest* q : clued) {
+        for (std::size_t i = 1; i <= q->clues.size(); ++i) {
+            const std::string cname = clue_name(*q, i);
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, cname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, cname)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
+                 xml_escape(clue_class(*q, i)) + "\" Name=\"" + xml_escape(modid + "_" + cname) + "\" />\r\n";
+        }
+    }
     // A chest's paper: a Document of the letters' shape (a loose sheet rather than a folded
     // one), laid in the chest beside the thing by the watch, and worth nothing.
     for (const Quest* q : papers) {
@@ -4994,6 +5107,14 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         rows.emplace_back(item_info_key(modid, mark_shown_name(q)), q.target_name + " is on his way for the night.");
         rows.emplace_back(item_ui_key(modid, mark_hidden_name(q)), "A night's end");
         rows.emplace_back(item_info_key(modid, mark_hidden_name(q)), q.target_name + "'s night is not to be watched.");
+    }
+    for (const Quest& q : quests) {
+        if (!q.is_seek()) continue;
+        for (std::size_t i = 1; i <= q.clues.size(); ++i) {
+            rows.emplace_back(item_ui_key(modid, clue_name(q, i)), "A neighbour asked");
+            rows.emplace_back(item_info_key(modid, clue_name(q, i)),
+                              q.clues[i - 1].name + " was asked about " + q.giver_name + "'s " + q.item_name + ".");
+        }
     }
     for (const QuestRun& run : quest_runs(quests)) {
         const Quest& q = *run.legs.front();
@@ -5868,6 +5989,10 @@ std::string state_lua(const std::string& g) {
     s += "\tif command == \"closed\" then facts.giverHidden = true end\n";
     s += "\tif command == \"open\" then facts.giverHidden = false end\n";
     s += "\tif command == \"named\" then facts.accepted = true; facts.named = true end\n";
+    // A seek's clue asked at a holder (QuestCommand's `clue`, by soul): which of them Henry
+    // has asked, for the dump's count (one flag letter z each; QuestFlagLetters).
+    s += "\tlocal clued = string.match(command, \"^clue_(.+)$\")\n";
+    s += "\tif clued ~= nil then facts.clues = facts.clues or {}; facts.clues[clued] = true end\n";
     s += "\tif command == \"letin\" then facts.letin = true end\n";
     s += "\tif command == \"keyed\" then facts.keyed = true end\n";
     s += "\tif command == \"chest\" then facts.chest = true end\n";
@@ -5890,7 +6015,8 @@ std::string state_lua(const std::string& g) {
     // been told and sent Henry on with the word; e, a find's keepsake is in Henry's pocket;
     // n, an unyielding holder has rebuffed Henry; a, the giver has named the one who can
     // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
-    // was denounced and Henry walked out with nothing; W followed by three
+    // was denounced and Henry walked out with nothing; one z per clue-holder a seek's
+    // Henry has asked; W followed by three
     // digits, a dictated letter is written, each digit a part's outcome (0 as said, 1 left
     // out, 2 softened, 3 made larger), last so the digits run to the end of the letters.
     s += "function " + g + ".QuestFlagLetters(facts)\n";
@@ -5904,7 +6030,14 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.named and \"a\" or \"\")\n";
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
     s += "\t\t.. (facts.denounced and \"d\" or \"\")\n";
+    s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".CountKeys(t)\n";
+    s += "\tlocal n = 0\n";
+    s += "\tfor _ in pairs(t or {}) do n = n + 1 end\n";
+    s += "\treturn n\n";
     s += "end\n";
     s += "\n";
     // A dictated letter's Document class for what was written: the digits spelt into the
@@ -7166,6 +7299,17 @@ std::string emit_conversation_lua(const std::string& modid,
             }
             s += ", path = { " + path + " }, thing = \"" + lua_escape(q.item_name) + "\"";
             if (!q.cue_sound.empty()) s += ", cue = \"" + lua_escape(q.cue_sound) + "\"";
+            // The clue-holders (Quest::clues): each soul and the asked token of their own
+            // class (emit.hpp clue_class), for QuestCommand's `clue` at the one Henry is
+            // talking to.
+            if (!q.clues.empty()) {
+                s += ", clues = { ";
+                for (std::size_t i = 0; i < q.clues.size(); ++i) {
+                    s += std::string(i ? ", " : "") + "{ soul = \"" + lua_escape(q.clues[i].soul) + "\", token = \"" +
+                         lua_escape(clue_class(q, i + 1)) + "\" }";
+                }
+                s += " }";
+            }
         }
         if (q.has_keepsake()) {
             // The keepsake laid at spot when the errand is taken up (LayKeepsake), and
@@ -13620,6 +13764,26 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t" + g + ".GrantHelperByName(quest)\n";
     s += "\t\t\t" + g + ".WatchArm(\"named\")\n";
     s += "\t\tend\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    // A seek's clue asked (the app's `clue`, said as the clue topic is picked at one of the
+    // holders): the token of that holder's class (quest.clues; emit.hpp clue_class) for the
+    // graph's asked<i> trigger, which closes their objective and takes their marker off.
+    // Who was asked is the soul Henry is talking to; a `clue` at anyone else (the app's
+    // data and the mod's disagree) is logged and nothing is made. No beat.
+    s += "\tif command == \"clue\" then\n";
+    s += "\t\tlocal who = \"\"\n";
+    s += "\t\tpcall(function() who = EntityUtils.GetName(" + g + ".npc) end)\n";
+    s += "\t\tlocal hit = nil\n";
+    s += "\t\tfor _, c in ipairs(quest.clues or {}) do\n";
+    s += "\t\t\tif c.soul == who then hit = c end\n";
+    s += "\t\tend\n";
+    s += "\t\tif hit == nil then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" clue at \" .. tostring(who) .. \", who holds none of its clues\")\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
+    s += "\t\tpcall(" + g + ".StateQuest, id, \"clue_\" .. who)\n";
+    s += "\t\t" + g + ".Token(quest, hit.token)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     // A dictated letter written (the app's `wrote_<digits>`, Words Must Not Fail): the store

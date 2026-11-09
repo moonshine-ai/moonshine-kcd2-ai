@@ -163,6 +163,17 @@ std::string emit_helper_dialogue(const std::string& modid, const Quest& quest);
 std::vector<std::pair<std::string, std::string>> helper_localization(const std::string& modid,
                                                                      const Quest& quest);
 
+// A seek's clue-holders (Quest::clues): one optional objective each, ask_<i> (i from 1),
+// "Ask <name> about the <animal>", marked on them from the accept until Henry has asked or
+// the animal is found. The asking is the app's: the clue topic picked at them is said with
+// `@quest <id> clue`, and the Lua makes a token of that holder's class (clue_class, the
+// pray's shape under 41 -- the letter A -- with the holder's index in the second byte) for
+// the graph's clue<i> trigger, which closes the objective (bugs.txt 9 Nov 2026).
+std::string clue_class(const Quest& quest, std::size_t index);
+std::string clue_name(const Quest& quest, std::size_t index);
+std::string clue_objective(std::size_t index);
+std::string clue_objective_text(const Quest& quest, std::size_t index);
+
 // A giver's hail as the game's own bark (notes.md 14 Oct 2026, In the Stocks: Benesh's
 // words over his head, not on the dialogue's caption). q_<id>_hail.xml is a one-line
 // `ingame monolog` dialogue on the giver -- the shape ambient-design/plan.md section 1.1

@@ -244,6 +244,7 @@ CREATE TABLE npc_knowledge (
     text TEXT NOT NULL,
     after_quest TEXT,
     after_how TEXT,
+    clue_quest TEXT,
     PRIMARY KEY (soul_name, topic_key)
 );
 

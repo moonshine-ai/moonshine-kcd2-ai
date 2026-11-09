@@ -358,13 +358,31 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
         const QuestFacts fallback = known ? *known : standing.facts_of(item.after_quest);
         return fallback.done && how_matches(fallback.how, item.after_how);
     };
+    // A topic that is a seek's clue (Knowledge::clue_quest) while that errand is open in the
+    // save -- taken up, not yet done -- is Henry's to ask whatever the trust tag says: the
+    // errand is his reason, and the mod has their marker on the map for it (Plump as a
+    // Friar's Sibyl, friendly, withheld at a first meeting; bugs.txt 9 Nov 2026). Its row
+    // goes to the front of the list, where the errand puts it, and carries the quest so the
+    // pick can tell the mod.
+    const auto live_clue = [&](const Knowledge& item) {
+        if (item.clue_quest.empty()) return false;
+        const QuestFacts* known = nullptr;
+        for (const auto& [q, f] : every) {
+            if (q->id == item.clue_quest) known = f;
+        }
+        const QuestFacts clue = known ? *known : standing.facts_of(item.clue_quest);
+        return clue.accepted && !clue.done;
+    };
+    std::size_t clues = 0;
     for (const Knowledge& item : knowledge) {
-        if (item.text.empty() || stale(item) || !knows_yet(item)) continue;
-        if (!trust_allows(tier, item.trust)) {
+        if (item.text.empty() || stale(item)) continue;
+        const bool clue = live_clue(item);
+        if (!clue && !knows_yet(item)) continue;
+        if (!clue && !trust_allows(tier, item.trust)) {
             out.withheld = true;
             continue;
         }
-        Topic topic{item.key, item.label, item.text, topic_person(item.label, people)};
+        Topic topic{item.key, item.label, item.text, topic_person(item.label, people), clue ? item.clue_quest : ""};
         // A topic about somebody the circle does not list is still about a name, and the
         // name has to be heard for the row to open, so the lines are read for it too.
         if (topic.about.rfind("name:", 0) == 0) {
@@ -376,7 +394,11 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
                 out.people.push_back({topic.about, first});
             }
         }
-        out.topics.push_back(std::move(topic));
+        if (clue) {
+            out.topics.insert(out.topics.begin() + static_cast<std::ptrdiff_t>(clues++), std::move(topic));
+        } else {
+            out.topics.push_back(std::move(topic));
+        }
     }
     // A remark's answer was written with the favour where the deal left it too, and one
     // that speaks of the other party or the thing is dropped the same way once it has

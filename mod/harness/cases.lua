@@ -3270,6 +3270,47 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     check(M.QuestFlagLetters(M.state.quests[id]) == "naiq", "the facts letters read naiq")
 end)
 
+case("Clues: a seek's clue asked at a holder makes that holder's own token, and only at a holder", function(E, M, check)
+    -- A seek whose giver cannot say where (Plump as a Friar): the neighbours who can each
+    -- have an objective of their own in the graph, closed by a token of their own class
+    -- when the app says the clue was picked at them (bugs.txt 9 Nov 2026).
+    local id, q
+    for cid, cq in pairs(M.quests) do
+        if cq.kind == "seek" and cq.clues ~= nil and (id == nil or cid < id) then id, q = cid, cq end
+    end
+    check(q ~= nil, "a seek with clue-holders")
+    if q == nil then return end
+    check(#q.clues >= 2, "more than one holder, " .. #q.clues)
+    local tokens = {}
+    for _, c in ipairs(q.clues) do
+        check(c.soul ~= "" and c.token ~= "" and not tokens[c.token], "each holder a soul and a class of their own")
+        tokens[c.token] = true
+    end
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    -- At the giver: she holds no clue, nothing is made.
+    M.QuestCommand(id, "clue")
+    check(E.find("clue at " .. q.giver .. ", who holds none of its clues"), "a clue at the giver is refused")
+    for _, c in ipairs(q.clues) do check(M.Count(player, c.token) == 0, "no token of " .. c.soul) end
+    -- At the second holder: her token alone, the store's z.
+    local her = q.clues[2]
+    M.npc = E.soul(her.soul)
+    M.QuestCommand(id, "clue")
+    check(M.Count(player, her.token) == 1, "her asked token in Henry's pocket")
+    check(M.Count(player, q.clues[1].token) == 0, "and not the first holder's")
+    local f = M.state.quests[id]
+    check(f.clues ~= nil and f.clues[her.soul] == true, "asked, in the store, by soul")
+    check(M.QuestFlagLetters(f) == "z", "the letters read z, got " .. M.QuestFlagLetters(f))
+    E.advance(2000)
+    check(M.Count(player, her.token) == 0, "the token gone a moment later")
+    -- Asked again: the store counts her once.
+    M.QuestCommand(id, "clue")
+    check(M.QuestFlagLetters(f) == "z", "still one z")
+    M.npc = E.soul(q.clues[1].soul)
+    M.QuestCommand(id, "clue")
+    check(M.Count(player, q.clues[1].token) == 1 and M.QuestFlagLetters(f) == "zz", "the first holder's token, two z")
+end)
+
 case("Chest: spawned once when Henry comes near with the errand on, locked and keyed, the chalice inside; taking it is the stolen ending", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.chest ~= nil and q.chestLock ~= nil, "In the Stocks keeps its thing in a chest")

@@ -1162,18 +1162,24 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
         // roughly the order they matter to the soul: the work first, the dead last.
         // A topic that waits on a favour's ending carries the quest and the hows (the
         // after_quest / after_how columns, 22 Oct 2026); a database from before them has
-        // every topic theirs from the start, as it did then.
+        // every topic theirs from the start, as it did then. A topic that is a seek's clue
+        // names the seek (clue_quest, 9 Nov 2026); a database from before that column has
+        // no clues, and the topics open on trust alone.
         if (sqlite3_prepare_v2(db_, "SELECT topic_key, label, trust, text, COALESCE(after_quest, ''), "
-                                    "COALESCE(after_how, '') FROM npc_knowledge "
+                                    "COALESCE(after_how, ''), COALESCE(clue_quest, '') FROM npc_knowledge "
                                     "WHERE soul_name = ? ORDER BY rowid",
                                -1, &row, nullptr) == SQLITE_OK ||
-            sqlite3_prepare_v2(db_, "SELECT topic_key, label, trust, text, '', '' FROM npc_knowledge "
+            sqlite3_prepare_v2(db_, "SELECT topic_key, label, trust, text, COALESCE(after_quest, ''), "
+                                    "COALESCE(after_how, ''), '' FROM npc_knowledge "
+                                    "WHERE soul_name = ? ORDER BY rowid",
+                               -1, &row, nullptr) == SQLITE_OK ||
+            sqlite3_prepare_v2(db_, "SELECT topic_key, label, trust, text, '', '', '' FROM npc_knowledge "
                                     "WHERE soul_name = ? ORDER BY rowid",
                                -1, &row, nullptr) == SQLITE_OK) {
             bind(row, soul);
             while (sqlite3_step(row) == SQLITE_ROW) {
                 found.knowledge.push_back({text_at(row, 0), text_at(row, 1), text_at(row, 2), text_at(row, 3),
-                                           text_at(row, 4), text_at(row, 5)});
+                                           text_at(row, 4), text_at(row, 5), text_at(row, 6)});
             }
             sqlite3_finalize(row);
         }

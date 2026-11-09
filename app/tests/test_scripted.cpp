@@ -87,6 +87,41 @@ TEST_CASE("the giver's help is the offer while it is offerable, with the accepti
     CHECK(plan.withheld);
 }
 
+TEST_CASE("a seek's clue topic opens whatever the trust while the errand is open, first in the list, and carries the quest") {
+    // Sibyl's "Mabel's missing cat" is friendly, so a stranger never sees it -- until he is
+    // on Mabel's errand, when it is the row the marker on Sibyl promised (bugs.txt 9 Nov 2026).
+    std::vector<Knowledge> knowledge = kKnowledge;
+    knowledge.push_back({"the_cat", "Mabel's missing cat", "friendly",
+                         "That cat? Fat as a friar. I saw her by the hen yards.", "", "", "497123931ded"});
+    Standing stranger;
+    stranger.met = 1;
+    const Scripted before = plan_scripted("", knowledge, kHelp, {}, {}, stranger);
+    REQUIRE(before.topics.size() == 2);
+    CHECK(before.topics[0].key == "daily_work");
+    CHECK(before.withheld);
+    // The errand taken up: the clue is offered, ahead of the rest, with the quest on it.
+    Standing on_errand = stranger;
+    on_errand.quests["497123931ded"] = "accepted";
+    const Scripted during = plan_scripted("", knowledge, kHelp, {}, {}, on_errand);
+    REQUIRE(during.topics.size() == 3);
+    CHECK(during.topics[0].key == "the_cat");
+    CHECK(during.topics[0].clue_quest == "497123931ded");
+    CHECK(during.topics[1].key == "daily_work");
+    CHECK(during.topics[1].clue_quest.empty());
+    // The errand done: back to the trust rule, with no quest on the row.
+    Standing after = stranger;
+    after.quests["497123931ded"] = "done";
+    const Scripted done = plan_scripted("", knowledge, kHelp, {}, {}, after);
+    REQUIRE(done.topics.size() == 2);
+    CHECK(done.withheld);
+    Standing friendly = after;
+    friendly.met = 2;
+    const Scripted open = plan_scripted("", knowledge, kHelp, {}, {}, friendly);
+    REQUIRE(open.topics.size() == 4);
+    CHECK(open.topics[3].key == "the_cat");
+    CHECK(open.topics[3].clue_quest.empty());
+}
+
 TEST_CASE("a letter's accepting row is to carry it, not to fetch it back") {
     Quest letter = bartels_axe();
     letter.id = "1cc118427a63";

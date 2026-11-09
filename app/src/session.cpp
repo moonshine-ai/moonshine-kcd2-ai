@@ -1719,6 +1719,10 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.reply = topic.text;
             out.what = "what they know of " + topic.label;
             out.spent.emplace_back(key);
+            // A seek's clue asked (Topic::clue_quest): the mod closes this holder's
+            // objective and takes their marker off. Another soul's errand, so not the
+            // soul's own `@quest` (quest_directive), but the same shape.
+            if (!topic.clue_quest.empty()) out.directives.push_back("@quest " + topic.clue_quest + " clue");
             break;
         }
     } else if (const std::string_view remark_key = say_key(intent); !remark_key.empty()) {

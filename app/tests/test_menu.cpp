@@ -1055,6 +1055,52 @@ TEST_CASE("the errand paid off on the opening line is not offered to be reminded
     for (const MenuOption& row : f.offered) CHECK((row.intent != "remind" && row.intent != "help"));
 }
 
+TEST_CASE("a seek's clue topic picked owes the mod @quest <id> clue, and its row leads the list") {
+    // Sibyl on Mabel's errand (bugs.txt 9 Nov 2026): the friendly cat topic a stranger
+    // would never see is the first topic offered, and picking it tells the mod to close
+    // her objective. Another soul's errand, so the directive is not the persona's own.
+    // (The label names nobody here; a row about Mabel would wait on the save's knowing her
+    // as any row about a person does, which is the case before this one.)
+    Fixture f(false);
+    Standing standing = first_meeting();
+    standing.quests["497123931ded"] = "accepted";
+    f.session.set_persona_source(
+        [standing](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+            Persona persona{"Sibyl", "You are Sibyl, a widow in Kuttenberg.", "What is it?"};
+            const std::vector<Knowledge> knowledge = {
+                {"street_shadows", "the street at night", "open", "Nothing good walks it after dark."},
+                {"the_cat", "the missing cat", "friendly", "Fat as a friar. I saw her by the hen yards.",
+                 "", "", "497123931ded"},
+            };
+            const std::vector<HelpReply> help = {{"I've nothing for you.", ""}};
+            persona.scripted = plan_scripted("Sibyl. I keep to myself.", knowledge, help, {}, {}, standing, {}, {},
+                                             {}, "");
+            return persona;
+        });
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.open(tailer);
+    f.play_all(tailer);
+    const std::size_t calls = f.llm.calls.size();
+    f.game.picked(2, "ask", std::string(kFirstRoundSeeds[1]));
+    f.drain(tailer);
+    f.play_all(tailer);
+    REQUIRE(f.game.menu().size() >= 2);
+    CHECK(f.game.menu()[0] == "Tell me about the missing cat.");
+    const std::size_t at = f.offered.size() - f.game.menu().size();
+    CHECK(f.offered[at].intent == "ask:the_cat");
+
+    f.game.picked(1, "ask:the_cat", "Tell me about the missing cat.");
+    f.drain(tailer);
+    CHECK(f.said("picked as ask:the_cat, answered with what they know of the missing cat as written"));
+    CHECK(f.llm.calls.size() == calls);
+    f.play_all(tailer);
+    bool owed = false;
+    for (const std::string& directive : f.game.directives()) owed = owed || directive == "@quest 497123931ded clue";
+    CHECK(owed);
+    CHECK(f.session.history().back().content == "Fat as a friar. I saw her by the hen yards.");
+}
+
 TEST_CASE("at a beggar, the row that gives is laid for what Henry carries, and each gift owes the mod @alms") {
     // notes.md (6 Oct 2026): beggars always accept food, clothing and groschen. The begin
     // line says what he could spare (alms=mf: a purse and food, no spare garment); the row

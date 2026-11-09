@@ -40,6 +40,12 @@ struct Knowledge {
     std::string text;
     std::string after_quest;
     std::string after_how;
+    // The seek this topic is a clue for (npc_knowledge `clue_quest`; Plump as a Friar's
+    // neighbours, bugs.txt 9 Nov 2026): while that errand is open in the save, the topic is
+    // offered whatever the trust tag says -- the errand is Henry's reason to ask, and the
+    // mod has a marker on them for it -- and picking it owes the mod `@quest <id> clue`,
+    // which closes their objective. Empty for a topic that is nobody's clue.
+    std::string clue_quest;
 };
 
 // One way of answering `help` when there is no favour of their own to offer, from
@@ -138,6 +144,9 @@ struct Topic {
     // in particular (their work, the road). A row about a person is offered only once Henry
     // has met them or heard them named (notes.md 7 Oct 2026; Session::knows_of).
     std::string about;
+    // Knowledge::clue_quest, carried when that errand is open: the row's pick owes the mod
+    // `@quest <clue_quest> clue`. Empty otherwise.
+    std::string clue_quest;
 };
 // Whom a topic's label is about: the first word of it that is the given name of one of
 // `people` ("Alice's panic", "Leonard the landlord", "Young Ludwig" -- the people's names
