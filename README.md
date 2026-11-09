@@ -363,7 +363,14 @@ It does check it, though: `scripts/build_mod.sh` leaves an `inputs.sha256` besid
 whose files do not match the checkout being released (0.9.101 shipped the previous day's
 mod that way, and the fix it was cut for never reached the tester). After a change under
 `mod/`, run `scripts/deploy_wl1.sh` (or `scripts/build_mod.sh release/mod/moonshine_names`
-and copy it over) before `scripts/release.sh`.
+and copy it over) before `scripts/release.sh`. `scripts/deploy_wl1.sh` is also the
+development deploy: it installs the working tree over the laptop's `%LOCALAPPDATA%\Moonshine`
+as `<VERSION>.<n>`, so the desktop shortcut (and `scripts/start-moonshine-on-wl1.sh`) runs
+what was just built. `--prebuilt-mod` sends the folder already under
+`release/mod/moonshine_names` instead of building one -- moonshine-voice-characters'
+`scripts/wl1_deploy.sh` builds it there with the scheduler override (made on the laptop
+against its own `level.pak`, which `build_mod.sh` cannot do from a machine with no game),
+sends the data drop, and then runs this.
 
 The pieces run on their own too. With the release build, the drop, the models and a mod
 folder under `release\mod\moonshine_names` in place on the build machine:
