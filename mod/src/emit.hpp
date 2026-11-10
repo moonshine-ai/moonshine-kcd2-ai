@@ -575,9 +575,12 @@ constexpr int kCoughSeconds = 18;
 // path once Henry is within kSeekCallMetres of it, sitting and calling (cue_sound, every
 // kSeekCallSeconds while he is within hearing). When he is within kSeekNearMetres she goes
 // on to the next point at kSeekSpeed metres a second (galloping; the position is moved
-// each quick tick) and sits and calls again; at the last point (spot_pos) she lies down
-// and the litter is spawned round her (the kSeekKittens definitions, at kSeekKittenScale,
-// kSeekKittenSpread apart). Henry within kSeekFoundMetres of the litter is the find: the
+// each stride) and sits and calls again; at the last point (spot_pos, raised by the
+// quest's spot_lift where the floor's look is above its physics, a straw heap) she lies
+// down and the litter is spawned at her right side (the kSeekKittens definitions, at
+// kSeekKittenScale, in a row kSeekKittenGap apart along her, kSeekKittenSpread out from
+// her, each nudged by its kSeekKittenWobble so the row is a litter's and not a rank's;
+// bugs.txt 9 Nov 2026). Henry within kSeekFoundMetres of the litter is the find: the
 // store's seen, the graph's token (log_found). The family stands until the hand-in,
 // spawned again if a load swept it and he comes back.
 constexpr double kSeekCallMetres = 40.0;
@@ -591,13 +594,25 @@ constexpr double kSeekSpeed = 2.5;
 constexpr int kSeekStrideMs = 50;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;
+constexpr double kSeekKittenGap = 0.15;
+// Each kitten's nudge off its place in the row: along her (m), out from her (m), and the
+// turn of its facing off square-on to her (degrees). Fixed, not rolled, so the litter
+// lies the same after a load as before it.
+struct KittenWobble { double along, out, turn; };
+constexpr KittenWobble kSeekKittenWobble[] = {
+    {0.02, -0.03, -18}, {-0.03, 0.04, 25}, {0.01, 0.02, -8}, {0.03, -0.04, 15}, {-0.02, 0.01, -28},
+};
 constexpr const char* kSeekCat = "Objects/characters/animals/cat/cat.cdf";
+// The litter: the four coats, and a second grey tabby, the mother's own.
 constexpr const char* kSeekKittens[] = {
     "Objects/characters/animals/cat/moonshine_kitten_tabby.cdf",
     "Objects/characters/animals/cat/moonshine_kitten_ginger.cdf",
     "Objects/characters/animals/cat/moonshine_kitten_white.cdf",
     "Objects/characters/animals/cat/moonshine_kitten_black.cdf",
+    "Objects/characters/animals/cat/moonshine_kitten_tabby.cdf",
 };
+static_assert(sizeof kSeekKittenWobble / sizeof kSeekKittenWobble[0] == sizeof kSeekKittens / sizeof kSeekKittens[0],
+              "a wobble for each kitten");
 // A find's keepsake (npcdb.hpp keepsake_class): laid at accept, and if that failed (the
 // spot too far out to place at, a load that wiped it) laid again from the watch once Henry
 // is within kKeepsakeMetres of the spot without it.

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -7483,6 +7484,7 @@ std::string emit_conversation_lua(const std::string& modid,
             }
             s += ", path = { " + path + " }, thing = \"" + lua_escape(q.item_name) + "\"";
             if (!q.cue_sound.empty()) s += ", cue = \"" + lua_escape(q.cue_sound) + "\"";
+            if (!q.spot_lift.empty()) s += ", lift = " + health_text(std::atof(q.spot_lift.c_str()));
             // The clue-holders (Quest::clues): each soul and the asked token of their own
             // class (emit.hpp clue_class), for QuestCommand's `clue` at the one Henry is
             // talking to.
@@ -13591,6 +13593,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekStrideMs = " + std::to_string(kSeekStrideMs) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
+    s += g + ".seekKittenGap = " + health_text(kSeekKittenGap) + "\n";
+    s += g + ".seekKittenWobble = {";
+    for (size_t i = 0; i < sizeof kSeekKittenWobble / sizeof kSeekKittenWobble[0]; ++i) {
+        const KittenWobble& w = kSeekKittenWobble[i];
+        s += std::string(i ? ", " : " ") + "{ along = " + health_text(w.along) + ", out = " + health_text(w.out) +
+             ", turn = " + health_text(w.turn) + " }";
+    }
+    s += " }\n";
     s += g + ".seekCat = \"" + std::string(kSeekCat) + "\"\n";
     s += g + ".seekKittens = {";
     for (std::size_t i = 0; i < sizeof(kSeekKittens) / sizeof(kSeekKittens[0]); ++i) {
@@ -13632,19 +13642,27 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn { x = dx / len, y = dy / len }\n";
     s += "end\n";
     s += "\n";
-    // The litter round the point: the kitten definitions in turn, lying, each a little way
-    // off the point on its own side, with the mother's position left for her.
-    s += "function " + g + ".SeekLitter(id, at)\n";
+    // The litter at her right side: the kitten definitions in turn, lying, in a row along
+    // her (seekKittenGap apart, centred on her) seekKittenSpread out from her, each nudged
+    // by its own wobble and turned a little off facing her, so it reads as a litter and
+    // not a rank (bugs.txt 9 Nov 2026). `face` is the way she faces; the row runs with it
+    // and her right is to the right of it. The lift is the spot's.
+    s += "function " + g + ".SeekLitter(id, at, face, lift)\n";
     s += "\tlocal clips = { \"relaxed_idle_lying\", \"relaxed_idle_lying_side\", \"relaxed_idle_lying_side_var01\", \"relaxed_idle_lying\" }\n";
     s += "\tlocal out = {}\n";
     s += "\tlocal n = #" + g + ".seekKittens\n";
+    s += "\tlocal f = face or { x = 0, y = 1 }\n";
+    s += "\tlocal r = { x = f.y, y = -f.x }\n";
     s += "\tfor i, model in ipairs(" + g + ".seekKittens) do\n";
-    s += "\t\tlocal a = (i - 1) / n * 2 * math.pi + 0.6\n";
-    s += "\t\tlocal x = at.x + math.cos(a) * " + g + ".seekKittenSpread\n";
-    s += "\t\tlocal y = at.y + math.sin(a) * " + g + ".seekKittenSpread\n";
-    s += "\t\tlocal z = " + g + ".Ground(x, y, at.z)\n";
-    s += "\t\tlocal face = { x = -math.cos(a), y = -math.sin(a) }\n";
-    s += "\t\tlocal ent = " + g + ".SeekAnimal(\"mn_seek_\" .. id .. \"_kit\" .. i, model, x, y, z, face, " + g +
+    s += "\t\tlocal w = " + g + ".seekKittenWobble[i] or { along = 0, out = 0, turn = 0 }\n";
+    s += "\t\tlocal along = (i - (n + 1) / 2) * " + g + ".seekKittenGap + w.along\n";
+    s += "\t\tlocal off = " + g + ".seekKittenSpread + w.out\n";
+    s += "\t\tlocal x = at.x + f.x * along + r.x * off\n";
+    s += "\t\tlocal y = at.y + f.y * along + r.y * off\n";
+    s += "\t\tlocal z = " + g + ".Ground(x, y, at.z) + (lift or 0)\n";
+    s += "\t\tlocal t = math.rad(w.turn)\n";
+    s += "\t\tlocal kf = { x = -r.x * math.cos(t) + r.y * math.sin(t), y = -r.x * math.sin(t) - r.y * math.cos(t) }\n";
+    s += "\t\tlocal ent = " + g + ".SeekAnimal(\"mn_seek_\" .. id .. \"_kit\" .. i, model, x, y, z, kf, " + g +
          ".seekKittenScale, clips[(i - 1) % #clips + 1])\n";
     s += "\t\tif ent ~= nil then out[#out + 1] = ent end\n";
     s += "\tend\n";
@@ -13662,12 +13680,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif pp == nil then pp = m.to end\n";
     s += "\tlocal last = #S.points\n";
     s += "\tlocal z = " + g + ".Ground(m.to.x, m.to.y, m.to.z)\n";
+    s += "\tif S.leg == last then z = z + (q.lift or 0) end\n";
     s += "\tpcall(function() S.cat:SetWorldPos({ x = m.to.x, y = m.to.y, z = z }) end)\n";
     s += "\tS.moving = nil\n";
     s += "\tif S.leg == last then\n";
     s += "\t\tS.settled = true\n";
-    s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_lying\", " + g + ".SeekFace(m.to, pp))\n";
-    s += "\t\tS.kittens = " + g + ".SeekLitter(id, { x = m.to.x, y = m.to.y, z = z })\n";
+    s += "\t\tlocal face = " + g + ".SeekFace(m.to, pp)\n";
+    s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_lying\", face)\n";
+    s += "\t\tS.kittens = " + g + ".SeekLitter(id, { x = m.to.x, y = m.to.y, z = z - (q.lift or 0) }, face, q.lift)\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" settled at the spot with \" .. #S.kittens .. \" kittens\")\n";
     s += "\telse\n";
     s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_sitting\", " + g + ".SeekFace(m.to, pp))\n";
@@ -13753,11 +13773,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tlocal d = math.sqrt((pp.x - at.x) ^ 2 + (pp.y - at.y) ^ 2)\n";
     s += "\t\tif d > " + g + ".seekCallMetres then return end\n";
     s += "\t\tlocal z = " + g + ".Ground(at.x, at.y, at.z)\n";
+    s += "\t\tif S.settled then z = z + (q.lift or 0) end\n";
     s += "\t\tlocal face = " + g + ".SeekFace(at, pp)\n";
     s += "\t\tS.cat = " + g + ".SeekAnimal(\"mn_seek_\" .. id, " + g + ".seekCat, at.x, at.y, z, face, 1.0,\n";
     s += "\t\t\tS.settled and \"relaxed_idle_lying\" or \"relaxed_idle_sitting\")\n";
     s += "\t\tif S.cat == nil then return end\n";
-    s += "\t\tif S.settled then S.kittens = " + g + ".SeekLitter(id, { x = at.x, y = at.y, z = z }) end\n";
+    s += "\t\tif S.settled then S.kittens = " + g + ".SeekLitter(id, { x = at.x, y = at.y, z = z - (q.lift or 0) }, face, q.lift) end\n";
     s += "\t\tS.calledAt = now - " + g + ".seekCallSeconds + 1\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" made at point \" .. S.leg .. \" of \" .. last\n";
     s += "\t\t\t.. \" \" .. string.format(\"%.1f,%.1f,%.1f\", at.x, at.y, z) .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\"\n";

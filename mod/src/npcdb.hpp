@@ -520,9 +520,13 @@ struct Quest {
     // an interval, moves it on to the next point as he comes close, and at `spot_pos` the
     // animal settles with its litter; Henry standing over them is the find (the travel's
     // `seen` in the store, the token, and `log_found` as the objective's update). Henry's
-    // three rows at the giver's are the travel's (tell, lie, quiet).
+    // three rows at the giver's are the travel's (tell, lie, quiet). `spot_lift` (metres,
+    // "0.3") raises the family above the floor the physics gives at the spot, where the
+    // floor's look is higher -- a straw heap's render mesh sits above what Henry stands
+    // on, and a lying cat set at the physics was inside it (bugs.txt 9 Nov 2026).
     std::string path;
     std::string log_found;
+    std::string spot_lift;
     // A mind (kind "mind"): look in on the target `count` times, hours of game time apart.
     // The target's menu is his own: Henry's `check` and one reply per visit (the sequences
     // are gated on the visit count and whether the next is due, dialogue globals the Lua

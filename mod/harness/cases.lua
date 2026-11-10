@@ -4303,9 +4303,42 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     local kit = System.GetEntityByName(name .. "_kit1")
     check(kit ~= nil and kit.spec.properties.object_Model == M.seekKittens[1] and kit.spec.scale.x == M.seekKittenScale,
           "a kitten of the mod's own, small")
-    check(kit ~= nil and math.sqrt((kit.pos.x - q.spot[1]) ^ 2 + (kit.pos.y - q.spot[2]) ^ 2) < M.seekKittenSpread + 0.01, "beside her")
-    check(math.abs(cat.pos.z - E.floorAt) < 0.01, "she lies on the straw floor the ray met, not under it")
-    check(kit ~= nil and math.abs(kit.pos.z - E.floorAt) < 0.01, "and so does the kitten")
+    -- The litter at her right side (bugs.txt 9 Nov 2026): five, in a row along the way she
+    -- faces, out to her right, each a little off its place and turned a little off facing
+    -- her, so that no two lie the same.
+    check(#M.seekKittens == 5, "five kittens")
+    local f = cat.dir
+    local r = { x = f.y, y = -f.x }
+    local outs, alongs, turns = {}, {}, {}
+    for i = 1, #M.seekKittens do
+        local k = System.GetEntityByName(name .. "_kit" .. i)
+        check(k ~= nil, "kitten " .. i .. " made")
+        if k ~= nil then
+            local dx, dy = k.pos.x - q.spot[1], k.pos.y - q.spot[2]
+            local out, along = dx * r.x + dy * r.y, dx * f.x + dy * f.y
+            check(out > M.seekKittenSpread - 0.05 and out < M.seekKittenSpread + 0.05, "kitten " .. i .. " at her right side, " .. string.format("%.2f", out))
+            check(math.abs(along) < 0.4, "kitten " .. i .. " along her, " .. string.format("%.2f", along))
+            check(k.spec.orientation.x * -r.x + k.spec.orientation.y * -r.y > 0.85, "kitten " .. i .. " facing her, near enough")
+            outs[string.format("%.3f", out)] = true
+            alongs[#alongs + 1] = along
+            turns[string.format("%.3f", k.spec.orientation.x)] = true
+        end
+    end
+    table.sort(alongs)
+    local ordered = true
+    for i = 2, #alongs do if alongs[i] - alongs[i - 1] < M.seekKittenGap - 0.06 then ordered = false end end
+    check(ordered, "in a row, none on top of another")
+    local n = 0
+    for _ in pairs(outs) do n = n + 1 end
+    check(n == #M.seekKittens, "no two the same way out from her")
+    n = 0
+    for _ in pairs(turns) do n = n + 1 end
+    check(n == #M.seekKittens, "no two turned the same")
+    -- Raised by the spot's lift above the floor the ray met: the straw's look stands above
+    -- its physics, and at the physics they were inside it.
+    check(q.lift ~= nil and q.lift > 0, "the spot has a lift")
+    check(math.abs(cat.pos.z - (E.floorAt + (q.lift or 0))) < 0.01, "she lies the lift above the floor the ray met")
+    check(kit ~= nil and math.abs(kit.pos.z - (E.floorAt + (q.lift or 0))) < 0.01, "and so does the kitten")
     E.floorAt = nil
     check(M.state.quests[id].seen ~= true, "not found until Henry stands over them")
     -- Henry stands over them: seen in the store (flag s), the token for the graph, once.
