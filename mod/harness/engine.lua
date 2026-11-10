@@ -661,6 +661,21 @@ function Engine.arrive()
     if SinglePlayer and SinglePlayer.Server and SinglePlayer.Server.OnStartLevel then
         SinglePlayer.Server.OnStartLevel(SinglePlayer.Server)
     end
+    Engine.allOn()
+end
+
+-- The shipped mod has most quests off in a new game (a quest's `off`, Moonshine.QuestOn),
+-- and nearly every case plays one: the store's switches put them all on, as /enable all
+-- would, unless a case asks for the shipped defaults (Engine.shipped, or the host's
+-- --shipped). Written straight into the store rather than through QuestSwitch, which logs
+-- and wakes the watch, so nothing a case reads is moved by it.
+function Engine.allOn()
+    if Engine.shipped or Moonshine == nil or Moonshine.quests == nil or Moonshine.state == nil then return end
+    local set = Moonshine.state.switch
+    if type(set) ~= "table" then set = {}; Moonshine.state.switch = set end
+    for id, q in pairs(Moonshine.quests) do
+        if q.off then set[id] = true end
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -894,6 +909,7 @@ function Engine.boot(modPath, opts)
     Engine.root = opts.root
     Engine.user = opts.user
     Engine.echo = opts.echo == true
+    Engine.shipped = opts.shipped == true
     if opts.log then
         Engine.logPath = opts.log
         Engine.logFile = assert(io.open(opts.log, opts.append and "ab" or "wb"))
@@ -989,6 +1005,8 @@ function Engine.reset()
     Moonshine.watchTicked = nil
     Moonshine.watchDoubt = false
     Moonshine.hailed = {}
+    Moonshine.giverPending = {}
+    Moonshine.giverSwitches = 0
     Moonshine.entered = {}
     Moonshine.lookAt = nil
     Moonshine.lookWhen = 0

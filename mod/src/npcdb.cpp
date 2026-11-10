@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -1099,6 +1100,78 @@ std::vector<std::string> Quest::resolutions() const {
         if (way.possible && !way.log->empty()) out.emplace_back(way.how);
     }
     return out;
+}
+
+namespace {
+
+// The stories a new game has on, by the title of any of their scenes (the first is as good
+// as the last: the whole story comes with it). Everything else the database deals is off
+// until the player asks for it, which keeps the mod's own errands to the ones that have been
+// played through and are worth the trouble.
+const char* const kQuestsOnByDefault[] = {
+    "Forget Me Not",
+    "Plump as a Friar",
+    "In the Stocks",
+    "Holy Jest",
+    "Words Must Not Fail",
+    "A Beggar's Heart",
+};
+
+std::string lowered(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+}  // namespace
+
+std::vector<std::size_t> story_of(const std::vector<Quest>& quests, std::size_t at) {
+    // Links both ways: a scene to the one before it, and a chain's link to the one under it.
+    std::vector<std::vector<std::size_t>> next(quests.size());
+    auto join = [&](std::size_t a, std::size_t b) {
+        next[a].push_back(b);
+        next[b].push_back(a);
+    };
+    for (std::size_t i = 0; i < quests.size(); ++i) {
+        for (std::size_t j = 0; j < quests.size(); ++j) {
+            if (i == j) continue;
+            if (!quests[i].after_quest_id.empty() && quests[i].after_quest_id == quests[j].id) join(i, j);
+            if (!quests[i].chain_id.empty() && quests[i].chain_id == quests[j].chain_id &&
+                quests[i].chain_order == quests[j].chain_order + 1) {
+                join(i, j);
+            }
+        }
+    }
+    std::vector<bool> seen(quests.size(), false);
+    std::vector<std::size_t> out{at};
+    seen[at] = true;
+    for (std::size_t k = 0; k < out.size(); ++k) {
+        for (std::size_t n : next[out[k]]) {
+            if (seen[n]) continue;
+            seen[n] = true;
+            out.push_back(n);
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+void apply_quest_defaults(std::vector<Quest>& quests, bool all_on) {
+    for (Quest& q : quests) q.off_by_default = !all_on;
+    if (all_on) return;
+    for (const char* title : kQuestsOnByDefault) {
+        bool found = false;
+        for (std::size_t i = 0; i < quests.size(); ++i) {
+            if (lowered(quests[i].name) != lowered(title)) continue;
+            found = true;
+            for (std::size_t j : story_of(quests, i)) quests[j].off_by_default = false;
+        }
+        // Said, not fatal: a database cut down to a few souls has not lost the quest. But a
+        // renamed one would otherwise turn its story off without a word.
+        if (!found && !quests.empty()) {
+            std::fprintf(stderr, "kcd2modgen: warning: \"%s\" is on by default and no quest read is called that\n",
+                         title);
+        }
+    }
 }
 
 }  // namespace kcd2

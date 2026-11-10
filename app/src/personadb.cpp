@@ -129,6 +129,8 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                     f.accepted = facts.accepted;
                     f.handed = facts.handed;
                     f.done = facts.done;
+                    // Taken up, so not withheld as an untouched quest that is off.
+                    f.voided = false;
                 }
                 if (facts.have >= 0) f.have = facts.have;
                 if (facts.broker) f.broker = true;
@@ -177,7 +179,9 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 before_how = all[j].how;
             }
             all[i].locked = !before_done;
-            all[i].voided = before_done && !how_matches(before_how, q.after_how);
+            // Voided already when the quest is off (Standing::facts_of); a scene the story went
+            // past is voided as well.
+            all[i].voided = all[i].voided || (before_done && !how_matches(before_how, q.after_how));
         }
         const std::size_t at = pick_quest(quests, all);
         chosen = quests[at];

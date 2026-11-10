@@ -18,6 +18,7 @@
 #define MOONSHINE_SCRIPTED_H
 
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -75,6 +76,10 @@ struct Standing {
     // Game hours since each quest was taken up, by id, as the dump carries it after a
     // tilde; a quest not here has no accept time on record.
     std::map<std::string, double> ages;
+    // The quests that are off, by id (the dump's `off=`; the player's /disable, or the mod's
+    // default for the many it ships off): their givers never have the favour to ask. One
+    // already taken up is not off in this sense, and goes on.
+    std::set<std::string> off;
     // How many of each quest's item the player carries, by id, off the begin line's
     // `holding=`; a quest not here was not counted.
     std::map<std::string, int> holding;
@@ -84,6 +89,9 @@ struct Standing {
     bool first_meeting() const { return met <= 1; }
     // Untouched, which is all a referral by id can know.
     bool offerable(std::string_view quest_id) const;
+    // Whether the quest is off and untouched: the favour is withheld, as a scene the story
+    // went past is (QuestFacts::voided).
+    bool withheld(std::string_view quest_id) const;
     // The facts of one quest as the save has them: stage, flags and count. `have` is
     // `holding`'s if counted, else `fallback` -- the begin line's `have=`, which counts the
     // soul's first quest, for a mod that sends nothing more.

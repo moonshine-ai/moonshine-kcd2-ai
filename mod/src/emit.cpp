@@ -5875,7 +5875,9 @@ std::string state_lua(const std::string& g) {
     // hearing, by the token the app sends on @heard (a soul id, or name:<name> for somebody
     // not in the game). The app reads it back off the dump with the souls met, and offers a
     // question about a person only once he could know of them (notes.md 7 Oct 2026).
-    s += "\treturn { version = " + g + ".stateVersion, souls = {}, quests = {}, known = {} }\n";
+    // switch: the quests the player has turned on or off at the game's console, by id,
+    // over what the generator shipped (QuestOn). Only the ones that differ from it.
+    s += "\treturn { version = " + g + ".stateVersion, souls = {}, quests = {}, known = {}, switch = {} }\n";
     s += "end\n";
     s += g + ".state = " + g + ".FreshState()\n";
     s += "\n";
@@ -6013,6 +6015,7 @@ std::string state_lua(const std::string& g) {
     s += "\tif type(got.souls) ~= \"table\" then got.souls = {} end\n";
     s += "\tif type(got.quests) ~= \"table\" then got.quests = {} end\n";
     s += "\tif type(got.known) ~= \"table\" then got.known = {} end\n";
+    s += "\tif type(got.switch) ~= \"table\" then got.switch = {} end\n";
     s += "\t" + g + ".state = got\n";
     s += "\t" + g + ".Log(\"BRIDGE state loaded via \" .. tostring(via) .. \" version=\" .. got.version ..\n";
     s += "\t\t\" souls=\" .. " + g + ".Tally(got.souls) .. \" bytes=\" .. string.format(\"%d\", " + g + ".Bytes(got)) ..\n";
@@ -6024,6 +6027,7 @@ std::string state_lua(const std::string& g) {
     // The holder menus' globals follow the store, not the save's own copy of them.
     s += "\t" + g + ".flagsSynced = false\n";
     s += "\tpcall(" + g + ".QuestFlags)\n";
+    s += "\tpcall(" + g + ".SwitchesLine)\n";
     // A find's placed keepsake may not survive the load (behaviors.md §6.1a). `laid`
     // would otherwise stay true and WatchKeepsake would never try again. Cleared here;
     // the watch re-lays when Henry is near and the heart is not in his pocket.
@@ -6358,11 +6362,72 @@ std::string state_lua(const std::string& g) {
     s += "\treturn can\n";
     s += "end\n";
     s += "\n";
+    // Whether a quest is on: what the player has said at the game's console (/enable,
+    // /disable; the store's `switch`), else what the generator shipped (`off`, the quest's
+    // default in a new game). An off quest is not offered by its giver (QuestOfferable here,
+    // and the app reads the dump's `off=` to the same end), is not called over for (WatchHail),
+    // dresses nobody (WatchDress) and has no marker on its giver (WatchGiver). One already
+    // taken up is not undone by it: an errand under way goes on.
+    s += "function " + g + ".QuestOn(id)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tif q == nil then return false end\n";
+    s += "\tlocal set = (" + g + ".state or {}).switch\n";
+    s += "\tif type(set) == \"table\" and set[id] ~= nil then return set[id] == true end\n";
+    s += "\treturn not q.off\n";
+    s += "end\n";
+    s += "\n";
+    // The ids that are off, sorted, for the dump and the console's line.
+    s += "function " + g + ".QuestsOff()\n";
+    s += "\tlocal out = {}\n";
+    s += "\tfor id in pairs(" + g + ".quests) do\n";
+    s += "\t\tif not " + g + ".QuestOn(id) then out[#out + 1] = id end\n";
+    s += "\tend\n";
+    s += "\ttable.sort(out)\n";
+    s += "\treturn out\n";
+    s += "end\n";
+    s += "\n";
+    // The switches to the app, which keeps them for /quests ("BRIDGE switches off=a,b"): said
+    // when a save loads, whenever one is thrown, and before every command typed at the game's
+    // console. Empty after `off=` when every quest is on.
+    s += "function " + g + ".SwitchesLine()\n";
+    s += "\t" + g + ".Log(\"BRIDGE switches off=\" .. table.concat(" + g + ".QuestsOff(), \",\"))\n";
+    s += "end\n";
+    s += "\n";
+    // Turn quests on or off: `ids` a list of quest ids, `on` true or false. Kept in the store
+    // only where it differs from the shipped default, so the save stays small and a quest the
+    // player put back to its default follows the generator again. Unknown ids are skipped.
+    // Returns how many changed, for the console's answer.
+    s += "function " + g + ".QuestSwitch(ids, on)\n";
+    s += "\tif type(" + g + ".state.switch) ~= \"table\" then " + g + ".state.switch = {} end\n";
+    s += "\tlocal changed = 0\n";
+    s += "\tfor _, id in ipairs(ids or {}) do\n";
+    s += "\t\tlocal q = " + g + ".quests[id]\n";
+    s += "\t\tif q ~= nil then\n";
+    s += "\t\t\tif " + g + ".QuestOn(id) ~= (on == true) then changed = changed + 1 end\n";
+    s += "\t\t\tlocal default = not q.off\n";
+    s += "\t\t\tif (on == true) == default then " + g + ".state.switch[id] = nil\n";
+    s += "\t\t\telse " + g + ".state.switch[id] = (on == true) end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tpcall(" + g + ".SwitchesLine)\n";
+    // The marker gates and the hails are the watch's; wake it for the change.
+    s += "\tpcall(" + g + ".WatchArm, \"switch\")\n";
+    s += "\treturn changed\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".QuestSwitchAll(on)\n";
+    s += "\tlocal ids = {}\n";
+    s += "\tfor id in pairs(" + g + ".quests) do ids[#ids + 1] = id end\n";
+    s += "\ttable.sort(ids)\n";
+    s += "\treturn " + g + ".QuestSwitch(ids, on)\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".QuestOfferable(id)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tif q == nil then return false end\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif f.accepted or f.done then return false end\n";
+    s += "\tif not " + g + ".QuestOn(id) then return false end\n";
     s += "\tif q.kind == \"pray\" and not " + g + ".CanPray() then return false end\n";
     s += "\tif q.chain ~= nil and q.chain ~= \"\" and q.order > 1 then\n";
     s += "\t\tfor other, oq in pairs(" + g + ".quests) do\n";
@@ -6472,6 +6537,10 @@ std::string state_lua(const std::string& g) {
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tfacts = facts .. all\n";
+    // The quests that are off (QuestOn), for the app to withhold from the givers' offers;
+    // absent when every quest is on, and from a mod from before the switches.
+    s += "\tlocal off = " + g + ".QuestsOff()\n";
+    s += "\tif #off > 0 then facts = facts .. \" off=\" .. table.concat(off, \",\") end\n";
     s += "\tlocal stats = \"\"\n";
     s += "\tfor name, value in pairs(soul.stats) do\n";
     s += "\t\tif type(name) == \"string\" and type(value) == \"number\" then\n";
@@ -7593,6 +7662,8 @@ std::string emit_conversation_lua(const std::string& modid,
         // An unyielding holder (In the Stocks): the menu's rows are refusals, and the store
         // notes the rebuff (QuestRebuffed) for the app's giver to send Henry at the chest.
         if (q.is_unyielding()) s += ", unyielding = true";
+        // Off in a new game (QuestOn; npcdb.hpp off_by_default): the store's switch can turn it on.
+        if (q.off_by_default) s += ", off = true";
         if (q.takes_letter_of()) {
             // The thing is the Document an earlier quest's dictation wrote, whichever variant:
             // QuestFlags names the class from that quest's digits in the store (letterOf).
@@ -9075,6 +9146,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".consoleCommands = {\n";
     s += "\t{ \"/quests\", \"quests\", \"/quests [word] -- the quests dealt, numbered; with a word, only those that mention it\" },\n";
     s += "\t{ \"/goto\", \"goto\", \"/goto N [target] -- put Henry beside the giver of quest N (needs -devmode); target: the other party\" },\n";
+    s += "\t{ \"/enable\", \"enable\", \"/enable N|word|all -- turn quest N (by /quests' number, or a word of its title) and the rest of its story on\" },\n";
+    s += "\t{ \"/disable\", \"disable\", \"/disable N|word|all -- turn quest N and the rest of its story off: not offered, no marker\" },\n";
     s += "\t{ \"/help\", \"help\", \"/help -- the moonshine commands\" },\n";
     s += "}\n";
     s += "function " + g + ".ConsoleSaid(cmd, ...)\n";
@@ -9092,6 +9165,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"[Moonshine] the conversation app is not running, so nobody can answer \" .. text .. \"; start moonshine_app\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    // The switches go first, so the app's list says which quests are on as the save has them.
+    s += "\tpcall(" + g + ".SwitchesLine)\n";
     s += "\t" + g + ".Log(\"BRIDGE console line \" .. text)\n";
     s += "\tpcall(" + g + ".Console, \"console\")\n";
     s += "end\n";
@@ -12361,6 +12436,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal pp = nil\n";
     s += "\tpcall(function() pp = " + g + ".Player():GetWorldPos() end)\n";
     s += "\t" + g + ".watchQuick = false\n";
+    s += "\t" + g + ".giverSwitches = 0\n";
     s += "\tif pp ~= nil then\n";
     s += "\t\tfor _, id in ipairs(pending) do\n";
     s += "\t\t\tlocal q = " + g + ".quests[id]\n";
@@ -12426,6 +12502,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "function " + g + ".WatchHail(id, q, pp)\n";
     s += "\tlocal f = ((" + g + ".state or {}).quests or {})[id]\n";
     s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
+    s += "\tif not " + g + ".QuestOn(id) then return end\n";
     s += "\tif " + g + ".active or " + g + ".InDialog() then return end\n";
     // Her day (hail_hours; notes.md 25 Oct 2026): asleep or at her supper she does not call
     // Henry over, and her marker is off the map (the graph's giverDay).
@@ -12520,6 +12597,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".dressed = {}\n";
     s += "function " + g + ".WatchDress(id, q, pp)\n";
     s += "\tif " + g + ".dressed[id] ~= nil then return end\n";
+    s += "\tif not " + g + ".QuestOn(id) then return end\n";
     s += "\tlocal e = nil\n";
     s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
     s += "\tif e == nil or e.actor == nil or e.actor.EquipClothingPreset == nil then return end\n";
@@ -13166,25 +13244,38 @@ std::string emit_conversation_lua(const std::string& modid,
     // loaded, dead, no labels) changes nothing. The where-by-hour pass of 7 Nov 2026 read
     // every soul's labels from one spot, so the far ones answer too.
     s += g + ".giverPending = {}\n";
+    // An off quest (QuestOn) is closed wherever its giver stands: no marker for an errand
+    // that is not on offer. A game with most of the database's quests off turns most of the
+    // markers off at its first ticks, so the tokens are paced (giverSwitchesPerTick a tick,
+    // the rest waiting their turn) rather than all put in Henry's pocket in one breath.
+    s += g + ".giverSwitchesPerTick = " + std::to_string(kGiverSwitchesPerTick) + "\n";
+    s += g + ".giverSwitches = 0\n";
     s += "function " + g + ".WatchGiver(id, q)\n";
     s += "\tif q.giverClosed == nil or q.giverOpen == nil then return end\n";
     s += "\tlocal f = ((" + g + ".state or {}).quests or {})[id]\n";
     s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
     s += "\tlocal gp = nil\n";
-    s += "\tpcall(function()\n";
-    s += "\t\tlocal e = System.GetEntityByName(q.giver)\n";
-    s += "\t\tif e == nil or (e.actor ~= nil and e.actor:IsDead()) then return end\n";
-    s += "\t\tgp = e:GetWorldPos()\n";
-    s += "\tend)\n";
-    s += "\tif gp == nil then return end\n";
-    s += "\tlocal closed = " + g + ".Trespass(gp)\n";
-    s += "\tif closed == nil then return end\n";
+    s += "\tlocal closed = nil\n";
+    s += "\tif not " + g + ".QuestOn(id) then\n";
+    s += "\t\tclosed = true\n";
+    s += "\telse\n";
+    s += "\t\tpcall(function()\n";
+    s += "\t\t\tlocal e = System.GetEntityByName(q.giver)\n";
+    s += "\t\t\tif e == nil or (e.actor ~= nil and e.actor:IsDead()) then return end\n";
+    s += "\t\t\tgp = e:GetWorldPos()\n";
+    s += "\t\tend)\n";
+    s += "\t\tif gp == nil then return end\n";
+    s += "\t\tclosed = " + g + ".Trespass(gp)\n";
+    s += "\t\tif closed == nil then return end\n";
+    s += "\tend\n";
     s += "\tlocal has = (type(f) == \"table\" and f.giverHidden == true)\n";
     s += "\tif closed == has then " + g + ".giverPending[id] = nil; return end\n";
     s += "\tif " + g + ".giverPending[id] ~= closed then " + g + ".giverPending[id] = closed; return end\n";
+    s += "\tif " + g + ".giverSwitches >= " + g + ".giverSwitchesPerTick then return end\n";
+    s += "\t" + g + ".giverSwitches = " + g + ".giverSwitches + 1\n";
     s += "\t" + g + ".giverPending[id] = nil\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" giver \" .. (closed and \"closed\" or \"open\") .. \" \" .. q.giver\n";
-    s += "\t\t.. string.format(\" at %.1f,%.1f,%.1f\", gp.x, gp.y, gp.z))\n";
+    s += "\t\t.. (gp ~= nil and string.format(\" at %.1f,%.1f,%.1f\", gp.x, gp.y, gp.z) or \" (off)\"))\n";
     s += "\tpcall(" + g + ".StateQuest, id, closed and \"closed\" or \"open\")\n";
     s += "\t" + g + ".Token(q, closed and q.giverClosed or q.giverOpen)\n";
     s += "end\n";

@@ -1113,6 +1113,41 @@ TEST_CASE("a soul on a chain has every link, in order, and the conversation is a
     CHECK(back.quest.opening_commands[1] == kQuestComplete);
 }
 
+TEST_CASE("a quest that is off is not offered, and one taken up before it was switched off goes on") {
+    Db db;
+    PersonaDb personas(db.path());
+    // The scene's way is open (the ask done and told), so but for the switch Marta would ask.
+    Standing told;
+    told.met = 1;
+    told.quests["scene-ask"] = "done";
+    told.hows["scene-ask"] = "persuaded";
+    Persona open = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, told);
+    REQUIRE(open.quest.on_yes == kQuestAccept);
+    CHECK(told.offerable("scene-letter"));
+
+    // Off: the same as for a scene the story went past -- no paragraph, no offer, nothing said.
+    Standing off = told;
+    off.off.insert("scene-letter");
+    CHECK_FALSE(off.offerable("scene-letter"));
+    CHECK(off.withheld("scene-letter"));
+    Persona withheld = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, off);
+    CHECK(withheld.quest.block.empty());
+    CHECK(withheld.quest.rows.empty());
+    CHECK(withheld.scripted.offer.empty());
+    CHECK(withheld.scripted.accept_row.empty());
+
+    // Taken up already: the switch does not undo an errand under way.
+    Standing under_way = off;
+    under_way.quests["scene-letter"] = "accepted";
+    CHECK_FALSE(under_way.withheld("scene-letter"));
+    Persona going = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, under_way);
+    CHECK_FALSE(going.quest.block.empty());
+
+    // A referral to a quest that is off is not worth making: it cannot be taken up.
+    CHECK_FALSE(off.offerable("scene-letter"));
+    CHECK(off.offerable("scene-nothing") == true);
+}
+
 TEST_CASE("a story's later scene is locked until the scene before is done, open when it ended as the link says, and void otherwise") {
     Db db;
     PersonaDb personas(db.path());

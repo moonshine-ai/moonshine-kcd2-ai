@@ -88,6 +88,11 @@ struct Quest {
     // never offered or mentioned. The giver may be anybody, not the earlier scene's.
     std::string after_quest_id;
     std::string after_how;
+    // Whether the quest is switched off in a new game (apply_quest_defaults): the giver
+    // does not offer it, hails nobody over for it and carries no marker for it until the
+    // player turns it on at the game's console (/enable). Off is the rule; the few stories
+    // the mod ships on are named in npcdb.cpp.
+    bool off_by_default = false;
     // The journal's completed log for each way the thing was won, from npc_quest_lines
     // as log_completed_<how>; empty falls back to log_completed. And the objective's
     // update when the holder dies with the thing on him.
@@ -849,5 +854,15 @@ std::string level_for_region(const std::string& region);
 // has nobody to speak it. A find or a pray has no target, and needs only its giver. A database from before quests existed yields none rather
 // than an error. Sorted by quest_id so the output is stable.
 std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Persona>& personas);
+
+// The quests a new game has on: the stories named in kQuestsOnByDefault, every scene of
+// them (a quest is in the same story as the ones it follows and the ones that follow it),
+// and no others. `all_on` leaves them all on, for a build that plays every quest (the
+// passes). A title that matches no quest read is warned of on stderr: a renamed quest would
+// otherwise turn its story off without a word.
+void apply_quest_defaults(std::vector<Quest>& quests, bool all_on);
+// Which of the quests (by index) belong to the same story as quest `at`: the quests linked
+// to it through after_quest_id or through a chain, either way round.
+std::vector<std::size_t> story_of(const std::vector<Quest>& quests, std::size_t at);
 
 }  // namespace kcd2

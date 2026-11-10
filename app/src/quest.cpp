@@ -1733,7 +1733,7 @@ std::size_t pick_quest(const std::vector<Quest>& quests, const std::vector<Quest
     };
     const auto giver = [](const Quest& q) { return q.role == QuestRole::Giver; };
     std::size_t at = find([&](const Quest& q, const QuestFacts& f) {
-        return giver(q) && !f.done && (q.is_find() ? f.accepted : true) && q.brought(f.have);
+        return giver(q) && !f.done && !f.voided && (q.is_find() ? f.accepted : true) && q.brought(f.have);
     });
     if (at < quests.size()) return at;
     at = find([&](const Quest& q, const QuestFacts& f) { return giver(q) && f.accepted && !f.done; });

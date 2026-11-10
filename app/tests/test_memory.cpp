@@ -30,6 +30,19 @@ SoulRecord dumped() { return record_from_lines(kDump); }
 
 }  // namespace
 
+TEST_CASE("the quests that are off are read off the dump's off= field") {
+    const std::optional<SoulRecord> record = read_state_line(
+        "BRIDGE state npc=kkut_additive_man_47 met=1 first=nil last=nil rev=0 entries=0 "
+        "quests=aaa:a,bbb:dc off=ccc,ddd,eee stat:trust=0.500");
+    REQUIRE(record.has_value());
+    CHECK(record->off == std::vector<std::string>{"ccc", "ddd", "eee"});
+    CHECK(standing_of(*record).off.count("ddd") == 1);
+    CHECK(standing_of(*record).off.count("aaa") == 0);
+    // The trust after it is still read, and a dump without the field has none off.
+    REQUIRE(record->stats.size() == 1);
+    CHECK(read_state_line("BRIDGE state npc=x met=1 first=nil last=nil rev=0 entries=0")->off.empty());
+}
+
 TEST_CASE("the header of a soul's record is read field by field, not by searching") {
     const std::optional<SoulRecord> header = read_state_line(
         "<12:04:30> BRIDGE state npc=kkut_additive_man_47 met=3 first=1000000 last=1250000 rev=2 "

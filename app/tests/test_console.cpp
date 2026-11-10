@@ -222,3 +222,93 @@ TEST_CASE("an answer for the game's console is logged a line at a time, the Lua 
     CHECK(lua.find("Game.SendInfoText(tostring(said), true, nil, 5)") != std::string::npos);
     CHECK(lua.rfind("return said\n") == lua.size() - 12);
 }
+
+TEST_CASE("a story is the quests linked to a quest, either way round") {
+    Db db;
+    PersonaDb personas(db.path());
+    Console console(personas);
+    // fox-ask, fox-word, fox-beat are numbers 2, 3, 4 (indexes 1, 2, 3), from any of them.
+    const std::vector<std::size_t> fox{1, 2, 3};
+    CHECK(console.story_of(1) == fox);
+    CHECK(console.story_of(2) == fox);
+    CHECK(console.story_of(3) == fox);
+    // A favour with no links is a story of one.
+    CHECK(console.story_of(4) == std::vector<std::size_t>{4});
+    CHECK(console.story_of(99).empty());
+}
+
+TEST_CASE("/quests marks each quest on or off once the game has said which") {
+    Db db;
+    PersonaDb personas(db.path());
+    Console console(personas);
+    // Not said yet: no marks, nothing claimed.
+    CHECK_FALSE(console.knows_switches());
+    CHECK(console.run("/quests").text.find("[ 1] Amice") == std::string::npos);
+    CHECK(console.run("/quests").text.find("quests, ") == std::string::npos);
+
+    console.set_off({"fox-ask", "fox-word", "fox-beat", "basil", "hugo"});
+    CHECK(console.knows_switches());
+    const std::string text = console.run("/quests").text;
+    CHECK(text.find("[ 1] on  (untitled pray)") != std::string::npos);  // no title: the row says so
+    CHECK(text.find("[ 2] off Barking Stew") != std::string::npos);
+    CHECK(text.find("[ 3] off   A Bone to Pick") != std::string::npos);
+    CHECK(text.find("6 of 6 quests, 1 on.") != std::string::npos);
+    // The mark is no part of what a word matches.
+    CHECK(console.run("/quests off").text == "no quest mentions \"off\".");
+}
+
+TEST_CASE("/enable and /disable switch a whole story, by number, by a word of a title, or all") {
+    Db db;
+    PersonaDb personas(db.path());
+    Console console(personas);
+    console.set_off({"fox-ask", "fox-word", "fox-beat", "basil", "hugo", "amice"});
+
+    // One scene's number brings its whole story: the Lua names all three, in list order.
+    const ConsoleOutcome on = console.run("/enable 3");
+    REQUIRE(on.lua.has_value());
+    CHECK(*on.lua ==
+          "local n = Moonshine.QuestSwitch({ \"fox-ask\", \"fox-word\", \"fox-beat\" }, true)\n"
+          "return \"quests on: \" .. tostring(n) .. \" changed\"");
+    CHECK(on.text.find("turning on 3 quests: [2] Barking Stew, [3] A Bone to Pick, [4] A Dog's Dinner") == 0);
+    CHECK(on.text.find("a story goes as a whole") != std::string::npos);
+    // The app takes it as done, so the list shows it before the game says so.
+    CHECK(console.run("/quests").text.find("[ 2] on  Barking Stew") != std::string::npos);
+    CHECK_FALSE(console.is_off("fox-beat"));
+    // And again is nothing to send.
+    const ConsoleOutcome again = console.run("/enable 2");
+    CHECK_FALSE(again.lua.has_value());
+    CHECK(again.text == "3 quests are already on.");
+
+    // A word of the title, case blind.
+    const ConsoleOutcome off = console.run("/disable bone");
+    REQUIRE(off.lua.has_value());
+    CHECK(off.lua->find("QuestSwitch({ \"fox-ask\", \"fox-word\", \"fox-beat\" }, false)") != std::string::npos);
+    CHECK(console.is_off("fox-ask"));
+
+    // Several numbers, and a lone favour's own.
+    const ConsoleOutcome two = console.run("/enable 1 5");
+    REQUIRE(two.lua.has_value());
+    CHECK(two.lua->find("{ \"amice\", \"basil\" }, true)") != std::string::npos);
+    // All.
+    const ConsoleOutcome all = console.run("/enable all");
+    REQUIRE(all.lua.has_value());
+    CHECK(all.lua->find("\"hugo\"") != std::string::npos);
+    CHECK(all.lua->find("\"amice\"") == std::string::npos);  // already on
+
+    // Refusals, which send nothing.
+    CHECK_FALSE(console.run("/enable").lua.has_value());
+    CHECK(console.run("/enable 9").text.find("not a quest number") != std::string::npos);
+    CHECK(console.run("/disable 0").text.find("not a quest number") != std::string::npos);
+    CHECK(console.run("/disable the unicorn").text.find("no quest has \"the unicorn\" in its title") != std::string::npos);
+    CHECK(console.run("/help").text.find("/enable N|word|all") != std::string::npos);
+}
+
+TEST_CASE("/enable before the game has said what is off sends the word whatever the state") {
+    Db db;
+    PersonaDb personas(db.path());
+    Console console(personas);
+    const ConsoleOutcome on = console.run("/enable feather");
+    REQUIRE(on.lua.has_value());
+    CHECK(on.lua->find("QuestSwitch({ \"hugo\" }, true)") != std::string::npos);
+    CHECK_FALSE(console.knows_switches());
+}

@@ -66,6 +66,9 @@ struct Options {
     // and are shipped whenever it is unless told not to: a quest between souls that
     // cannot be talked to has no way to be offered.
     bool quests = true;
+    // Every quest on in a new game, where the shipped mod has only the few stories named in
+    // npcdb.cpp (apply_quest_defaults); the passes that play any quest ask for it.
+    bool all_quests_on = false;
     // Invented, but unlike a setUiName key a role has to be declared in
     // Libs/Tables/rpg/role before anything can grant it, so the mod ships that
     // declaration too. The metarole is the group holding it, and needs a name of
@@ -128,6 +131,9 @@ void usage() {
         "  --no-quests            leave out the generated quests (npc_quest rows with\n"
         "                         text whose giver and holder are both talkable) that\n"
         "                         --dialogue otherwise ships beside the dialogue\n"
+        "  --all-quests-on        have every quest on in a new game; the mod ships with only a\n"
+        "                         few stories on and the rest off until /enable at the game's\n"
+        "                         console\n"
         "  --dialogue-role NAME   role the dialogue speaks through, default\n"
         "                         MOONSHINE_SPEAKER\n"
         "  --dialogue-metarole NAME  group that role belongs to, and the only\n"
@@ -274,6 +280,10 @@ Options parse_args(int argc, char** argv, bool* want_help) {
             o.quests = false;
             continue;
         }
+        if (arg == "--all-quests-on") {
+            o.all_quests_on = true;
+            continue;
+        }
         if (arg == "--rule-order") {
             if (i + 1 >= argc) throw std::runtime_error(arg + " needs a value");
             o.rule_order = std::stoi(argv[++i]);
@@ -376,6 +386,7 @@ int main(int argc, char** argv) {
                     if (allowed.empty() || allowed.count(p.soul_name)) talkers.push_back(p);
                 }
                 quests = kcd2::read_quests(o.db, talkers);
+                kcd2::apply_quest_defaults(quests, o.all_quests_on);
             }
             std::string roles = kcd2::emit_storm_roles(o.modid, personas, only, o.dialogue_role,
                                                        quests, &talkable);
@@ -575,8 +586,10 @@ int main(int argc, char** argv) {
                       : !o.quests ? std::string("left out")
                       : quests.empty()
                           ? std::string("none written between talkable souls")
-                          : std::to_string(quests.size()) + " between talkable souls, " +
-                                std::to_string(beats) + " beats in the dialogue")
+                          : std::to_string(quests.size()) + " between talkable souls (" +
+                                std::to_string(std::count_if(quests.begin(), quests.end(),
+                                                             [](const kcd2::Quest& q) { return !q.off_by_default; })) +
+                                " on in a new game), " + std::to_string(beats) + " beats in the dialogue")
                   << "\n"
                   << "  words on screen: "
                   << (o.screen.mode == "caption"

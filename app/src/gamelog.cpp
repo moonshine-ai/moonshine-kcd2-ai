@@ -24,6 +24,7 @@ constexpr std::string_view kReset = "BRIDGE state reset";
 // The engine shutting down: "CSystem::Quit invoked from thread ... reason: ..., exit code: 0".
 constexpr std::string_view kQuit = "CSystem::Quit invoked";
 constexpr std::string_view kHook = "BRIDGE hook ";
+constexpr std::string_view kSwitches = "BRIDGE switches";
 constexpr std::string_view kConsole = "BRIDGE console ";
 constexpr std::string_view kConsoleLine = "BRIDGE console line ";
 // The menu's say row went live, and stopped being: "BRIDGE say start voice" (the talk
@@ -232,6 +233,12 @@ Event classify(std::string_view line) {
             event.said = std::string(trim(rest.substr(i)));
             return event;
         }
+    }
+    // "BRIDGE switches off=a,b": the quests the save has off.
+    if (const std::size_t at = line.find(kSwitches); at != std::string_view::npos) {
+        Event event{Marker::Switches, 0, {}};
+        event.said = field_from(line.substr(at), "off=");
+        return event;
     }
     // "BRIDGE console line /goto 21": typed at the game's console, for the app to answer.
     // Before the plain console marker, which is a prefix of it.

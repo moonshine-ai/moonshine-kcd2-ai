@@ -3,7 +3,9 @@
 -- the app at the same --root and --user trees, and then plays the player: looks,
 -- presses, picks rows, lets the holder give in, saves, quits, relaunches, loads.
 --
---   luajit host.lua --mod <moonshine_names.lua> --root DIR --user DIR [--log PATH] [--echo]
+--   luajit host.lua --mod <moonshine_names.lua> --root DIR --user DIR [--log PATH] [--echo] [--shipped]
+--
+-- Every quest is on unless --shipped says to have the mod's own defaults (Engine.allOn).
 --
 -- One command per line on stdin, one reply line on stdout, `ok ...` or `err ...`.
 -- Rows and lists are one line with fields split by \t and items by \x1f.
@@ -55,6 +57,7 @@ while i <= #arg do
     elseif a == "--user" then opts.user = arg[i + 1]; i = i + 1
     elseif a == "--log" then opts.log = arg[i + 1]; i = i + 1
     elseif a == "--echo" then opts.echo = true
+    elseif a == "--shipped" then opts.shipped = true
     end
     i = i + 1
 end
@@ -64,7 +67,7 @@ if opts.mod == nil or opts.root == nil or opts.user == nil then
 end
 opts.log = opts.log or (opts.root .. "/kcd.log")
 
-local M = Engine.boot(opts.mod, { root = opts.root, user = opts.user, log = opts.log, echo = opts.echo })
+local M = Engine.boot(opts.mod, { root = opts.root, user = opts.user, log = opts.log, echo = opts.echo, shipped = opts.shipped })
 
 local function reply(text) io.stdout:write(text, "\n"); io.stdout:flush() end
 local function ok(text) reply(text and ("ok " .. text) or "ok") end

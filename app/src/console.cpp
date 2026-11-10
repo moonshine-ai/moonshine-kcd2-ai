@@ -1,5 +1,6 @@
 #include "console.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +47,34 @@ std::string party(std::string_view name, std::string_view trade) {
 
 Console::Console(const PersonaDb& db) : db_(db), quests_(db.quest_list()) {}
 
+void Console::set_off(std::set<std::string> ids) { off_ = std::move(ids); }
+
+bool Console::is_off(std::string_view quest_id) const {
+    return off_ && off_->count(std::string(quest_id)) != 0;
+}
+
+std::vector<std::size_t> Console::story_of(std::size_t at) const {
+    std::vector<std::size_t> out;
+    if (at >= quests_.size()) return out;
+    std::vector<bool> seen(quests_.size(), false);
+    out.push_back(at);
+    seen[at] = true;
+    for (std::size_t k = 0; k < out.size(); ++k) {
+        const QuestListing& here = quests_[out[k]];
+        for (std::size_t j = 0; j < quests_.size(); ++j) {
+            if (seen[j]) continue;
+            const QuestListing& there = quests_[j];
+            if ((!here.after_id.empty() && here.after_id == there.id) ||
+                (!there.after_id.empty() && there.after_id == here.id)) {
+                seen[j] = true;
+                out.push_back(j);
+            }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 bool Console::is_command(std::string_view line) {
     while (!line.empty() && std::isspace(static_cast<unsigned char>(line.front()))) line.remove_prefix(1);
     return !line.empty() && line.front() == '/';
@@ -56,9 +85,12 @@ std::string Console::help() const {
            "  /quests [word]        the quests dealt, numbered; with a word, only the rows that mention it\n"
            "  /goto N               put Henry beside the giver of quest N (the game must be in -devmode)\n"
            "  /goto N target        ... beside the other party instead: the holder, the one to be seen\n"
+           "  /enable N|word|all    turn quest N on: N is /quests' number, a word is part of a title;\n"
+           "                        the rest of its story (the quests linked to it) goes with it\n"
+           "  /disable N|word|all   turn it off: its giver does not offer it and has no marker for it\n"
            "  /help                 this\n"
            "  /quit                 stop the app (here only)\n"
-           "the first three work at the game's own console (~) too, once a save is loaded;\n"
+           "the first five work at the game's own console (~) too, once a save is loaded;\n"
            "anything else typed here is what Henry says to whoever he is talking to.";
 }
 
@@ -74,6 +106,8 @@ std::string Console::list(std::string_view filter) const {
         char head[32];
         std::snprintf(head, sizeof head, "[%2d] ", static_cast<int>(i + 1));
         std::string row = std::string(head);
+        // Which are on, once the game has said; the mark is not part of what a filter matches.
+        const std::string mark = !off_ ? "" : is_off(q.id) ? "off " : "on  ";
         row += std::string(static_cast<std::size_t>(q.depth) * 2, ' ');
         row += q.title.empty() ? ("(untitled " + q.kind + ")") : q.title;
         row += " -- " + q.kind;
@@ -103,12 +137,19 @@ std::string Console::list(std::string_view filter) const {
             out += story_settlement + "\n";
             settlement_shown = story_settlement;
         }
-        out += "  " + row + "\n";
+        out += "  " + row.substr(0, std::string(head).size()) + mark + row.substr(std::string(head).size()) + "\n";
         ++shown;
     }
     if (shown == 0) return "no quest mentions \"" + std::string(filter) + "\".";
-    out += std::to_string(shown) + " of " + std::to_string(quests_.size()) +
-           " quests. /goto N puts Henry beside N's giver; /goto N target, beside the other party.";
+    out += std::to_string(shown) + " of " + std::to_string(quests_.size()) + " quests";
+    if (off_) {
+        std::size_t on = 0;
+        for (const QuestListing& q : quests_) on += is_off(q.id) ? 0 : 1;
+        out += ", " + std::to_string(on) + " on";
+    }
+    out += ". /goto N puts Henry beside N's giver; /goto N target, beside the other party.";
+    out += off_ ? "\n/enable N or /disable N turns a quest, and the story it belongs to, on or off."
+                : "";
     return out;
 }
 
@@ -186,6 +227,86 @@ ConsoleOutcome Console::go(const std::vector<std::string>& words) const {
     return out;
 }
 
+ConsoleOutcome Console::flip(const std::vector<std::string>& words, bool on) {
+    const std::string verb = on ? "/enable" : "/disable";
+    if (words.size() < 2) {
+        return {"which? " + verb + " N (a number off /quests), " + verb + " and a word of the title, or " +
+                    verb + " all.",
+                std::nullopt, {}};
+    }
+    std::vector<std::size_t> chosen;
+    bool numbers = true;
+    for (std::size_t i = 1; i < words.size(); ++i) {
+        for (char c : words[i]) numbers = numbers && std::isdigit(static_cast<unsigned char>(c)) != 0;
+    }
+    if (words.size() == 2 && lower(words[1]) == "all") {
+        for (std::size_t i = 0; i < quests_.size(); ++i) chosen.push_back(i);
+    } else if (numbers) {
+        for (std::size_t i = 1; i < words.size(); ++i) {
+            const long n = std::strtol(words[i].c_str(), nullptr, 10);
+            if (n < 1 || n > static_cast<long>(quests_.size())) {
+                return {"\"" + words[i] + "\" is not a quest number; /quests lists them, 1 to " +
+                            std::to_string(quests_.size()) + ".",
+                        std::nullopt, {}};
+            }
+            chosen.push_back(static_cast<std::size_t>(n - 1));
+        }
+    } else {
+        std::string title;
+        for (std::size_t i = 1; i < words.size(); ++i) title += (i > 1 ? " " : "") + words[i];
+        const std::string want = lower(title);
+        for (std::size_t i = 0; i < quests_.size(); ++i) {
+            if (lower(quests_[i].title).find(want) != std::string::npos) chosen.push_back(i);
+        }
+        if (chosen.empty()) {
+            return {"no quest has \"" + title + "\" in its title; /quests lists them.", std::nullopt, {}};
+        }
+    }
+    // A story is switched as a whole: a later scene is only ever offered once the one before
+    // it is done, so the one without the other is a quest that is on and never asked, or one
+    // that is asked and stranded.
+    std::set<std::size_t> every;
+    for (std::size_t i : chosen) {
+        for (std::size_t j : story_of(i)) every.insert(j);
+    }
+    std::vector<std::size_t> to_flip;
+    std::string names;
+    for (std::size_t i : every) {
+        // Known to be that way already: nothing to send for it.
+        if (off_ && is_off(quests_[i].id) != on) continue;
+        to_flip.push_back(i);
+        names += (names.empty() ? "" : ", ") + std::string("[") + std::to_string(i + 1) + "] " +
+                 (quests_[i].title.empty() ? "(untitled " + quests_[i].kind + ")" : quests_[i].title);
+    }
+    const std::string word = on ? "on" : "off";
+    if (to_flip.empty()) {
+        return {std::to_string(every.size()) + (every.size() == 1 ? " quest is" : " quests are") +
+                    " already " + word + ".",
+                std::nullopt, {}};
+    }
+    std::string lua = "local n = Moonshine.QuestSwitch({";
+    for (std::size_t k = 0; k < to_flip.size(); ++k) {
+        lua += (k == 0 ? " " : ", ") + lua_quoted(quests_[to_flip[k]].id);
+    }
+    lua += std::string(" }, ") + (on ? "true" : "false") + ")\n";
+    lua += "return \"quests " + word + ": \" .. tostring(n) .. \" changed\"";
+    ConsoleOutcome out;
+    out.lua = lua;
+    out.label = "quests " + word + ", " + std::to_string(to_flip.size());
+    out.text = std::string("turning ") + word + " " + std::to_string(to_flip.size()) +
+               (to_flip.size() == 1 ? " quest: " : " quests: ") + names;
+    if (every.size() > chosen.size() && to_flip.size() > 1) out.text += " (a story goes as a whole)";
+    if (off_) {
+        std::set<std::string> now = *off_;
+        for (std::size_t i : to_flip) {
+            if (on) now.erase(quests_[i].id);
+            else now.insert(quests_[i].id);
+        }
+        off_ = std::move(now);
+    }
+    return out;
+}
+
 ConsoleOutcome Console::run(std::string_view line) {
     const std::vector<std::string> words = split(line);
     if (words.empty()) return {help(), std::nullopt, {}};
@@ -196,6 +317,8 @@ ConsoleOutcome Console::run(std::string_view line) {
         return {list(filter), std::nullopt, {}};
     }
     if (verb == "/goto" || verb == "/g" || verb == "/go") return go(words);
+    if (verb == "/enable" || verb == "/on") return flip(words, true);
+    if (verb == "/disable" || verb == "/off") return flip(words, false);
     if (verb == "/help" || verb == "/?") return {help(), std::nullopt, {}};
     return {"\"" + words[0] + "\" is not a command.\n" + help(), std::nullopt, {}};
 }

@@ -82,6 +82,10 @@ enum class Marker {
     // it and sends the answer back as a hook that writes it into the game's log, which the
     // console shows (main.cpp, Console::game_lua).
     ConsoleLine,
+    // Which quests are off, as the save has them: "BRIDGE switches off=<id>,<id>" (empty when
+    // none is). Said when a save loads, when one is thrown at the console and before each
+    // command typed there. `said` is the list after `off=`. What /quests marks on and off.
+    Switches,
     // A line is on the screen and should be spoken. `intent` is who: henry, male,
     // female, or npc (whoever the conversation is open with). `said` is the words.
     Voice,

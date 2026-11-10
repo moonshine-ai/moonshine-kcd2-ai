@@ -2715,11 +2715,17 @@ end)
 -- loaded; the player is told instead.
 case("Console: /quests and /goto typed at the game's console go to the app", function(E, M, check)
     check(E.commands["/quests"] ~= nil and E.commands["/goto"] ~= nil and E.commands["/help"] ~= nil, "the three commands are registered")
+    check(E.commands["/enable"] ~= nil and E.commands["/disable"] ~= nil, "and the two switches")
+    check(E.commands["/enable"].body == "Moonshine.Console_enable(%%)", "the switch's body hands the words on: " .. tostring(E.commands["/enable"].body))
     check(E.commands["/goto"].body == "Moonshine.Console_goto(%%)", "the body hands the words on: " .. tostring(E.commands["/goto"].body))
-    check(M.ConsoleRegister() == 3 and E.find("BRIDGE console registered 3 of 3 commands"), "registering again says so")
+    check(M.ConsoleRegister() == 5 and E.find("BRIDGE console registered 5 of 5 commands"), "registering again says so")
     local mark = E.mark()
     E.console("/quests")
     check(E.find("BRIDGE console line /quests", mark), "a bare /quests goes over as typed")
+    -- With the quests that are off said first, for the app's list to mark.
+    local said, at = E.find("BRIDGE switches off=", mark)
+    local line, lineAt = E.find("BRIDGE console line /quests", mark)
+    check(said ~= nil and at < lineAt, "the switches go over before the line")
     check(E.find("BRIDGE console armed (console) chain", mark), "the pump is armed for the answer")
     mark = E.mark()
     E.console("/goto 21 target")
@@ -4479,6 +4485,163 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     M.WatchArm("world")
     E.advance(2100)
     check(System.GetEntityByName(name) == nil, "and not made again")
+end)
+
+-- The quests a new game has on (npcdb.cpp kQuestsOnByDefault) and the switch that moves them
+-- (/enable and /disable at the game's console, through the app's hook: Moonshine.QuestSwitch).
+-- The harness puts every quest on for the other cases (Engine.allOn); these start from the
+-- store's own `switch` emptied, which is what a new game has.
+local function shippedDefaults(M)
+    M.state.switch = {}
+end
+
+case("Switches: a new game has the named stories on and every other quest off, a story as a whole", function(E, M, check)
+    shippedDefaults(M)
+    local on = { "Forget Me Not", "Plump as a Friar", "In the Stocks", "Holy Jest", "Words Must Not Fail", "A Beggar's Heart" }
+    for _, name in ipairs(on) do
+        local id = byName(M, name)
+        check(id ~= nil and M.QuestOn(id), name .. " is on")
+    end
+    -- Their other scenes, linked either way round, come with them.
+    for _, name in ipairs({ "Back on the Altar", "A Witness Before the Bailiff", "Letter of the Law", "Blind Pride", "Proof Against Her" }) do
+        local id = byName(M, name)
+        check(id ~= nil and M.QuestOn(id), name .. " goes with its story")
+    end
+    -- Nothing else: Charity Begins at Home, and any scene linked only to what is off.
+    for _, name in ipairs({ "Charity Begins at Home", "Dirty Linen", "A Mason's Due", "The Cursed Coat", "A Little Bird" }) do
+        local id = byName(M, name)
+        if id ~= nil then check(not M.QuestOn(id), name .. " is off") end
+    end
+    local ons, offs = 0, 0
+    for id, q in pairs(M.quests) do
+        if M.QuestOn(id) then ons = ons + 1 else offs = offs + 1 end
+        -- A scene is on exactly when the one it follows is.
+        if q.after ~= nil and q.after ~= "" and M.quests[q.after] ~= nil then
+            check(M.QuestOn(id) == M.QuestOn(q.after), q.name .. " is switched with the scene before it")
+        end
+    end
+    check(ons >= 10 and offs > ons, "a few on, most off: " .. ons .. " on, " .. offs .. " off")
+    check(#M.QuestsOff() == offs, "QuestsOff lists them")
+end)
+
+case("Switches: an off quest is not offered, and /enable gives it back, a story as the app sends it", function(E, M, check)
+    shippedDefaults(M)
+    local id, q = byName(M, "Charity Begins at Home")
+    local giver = E.soul(q.giver)
+    check(not M.QuestOn(id) and M.QuestOfferable(id) == false, "off, so not offerable")
+    local acts = E.look(giver)
+    check(acts[1] and acts[1].fields.hint == M.hint, "the giver's prompt is the plain one: " .. tostring(acts[1] and acts[1].fields.hint))
+    local mark = E.mark()
+    check(M.QuestSwitch({ id, "no-such-quest" }, true) == 1, "one changed, the unknown id skipped")
+    check(E.find("BRIDGE switches off=", mark) and not string.find(E.find("BRIDGE switches off=", mark), id, 1, true),
+          "the app is told, and the quest is not in the list")
+    check(M.QuestOn(id) and M.QuestOfferable(id) == true and M.state.switch[id] == true, "on, offerable, kept in the store")
+    acts = E.look(giver)
+    check(acts[1].fields.hint == M.favourHint, "the favour hint again")
+    check(M.QuestSwitch({ id }, true) == 0, "on again changes nothing")
+    -- Back off: the shipped default, so the store lets the override go.
+    check(M.QuestSwitch({ id }, false) == 1 and M.state.switch[id] == nil and not M.QuestOn(id), "off again, the store clear")
+    -- A quest that is on by default: the override is the false.
+    local stocks = byName(M, "In the Stocks")
+    check(M.QuestSwitch({ stocks }, false) == 1 and M.state.switch[stocks] == false and not M.QuestOfferable(stocks), "In the Stocks off")
+    check(M.QuestSwitch({ stocks }, true) == 1 and M.state.switch[stocks] == nil and M.QuestOn(stocks), "and on, the store clear")
+    -- All, as the harness itself does it.
+    M.QuestSwitchAll(true)
+    check(#M.QuestsOff() == 0, "all on: nothing off")
+    M.QuestSwitchAll(false)
+    check(#M.QuestsOff() > 0 and not M.QuestOn(stocks), "all off, In the Stocks too")
+end)
+
+case("Switches: an errand taken up goes on when its quest is switched off, and the dump says what is off", function(E, M, check)
+    shippedDefaults(M)
+    local id, q = byName(M, "Charity Begins at Home")
+    M.QuestSwitch({ id }, true)
+    M.state.quests[id] = { accepted = true }
+    M.QuestSwitch({ id }, false)
+    check(M.state.quests[id].accepted == true and not M.QuestOn(id), "accepted still, and off")
+    -- Not offerable, as it was not when it was accepted; nothing of the errand is undone.
+    check(M.QuestOfferable(id) == false, "not offerable")
+    local soul = E.soul(q.giver)
+    local mark = E.mark()
+    M.Dump(q.giver)
+    local header = E.find("BRIDGE state npc=" .. q.giver, mark)
+    check(header ~= nil and string.find(header, " off=", 1, true) ~= nil, "the dump carries off=: " .. tostring(header))
+    check(header ~= nil and string.find(header, id, 1, true) ~= nil, "and the quest in it")
+    M.QuestSwitchAll(true)
+    mark = E.mark()
+    M.Dump(q.giver)
+    header = E.find("BRIDGE state npc=" .. q.giver, mark)
+    check(header ~= nil and string.find(header, " off=", 1, true) == nil, "nothing off, no field")
+end)
+
+case("Switches: they are in the save, and a save from before them has the shipped defaults", function(E, M, check)
+    shippedDefaults(M)
+    local id = byName(M, "Charity Begins at Home")
+    local stocks = byName(M, "In the Stocks")
+    M.QuestSwitch({ id }, true)
+    M.QuestSwitch({ stocks }, false)
+    local text = E.save()
+    M.state.switch = {}
+    local ok, err = E.load(text)
+    check(ok, "the save loads: " .. tostring(err))
+    check(M.QuestOn(id) and not M.QuestOn(stocks), "the switches come back with the store")
+    check(E.find("BRIDGE switches off="), "and the app is told on the load")
+    -- A store with no `switch` at all: the generator's defaults.
+    ok = E.load("return { moonshine = { version = 1, souls = {}, quests = {}, known = {} } }")
+    check(ok and type(M.state.switch) == "table" and next(M.state.switch) == nil, "an old store gets an empty set of switches")
+    check(M.QuestOn(stocks) and not M.QuestOn(id), "so the shipped defaults stand")
+end)
+
+case("Switches: an off quest's giver has no marker and calls nobody over, and both come back on", function(E, M, check)
+    -- Every other quest on (the harness's own state), so none of the tokens' pacing is in the way.
+    local id, q = byName(M, "In the Stocks")
+    check(q.giverClosed ~= nil, "the quest's head carries the marker gate")
+    E.labels = {}
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
+    -- Off: wherever he stands, closed once two ticks agree, and no shout though Henry is near.
+    M.QuestSwitch({ id }, false)
+    local mark = E.mark()
+    local closed, open = "BRIDGE quest " .. id .. " giver closed " .. q.giver, "BRIDGE quest " .. id .. " giver open " .. q.giver
+    E.advance(2100)
+    check(not E.find(closed, mark), "one reading is not believed")
+    E.advance(6100)
+    check(E.count(closed, mark) == 1 and M.state.quests[id].giverHidden == true, "closed by the off switch, in the store")
+    check(not E.find("BRIDGE quest " .. id .. " hail", mark), "and no hail while it is off")
+    check(M.Count(player, q.hailToken) == 0, "no hail token made")
+    E.advance(4100)
+    check(E.count(closed, mark) == 1, "one token, not one a tick")
+    -- On: the marker opens (the giver stands in the open) and the shout comes.
+    mark = E.mark()
+    M.QuestSwitch({ id }, true)
+    E.advance(6100)
+    check(E.count(open, mark) == 1 and M.state.quests[id].giverHidden == false, "open again, in the store")
+    check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "and the giver calls Henry over")
+end)
+
+case("Switches: a new game's markers come off a few a tick, not all in one breath", function(E, M, check)
+    shippedDefaults(M)
+    local heads = 0
+    for id, q in pairs(M.quests) do
+        if q.giverClosed ~= nil and not M.QuestOn(id) then heads = heads + 1 end
+    end
+    check(heads > M.giverSwitchesPerTick * 2, "more off heads than two ticks' worth: " .. heads)
+    M.WatchArm("world")
+    local mark = E.mark()
+    E.advance(2100)
+    check(E.count("BRIDGE quest token made", mark) == 0, "the first tick only notes what to close")
+    mark = E.mark()
+    E.advance(2100)
+    local made = E.count("BRIDGE quest token made", mark)
+    check(made > 0 and made <= M.giverSwitchesPerTick, "the second makes no more than giverSwitchesPerTick: " .. made)
+    -- And they all get there.
+    E.advance(2000 * (math.ceil(heads / M.giverSwitchesPerTick) + 2))
+    local hidden = 0
+    for id, q in pairs(M.quests) do
+        local f = M.state.quests[id]
+        if q.giverClosed ~= nil and not M.QuestOn(id) and type(f) == "table" and f.giverHidden == true then hidden = hidden + 1 end
+    end
+    check(hidden == heads, "every off head's marker is closed in the end: " .. hidden .. " of " .. heads)
 end)
 
 return { cases = cases, order = order }

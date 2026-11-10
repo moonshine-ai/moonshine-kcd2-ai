@@ -82,6 +82,10 @@ struct SoulRecord {
     // Game hours since each quest was taken up, after a tilde on the same field (`~2.5`), by
     // id; only the quests the store has an accept time for (a mod from 9 Oct 2026 on).
     std::vector<std::pair<std::string, double>> ages;
+    // The quests the player has off (the mod's `off=<id>,<id>` field), by id: not offered by
+    // their givers, whatever the dealt cards say. Empty from a mod that has no switches, and
+    // when none is off.
+    std::vector<std::string> off;
     std::vector<std::pair<std::string, double>> stats;
     std::vector<MemoryEntry> memory;
     // Who the player knows of, as the save has it: every soul met, by id, and everyone an

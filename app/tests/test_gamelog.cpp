@@ -332,6 +332,13 @@ TEST_CASE("a hook the game ran is a marker with its number and its words, and is
     Event typed = classify("<12:04:37> [moonshine_names] BRIDGE console line /goto 21 target");
     CHECK(typed.marker == Marker::ConsoleLine);
     CHECK(typed.said == "/goto 21 target");
+    // The quests the save has off, said before a console command and on a load.
+    Event switches = classify("<12:04:36> [moonshine_names] BRIDGE switches off=a1b2,c3d4");
+    CHECK(switches.marker == Marker::Switches);
+    CHECK(switches.said == "a1b2,c3d4");
+    Event none = classify("<12:04:36> BRIDGE switches off=");
+    CHECK(none.marker == Marker::Switches);
+    CHECK(none.said.empty());
 
     FakeGame game;
     CHECK(run_counts(game.log()).hooked == 0);

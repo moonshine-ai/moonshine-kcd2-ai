@@ -1249,6 +1249,19 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 // "/quests" or "/goto 21" typed at the game's console (~): the same command
                 // as from the keyboard below, with the answer sent back as a hook that
                 // writes it into the game's log for the console to show.
+                // Which quests the save has off, said before each console command and when a
+                // save loads: what /quests marks on and off.
+                if (event.marker == Marker::Switches) {
+                    std::set<std::string> ids;
+                    std::string_view rest = event.said;
+                    while (!rest.empty()) {
+                        const std::size_t comma = rest.find(',');
+                        if (comma != 0) ids.emplace(rest.substr(0, comma));
+                        rest = comma == std::string_view::npos ? std::string_view() : rest.substr(comma + 1);
+                    }
+                    console.set_off(std::move(ids));
+                    continue;
+                }
                 if (event.marker == Marker::ConsoleLine) {
                     std::cout << "-- the game's console asked: " << event.said << "\n";
                     const ConsoleOutcome outcome = console.run(event.said);

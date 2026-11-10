@@ -209,6 +209,9 @@ void Session::handle(const Event& event) {
         case Marker::ConsoleLine:
             // Answered in main.cpp, which has the console; nothing of the session's.
             break;
+        case Marker::Switches:
+            // Kept in main.cpp, by the console that lists them.
+            break;
         case Marker::Voice:
             // Spoken in main.cpp, which has the speaker. Nothing about the conversation
             // changes because a line was heard.

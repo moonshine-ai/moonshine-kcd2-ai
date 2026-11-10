@@ -394,6 +394,11 @@ constexpr double kEnterNearMetres = 5.0;
 constexpr double kEnterSeeMetres = 30.0;
 constexpr double kEnterHoursBefore = 1.5;
 constexpr int kWatchQuickMs = 1000;
+// How many of the givers' marker tokens (WatchGiver) one tick of the watch may make. A new
+// game has most quests off, and all of their givers' markers come off together at the first
+// ticks; four a tick is eighteen seconds for the whole database, and no more than a few
+// items in Henry's pocket at once.
+constexpr int kGiverSwitchesPerTick = 4;
 // The holder turning on Henry in the street (`followed`, notes.md 23 Oct 2026, n8). The
 // watch looks for Henry through the holder's eyes every tick of the walk home: from
 // kFollowHoursBefore hours before the night window opens to kFollowHoursAfter after it (his

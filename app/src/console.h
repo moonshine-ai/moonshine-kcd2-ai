@@ -15,6 +15,7 @@
 #define MOONSHINE_CONSOLE_H
 
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,19 @@ public:
 
     const std::vector<QuestListing>& quests() const { return quests_; }
 
+    // The quests the game's save has off, by id, as the mod last said (gamelog.h,
+    // Marker::Switches). Until it has, /quests marks none on or off and /enable and /disable
+    // send their word to the game whatever the state, since the app cannot tell what would
+    // change.
+    void set_off(std::set<std::string> ids);
+    bool knows_switches() const { return off_.has_value(); }
+    bool is_off(std::string_view quest_id) const;
+
+    // The listing's quests that belong to the same story as quest `at` (an index into
+    // quests()): those it follows and those that follow it, through the links `after_id`
+    // carries, either way round. Public for the tests.
+    std::vector<std::size_t> story_of(std::size_t at) const;
+
     // The Lua for a hook that puts Henry beside `soul`, falling back to the soul's routine
     // spots when they are not loaded; what `/goto` writes. Public for the tests.
     static std::string teleport_lua(std::string_view soul, std::string_view label,
@@ -60,9 +74,11 @@ private:
     std::string help() const;
     std::string list(std::string_view filter) const;
     ConsoleOutcome go(const std::vector<std::string>& words) const;
+    ConsoleOutcome flip(const std::vector<std::string>& words, bool on);
 
     const PersonaDb& db_;
     std::vector<QuestListing> quests_;
+    std::optional<std::set<std::string>> off_;
 };
 
 }  // namespace moonshine

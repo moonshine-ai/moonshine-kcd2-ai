@@ -281,6 +281,12 @@ std::optional<SoulRecord> read_state_line(std::string_view line) {
             record.flags.emplace_back(std::string(one.substr(0, colon)), std::string(rest));
         }
     }
+    std::string_view off = fields.get("off");
+    while (!off.empty()) {
+        const std::size_t comma = off.find(',');
+        if (comma != 0) record.off.emplace_back(off.substr(0, comma));
+        off = comma == std::string_view::npos ? std::string_view() : off.substr(comma + 1);
+    }
     for (const auto& [key, value] : fields.pairs) {
         constexpr std::string_view kStat = "stat:";
         if (key.substr(0, kStat.size()) != kStat) continue;
@@ -296,6 +302,7 @@ Standing standing_of(const SoulRecord& record) {
     for (const auto& [id, letters] : record.flags) standing.flags[id] = letters;
     for (const auto& [id, how] : record.hows) standing.hows[id] = how;
     for (const auto& [id, hours] : record.ages) standing.ages[id] = hours;
+    for (const std::string& id : record.off) standing.off.insert(id);
     // The soul's own quest is in the same list when the mod is new enough to send it, and
     // on the older fields either way; the fields win, being the ones the plan reads too.
     if (!record.quest.empty()) {

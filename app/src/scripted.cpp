@@ -94,7 +94,12 @@ std::vector<std::string> words_of(std::string_view text) {
 
 bool Standing::offerable(std::string_view quest_id) const {
     if (quest_id.empty()) return false;
-    return quests.find(std::string(quest_id)) == quests.end();
+    return quests.find(std::string(quest_id)) == quests.end() && !withheld(quest_id);
+}
+
+bool Standing::withheld(std::string_view quest_id) const {
+    const std::string id(quest_id);
+    return off.count(id) != 0 && quests.find(id) == quests.end();
 }
 
 bool Standing::is_done(std::string_view quest_id) const {
@@ -105,6 +110,9 @@ bool Standing::is_done(std::string_view quest_id) const {
 QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
     QuestFacts facts;
     const std::string id(quest_id);
+    // Off and untouched: the giver does not have the favour to ask, as for a scene the story
+    // went past, and nothing is said of it.
+    facts.voided = withheld(quest_id);
     if (const auto at = quests.find(id); at != quests.end()) {
         // The furthest stage only; done was accepted, and may or may not have been handed
         // (a thing got without the holder's say-so is done unhanded).
