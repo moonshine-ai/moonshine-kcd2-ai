@@ -4259,8 +4259,21 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(M.watchQuick == true, "the watch ticking quickly while she runs")
     local nextPt = q.path[2] or q.spot
     local len = math.sqrt((nextPt[1] - first[1]) ^ 2 + (nextPt[2] - first[2]) ^ 2)
-    E.advance(1100)
+    -- Her legs are the stride chain's, not the watch tick's (bugs.txt 9 Nov 2026, "it
+    -- teleports between spots every second or so"): a quarter second on she has moved a
+    -- little, in several strides, and the chain is running.
+    check(M.striding == true, "the stride chain armed as she moves off")
+    local steps = 0
+    local lastX = cat.pos.x
+    for _ = 1, 5 do
+        E.advance(M.seekStrideMs)
+        if cat.pos.x ~= lastX then steps = steps + 1; lastX = cat.pos.x end
+    end
     local part = math.sqrt((cat.pos.x - first[1]) ^ 2 + (cat.pos.y - first[2]) ^ 2)
+    check(steps >= 4, "moved in strides, " .. steps .. " of 5")
+    check(part > 0.3 and part < M.seekSpeed, "less than a second's run on, in strides, " .. string.format("%.2f m", part))
+    E.advance(1100 - 5 * M.seekStrideMs)
+    part = math.sqrt((cat.pos.x - first[1]) ^ 2 + (cat.pos.y - first[2]) ^ 2)
     check(part > 0.5 and part < len, "part of the way there after a second, " .. string.format("%.1f of %.1f", part, len))
     E.advance(math.ceil(len / M.seekSpeed) * 1000 + 2100)
     check(math.abs(cat.pos.x - nextPt[1]) < 0.01 and math.abs(cat.pos.y - nextPt[2]) < 0.01, "arrived at the next point")
@@ -4279,6 +4292,7 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     end
     check(E.find("BRIDGE quest " .. id .. " cat settled at the spot with " .. #M.seekKittens .. " kittens", mark), "settled with the litter")
     check(cat.anims[#cat.anims].clip == "relaxed_idle_lying", "lying down")
+    check(M.striding == false, "the stride chain stopped itself once she lay down")
     local kit = System.GetEntityByName(name .. "_kit1")
     check(kit ~= nil and kit.spec.properties.object_Model == M.seekKittens[1] and kit.spec.scale.x == M.seekKittenScale,
           "a kitten of the mod's own, small")

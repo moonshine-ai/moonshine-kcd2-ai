@@ -13559,8 +13559,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // any scale, and the kitten definitions under mod/assets are the same rig under a
     // younger coat), made at the first point once Henry is within seekCallMetres, sitting
     // and calling (q.cue, every seekCallSeconds) until he is within seekNearMetres, then
-    // galloping to the next point -- the position moved each quick tick, since a BasicEntity
-    // has no legs of its own -- to sit and call again. At the last point she lies down and
+    // galloping to the next point -- the position moved along the straight leg twenty times
+    // a second by SeekStride, since a BasicEntity has no legs of its own, so the points
+    // must be walked and a corner wants a point of its own -- to sit and call again. At the
+    // last point she lies down and
     // the litter is spawned round her; Henry within seekFoundMetres of them is the find
     // (seen in the store, the token for the graph's found trigger). The family is kept
     // standing until the hand-in: a load sweeps spawned entities, so a tick that finds them
@@ -13571,6 +13573,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekFoundMetres = " + health_text(kSeekFoundMetres) + "\n";
     s += g + ".seekCallSeconds = " + std::to_string(kSeekCallSeconds) + "\n";
     s += g + ".seekSpeed = " + health_text(kSeekSpeed) + "\n";
+    s += g + ".seekStrideMs = " + std::to_string(kSeekStrideMs) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
     s += g + ".seekCat = \"" + std::string(kSeekCat) + "\"\n";
@@ -13633,6 +13636,75 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn out\n";
     s += "end\n";
     s += "\n";
+    // Arrived at the point she was running to: set down there, sitting (or, at the last
+    // point, lying with the litter made round her), facing Henry, the call due soon.
+    s += "function " + g + ".SeekArrive(id, S)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tlocal m = S.moving\n";
+    s += "\tif q == nil or m == nil then return end\n";
+    s += "\tlocal pp = nil\n";
+    s += "\tpcall(function() pp = " + g + ".Player():GetWorldPos() end)\n";
+    s += "\tif pp == nil then pp = m.to end\n";
+    s += "\tlocal last = #S.points\n";
+    s += "\tlocal z = " + g + ".Ground(m.to.x, m.to.y, m.to.z)\n";
+    s += "\tpcall(function() S.cat:SetWorldPos({ x = m.to.x, y = m.to.y, z = z }) end)\n";
+    s += "\tS.moving = nil\n";
+    s += "\tif S.leg == last then\n";
+    s += "\t\tS.settled = true\n";
+    s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_lying\", " + g + ".SeekFace(m.to, pp))\n";
+    s += "\t\tS.kittens = " + g + ".SeekLitter(id, { x = m.to.x, y = m.to.y, z = z })\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" settled at the spot with \" .. #S.kittens .. \" kittens\")\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_sitting\", " + g + ".SeekFace(m.to, pp))\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" at point \" .. S.leg .. \" of \" .. last)\n";
+    s += "\tend\n";
+    s += "\tS.calledAt = " + g + ".Now() - " + g + ".seekCallSeconds + 2\n";
+    s += "end\n";
+    s += "\n";
+    // Her legs (emit.hpp kSeekStrideMs; bugs.txt 9 Nov 2026, "it teleports between spots
+    // every second or so"): while any seek's animal is on her way, a timer chain of its own
+    // moves her along the leg twenty times a second, at seekSpeed, the ground height read
+    // under her each stride, and sets her down (SeekArrive) when the leg is run. Armed from
+    // WatchSeek as she moves off; it stops itself when nobody is running. A field of the
+    // table, not a closure, for the reason Tick gives. A cat swept away (a load) ends her
+    // run here; WatchSeek makes her again where she was going.
+    s += g + ".striding = false\n";
+    s += "function " + g + ".SeekStride()\n";
+    s += "\tlocal any = false\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    s += "\tfor id, S in pairs(" + g + ".seek) do\n";
+    s += "\t\tlocal m = S.moving\n";
+    s += "\t\tif m ~= nil and S.cat ~= nil then\n";
+    s += "\t\t\tlocal standing = nil\n";
+    s += "\t\t\tpcall(function() standing = System.GetEntityByName(\"mn_seek_\" .. id) end)\n";
+    s += "\t\t\tif standing == nil then\n";
+    s += "\t\t\t\tS.moving = nil\n";
+    s += "\t\t\telse\n";
+    s += "\t\t\t\tlocal t = m.len > 0 and (now - m.at) * " + g + ".seekSpeed / m.len or 1\n";
+    s += "\t\t\t\tif t >= 1 then\n";
+    s += "\t\t\t\t\tpcall(" + g + ".SeekArrive, id, S)\n";
+    s += "\t\t\t\telse\n";
+    s += "\t\t\t\t\tlocal x = m.from.x + (m.to.x - m.from.x) * t\n";
+    s += "\t\t\t\t\tlocal y = m.from.y + (m.to.y - m.from.y) * t\n";
+    s += "\t\t\t\t\tlocal z = " + g + ".Ground(x, y, m.from.z + (m.to.z - m.from.z) * t)\n";
+    s += "\t\t\t\t\tpcall(function() S.cat:SetWorldPos({ x = x, y = y, z = z }) end)\n";
+    s += "\t\t\t\t\tany = true\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif any then\n";
+    s += "\t\tScript.SetTimer(" + g + ".seekStrideMs, " + g + ".SeekStride)\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".striding = false\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "function " + g + ".SeekStrideArm()\n";
+    s += "\tif " + g + ".striding then return end\n";
+    s += "\t" + g + ".striding = true\n";
+    s += "\tScript.SetTimer(" + g + ".seekStrideMs, " + g + ".SeekStride)\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".WatchSeek(id, q, pp)\n";
     s += "\tif q.spot == nil then return end\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
@@ -13677,29 +13749,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t.. (S.settled and \", with the litter\" or \"\"))\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    // On her way between points: the position moved along the leg each quick tick.
+    // On her way between points: her legs are the stride chain's (SeekStride), armed again
+    // here if a load or an error dropped it; the watch keeps its quick tick meanwhile, and
+    // sets her down itself if the strides have somehow let the leg run out.
     s += "\tif S.moving ~= nil then\n";
     s += "\t\tlocal m = S.moving\n";
     s += "\t\tlocal t = m.len > 0 and (now - m.at) * " + g + ".seekSpeed / m.len or 1\n";
     s += "\t\tif t >= 1 then\n";
-    s += "\t\t\tlocal z = " + g + ".Ground(m.to.x, m.to.y, m.to.z)\n";
-    s += "\t\t\tpcall(function() S.cat:SetWorldPos({ x = m.to.x, y = m.to.y, z = z }) end)\n";
-    s += "\t\t\tS.moving = nil\n";
-    s += "\t\t\tif S.leg == last then\n";
-    s += "\t\t\t\tS.settled = true\n";
-    s += "\t\t\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_lying\", " + g + ".SeekFace(m.to, pp))\n";
-    s += "\t\t\t\tS.kittens = " + g + ".SeekLitter(id, { x = m.to.x, y = m.to.y, z = z })\n";
-    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" settled at the spot with \" .. #S.kittens .. \" kittens\")\n";
-    s += "\t\t\telse\n";
-    s += "\t\t\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_sitting\", " + g + ".SeekFace(m.to, pp))\n";
-    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" at point \" .. S.leg .. \" of \" .. last)\n";
-    s += "\t\t\tend\n";
-    s += "\t\t\tS.calledAt = now - " + g + ".seekCallSeconds + 2\n";
+    s += "\t\t\t" + g + ".SeekArrive(id, S)\n";
     s += "\t\telse\n";
-    s += "\t\t\tlocal x = m.from.x + (m.to.x - m.from.x) * t\n";
-    s += "\t\t\tlocal y = m.from.y + (m.to.y - m.from.y) * t\n";
-    s += "\t\t\tlocal z = " + g + ".Ground(x, y, m.from.z + (m.to.z - m.from.z) * t)\n";
-    s += "\t\t\tpcall(function() S.cat:SetWorldPos({ x = x, y = y, z = z }) end)\n";
+    s += "\t\t\t" + g + ".SeekStrideArm()\n";
     s += "\t\t\t" + g + ".watchQuick = true\n";
     s += "\t\tend\n";
     s += "\t\treturn\n";
@@ -13723,6 +13782,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tS.moving = { from = { x = at.x, y = at.y, z = " + g + ".Ground(at.x, at.y, at.z) }, to = to, at = now, len = len }\n";
     s += "\t\tS.leg = S.leg + 1\n";
     s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_gallop\", " + g + ".SeekFace(at, to))\n";
+    s += "\t\t" + g + ".SeekStrideArm()\n";
     s += "\t\t" + g + ".watchQuick = true\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" moves off to point \" .. S.leg .. \" of \" .. last .. \", \" .. string.format(\"%.1f\", len) .. \"m\")\n";
     s += "\t\treturn\n";

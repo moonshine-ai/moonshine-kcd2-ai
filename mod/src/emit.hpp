@@ -585,6 +585,10 @@ constexpr double kSeekNearMetres = 5.0;
 constexpr double kSeekFoundMetres = 4.0;
 constexpr int kSeekCallSeconds = 6;
 constexpr double kSeekSpeed = 2.5;
+// How often her position is moved while she runs (SeekStride): a timer chain of its own
+// at 20 Hz, since the watch's quick tick is a second and a cat set down 2.5 m at a time
+// in the gallop clip read as teleporting (bugs.txt 9 Nov 2026).
+constexpr int kSeekStrideMs = 50;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;
 constexpr const char* kSeekCat = "Objects/characters/animals/cat/cat.cdf";
