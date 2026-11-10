@@ -414,6 +414,11 @@ struct Quest {
         std::string soul;  // soul_name
         std::string name;  // their generated name, for the objective
         std::string guid;  // their soul_id
+        // A holder whose answer gives nothing (npc_knowledge.clue_blank; Sibyl, who knows
+        // nothing of the cat and wants to know nothing, bugs.txt 9 Nov 2026): asking them
+        // closes their objective and takes their marker off like any holder's, but does
+        // not open the search.
+        bool blank = false;
     };
     std::vector<Clue> clues;
     // The place as the neighbours name it (npc_quest_lines "clue_text", written only for

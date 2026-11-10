@@ -3319,6 +3319,16 @@ local function bySearch(M)
     return id, q
 end
 
+-- A seek's holders sorted: the ones whose answer says where (speaking), and the blank
+-- (Sibyl, bugs.txt 9 Nov 2026: knows nothing and wants to know nothing).
+local function holders(q)
+    local speaking, blank = {}, {}
+    for _, c in ipairs(q.clues or {}) do
+        if c.blank then blank[#blank + 1] = c else speaking[#speaking + 1] = c end
+    end
+    return speaking, blank
+end
+
 case("Search: the first holder asked opens it -- the token, the mark laid where the animal is first heard -- once only; a laying that failed is tried again from the watch once Henry is near", function(E, M, check)
     -- bugs.txt 9 Nov 2026: "Once one of the NPCs has mentioned the hen yards, a marker for
     -- that area should appear on the map as a place to search. The cat itself should be
@@ -3337,15 +3347,32 @@ case("Search: the first holder asked opens it -- the token, the mark laid where 
     check(M.Count(player, q.searchToken) == 0, "no search token at the accept")
     E.advance(2100)
     check(#E.ground == 0, "and the watch lays nothing while nobody has been asked")
-    -- The first holder asked, with the ground unplaceable: the token and the store, but no mark.
+    local speaking, blank = holders(q)
+    check(#speaking >= 2 and #blank >= 1, "two who say where and one who knows nothing, got " .. #speaking .. " and " .. #blank)
+    -- The blank holder asked first (bugs.txt 9 Nov 2026: "Sibyl should not trigger the cat
+    -- marker"): her own asked token, so her objective closes and her marker comes off,
+    -- and nothing opened.
+    if blank[1] ~= nil then
+        local before = E.mark()
+        M.npc = E.soul(blank[1].soul)
+        M.QuestCommand(id, "clue")
+        check(M.Count(player, blank[1].token) == 1, "the blank holder's own asked token")
+        check(M.Count(player, q.searchToken) == 0, "but no search token from her")
+        check(f.searching ~= true and f.clues ~= nil and f.clues[blank[1].soul] == true, "asked in the store, not searching")
+        check(E.find("BRIDGE quest " .. id .. " clue at " .. blank[1].soul .. " gave nothing", before), "logged as giving nothing")
+        check(not E.find("search opened by", before), "not opened")
+        E.advance(2100)
+        check(M.Count(player, blank[1].token) == 0 and #E.ground == 0, "her token swept, nothing laid")
+    end
+    -- The first speaking holder asked, with the ground unplaceable: the token and the store, but no mark.
     local spawn = System.SpawnEntity
     System.SpawnEntity = function() return nil end
-    M.npc = E.soul(q.clues[1].soul)
+    M.npc = E.soul(speaking[1].soul)
     M.QuestCommand(id, "clue")
     System.SpawnEntity = spawn
     check(M.Count(player, q.searchToken) == 1, "the search token in Henry's pocket")
     check(f.searching == true, "searching, in the store")
-    check(E.find("BRIDGE quest " .. id .. " search opened by " .. q.clues[1].soul), "logged as opened by her")
+    check(E.find("BRIDGE quest " .. id .. " search opened by " .. speaking[1].soul), "logged as opened by her")
     check(E.find("search mark not laid (clue)"), "the mark not laid, said so")
     check(f.markLaid ~= true and #E.ground == 0, "nothing on the ground")
     check(M.Count(player, q.searchMark) == 0, "nothing left in his pocket")
@@ -3358,11 +3385,11 @@ case("Search: the first holder asked opens it -- the token, the mark laid where 
     check(f.markLaid == true, "laid once near")
     check(#E.ground == 1 and E.ground[1].class == q.searchMark, "one mark on the ground")
     check(E.find("search mark laid at"), "logged as laid")
-    -- The second holder asked: nothing more is opened or laid.
+    -- The second speaking holder asked: nothing more is opened or laid.
     local mark = E.mark()
-    M.npc = E.soul(q.clues[2].soul)
+    M.npc = E.soul(speaking[2].soul)
     M.QuestCommand(id, "clue")
-    check(M.Count(player, q.clues[2].token) == 1, "her own asked token")
+    check(M.Count(player, speaking[2].token) == 1, "her own asked token")
     check(M.Count(player, q.searchToken) == 0, "no second search token")
     check(not E.find("search opened by", mark), "not opened again")
     check(#E.ground == 1, "not laid again")
@@ -3381,7 +3408,8 @@ case("Search: the mark is laid at once when the first holder is asked with the g
     check(not E.find("BRIDGE quest " .. id .. " " .. tostring(q.thing) .. " made at point"), "not made")
     M.npc = E.soul(q.giver)
     M.QuestCommand(id, "accept")
-    M.npc = E.soul(q.clues[3] and q.clues[3].soul or q.clues[1].soul)
+    local speaking = holders(q)
+    M.npc = E.soul(speaking[#speaking].soul)
     M.QuestCommand(id, "clue")
     local f = M.state.quests[id]
     check(f.markLaid == true, "laid as the first holder is asked")
@@ -4362,11 +4390,41 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(System.GetEntityByName(name .. "_kit1") ~= nil, "with the litter")
     check(E.find("with the litter", mark), "and said so")
     check(E.count("BRIDGE quest token made", mark) == 0, "and not found twice")
-    -- Told: the plain ending, and the watch lets the errand go.
+    -- Told: the plain ending. The family lies where it is for the rest of the day, Mabel
+    -- fetching them, and goes at seekLeaveHour the next morning once Henry is out of
+    -- hearing (bugs.txt 9 Nov 2026, "Litter should vanish the day after"); the watch
+    -- keeps the errand until then and lets it go after.
+    E.hour = 15
     M.QuestCommand(id, "complete")
-    check(M.state.quests[id].done == true, "done")
+    local f2 = M.state.quests[id]
+    check(f2.done == true and f2.doneAt ~= nil and f2.doneHour == 15, "done, with the clock")
     local pending = M.WatchPending()
+    local kept = false
+    for _, p in ipairs(pending) do if p == id then kept = true end end
+    check(kept, "still watched for the family's leaving")
+    E.advance(2100)
+    check(System.GetEntityByName(name) ~= nil and System.GetEntityByName(name .. "_kit1") ~= nil, "the family still there that afternoon")
+    -- The next morning, Henry standing over them: they stay while he is within hearing.
+    Calendar.SetWorldTime(Calendar.GetWorldTime() + (24 - 15 + M.seekLeaveHour) * 3600 + 60)
+    check(math.abs(E.hour - M.seekLeaveHour) < 0.1, "the clock at the leaving hour, " .. tostring(E.hour))
+    E.advance(2100)
+    check(System.GetEntityByName(name) ~= nil, "not taken away under his nose")
+    check(f2.gone ~= true, "not gone in the store")
+    -- Henry away: gone, the store says so, the watch lets the errand go.
+    player:SetWorldPos({ x = q.spot[1] + M.seekCallMetres + 5, y = q.spot[2], z = q.spot[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(System.GetEntityByName(name) == nil, "the cat gone")
+    for i = 1, #M.seekKittens do check(System.GetEntityByName(name .. "_kit" .. i) == nil, "kitten " .. i .. " gone") end
+    check(f2.gone == true, "gone, in the store")
+    check(E.find("BRIDGE quest " .. id .. " family gone from the spot, " .. (1 + #M.seekKittens) .. " taken away", mark), "and said so")
+    pending = M.WatchPending()
     for _, p in ipairs(pending) do check(p ~= id, "no longer watched") end
+    -- Back at the spot the next tick: nothing made again.
+    player:SetWorldPos({ x = q.spot[1] + 1, y = q.spot[2], z = q.spot[3] })
+    M.WatchArm("world")
+    E.advance(2100)
+    check(System.GetEntityByName(name) == nil, "and not made again")
 end)
 
 return { cases = cases, order = order }

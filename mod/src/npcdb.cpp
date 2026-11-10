@@ -881,13 +881,18 @@ void read_clues(sqlite3* db, std::vector<Quest>& quests) {
     // hand in the refined layer), one each, in soul_name order so the objectives are stable
     // from run to run. A database from before the column (9 Nov 2026) or without the
     // tables (the fixtures) has no clues to give, and the seek keeps its giver's marker.
-    const char* sql =
-        "SELECT k.soul_name, n.soul_id, COALESCE(g.full_name, '') FROM npc_knowledge k "
+    // clue_blank (Clue::blank) is newer still; without the column every holder's answer
+    // counts.
+    const bool has_blank = sqlite3_table_column_metadata(db, nullptr, "npc_knowledge", "clue_blank", nullptr, nullptr,
+                                                         nullptr, nullptr, nullptr) == SQLITE_OK;
+    const std::string blank = has_blank ? "MAX(COALESCE(k.clue_blank, 0))" : "0";
+    const std::string sql =
+        "SELECT k.soul_name, n.soul_id, COALESCE(g.full_name, ''), " + blank + " FROM npc_knowledge k "
         "JOIN npc n USING (soul_name) LEFT JOIN generated_name g ON g.soul_id = n.soul_id "
         "WHERE k.clue_quest = ?1 AND n.soul_id IS NOT NULL "
         "GROUP BY k.soul_name ORDER BY k.soul_name";
     sqlite3_stmt* raw_stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &raw_stmt, nullptr) != SQLITE_OK) return;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &raw_stmt, nullptr) != SQLITE_OK) return;
     StmtHandle stmt(raw_stmt, &sqlite3_finalize);
     for (Quest& q : quests) {
         if (!q.is_seek() || !q.spot_text.empty()) continue;
@@ -900,6 +905,7 @@ void read_clues(sqlite3* db, std::vector<Quest>& quests) {
                 return std::string(p ? reinterpret_cast<const char*>(p) : "");
             };
             Quest::Clue clue{text(0), text(2), text(1)};
+            clue.blank = sqlite3_column_int(stmt.get(), 3) != 0;
             if (clue.guid.empty() || clue.guid == q.giver_guid) continue;
             if (clue.name.empty()) clue.name = clue.soul;
             q.clues.push_back(std::move(clue));

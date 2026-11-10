@@ -6063,6 +6063,13 @@ std::string state_lua(const std::string& g) {
     s += "\treturn nil\n";
     s += "end\n";
     s += "\n";
+    // The game's hour of the day (0..24, fractional), or nil.
+    s += "function " + g + ".HourOfDay()\n";
+    s += "\tlocal ok, h = pcall(function() return Calendar.GetWorldHourOfDay() end)\n";
+    s += "\tif ok and type(h) == \"number\" then return h end\n";
+    s += "\treturn nil\n";
+    s += "end\n";
+    s += "\n";
     // A number for the log: whole seconds, or nil spelled out. %d and not .., since the
     // game's Lua prints large numbers in exponent form.
     s += "function " + g + ".Whole(n)\n";
@@ -6099,14 +6106,22 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif facts.acceptedAt == nil then facts.acceptedAt = " + g + ".WorldTime() end\n";
     s += "\tend\n";
     s += "\tif command == \"handover\" then facts.handed = true end\n";
+    // With the game's clock at the hand-in (doneAt), for what waits a day on it: a seek's
+    // family leaves the morning after (WatchSeek).
     s += "\tif command == \"complete\" or command == \"lie\" or command == \"keep\" or command == \"quiet\"\n";
     s += "\t\t\tor command == \"confess\" then\n";
     s += "\t\tfacts.accepted = true; facts.done = true\n";
+    s += "\t\tif facts.doneAt == nil then facts.doneAt = " + g + ".WorldTime(); facts.doneHour = " + g + ".HourOfDay() end\n";
     s += "\tend\n";
     // Given up to the giver's face (the app's give-up row): over, and the dump says how
     // (:d/abandoned), so the app plans the giver as somebody Henry let down.
-    s += "\tif command == \"abandon\" then facts.accepted = true; facts.done = true; facts.how = \"abandoned\" end\n";
+    s += "\tif command == \"abandon\" then facts.accepted = true; facts.done = true; facts.how = \"abandoned\"\n";
+    s += "\t\tif facts.doneAt == nil then facts.doneAt = " + g + ".WorldTime(); facts.doneHour = " + g + ".HourOfDay() end\n";
+    s += "\tend\n";
     s += "\tif command == \"seen\" then facts.seen = true end\n";
+    // A seek's family gone from the place (the morning after the hand-in, bugs.txt 9 Nov
+    // 2026: "Litter should vanish the day after the quest is handed in").
+    s += "\tif command == \"gone\" then facts.gone = true end\n";
     // A beat's man down, a beat's or a mind's target dead, a pray knelt, a mind's visit made
     // (with the game's clock at the moment, for the next to be due against).
     s += "\tif command == \"beaten\" then facts.beaten = true end\n";
@@ -7494,7 +7509,8 @@ std::string emit_conversation_lua(const std::string& modid,
                 for (std::size_t i = 0; i < q.clues.size(); ++i) {
                     s += std::string(i ? ", " : "") + "{ soul = \"" + lua_escape(q.clues[i].soul) + "\", token = \"" +
                          lua_escape(clue_class(q, i + 1)) + "\", shown = \"" + lua_escape(clue_shown_class(q, i + 1)) +
-                         "\", hidden = \"" + lua_escape(clue_hidden_class(q, i + 1)) + "\" }";
+                         "\", hidden = \"" + lua_escape(clue_hidden_class(q, i + 1)) + "\"" +
+                         (q.clues[i].blank ? ", blank = true" : "") + " }";
                 }
                 s += " }";
             }
@@ -12265,7 +12281,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif q.kind == \"beat\" and not f.beaten and not f.dead then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"pray\" and not f.prayed and q.spot ~= nil then out[#out + 1] = id end\n";
     // A seek until the hand-in: the family stands (and is made again after a load) until
-    // the giver has been told.
+    // the giver has been told; and past done until the morning after, when the watch takes
+    // them away (below; bugs.txt 9 Nov 2026, "Litter should vanish the day after").
     s += "\t\t\tif q.kind == \"seek\" and q.spot ~= nil then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"mind\" and not f.dead and (f.checks or 0) < (q.count or 1) then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"ask\" and not f.handed and not f.dead then out[#out + 1] = id end\n";
@@ -12285,6 +12302,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif q.kind == \"retrieve\" and not f.handed and ((q.chest ~= nil and not (f.chest and f.taken))\n";
     s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen)) then out[#out + 1] = id end\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"return\" and f.cursed and q.spot ~= nil then\n";
+    s += "\t\t\tout[#out + 1] = id\n";
+    s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"seek\" and q.spot ~= nil and not f.gone then\n";
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\tend\n";
     s += "\tend\n";
@@ -13591,6 +13610,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekCallSeconds = " + std::to_string(kSeekCallSeconds) + "\n";
     s += g + ".seekSpeed = " + health_text(kSeekSpeed) + "\n";
     s += g + ".seekStrideMs = " + std::to_string(kSeekStrideMs) + "\n";
+    s += g + ".seekLeaveHour = " + std::to_string(kSeekLeaveHour) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
     s += g + ".seekKittenGap = " + health_text(kSeekKittenGap) + "\n";
@@ -13740,6 +13760,25 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tScript.SetTimer(" + g + ".seekStrideMs, " + g + ".SeekStride)\n";
     s += "end\n";
     s += "\n";
+    // The family gone from the spot: every entity of theirs removed, the store's gone (so
+    // WatchPending lets the errand go), and the strides left nothing to move.
+    s += "function " + g + ".SeekLeave(id, S)\n";
+    s += "\tlocal names = { \"mn_seek_\" .. id }\n";
+    s += "\tfor i = 1, #" + g + ".seekKittens do names[#names + 1] = \"mn_seek_\" .. id .. \"_kit\" .. i end\n";
+    s += "\tlocal n = 0\n";
+    s += "\tfor _, name in ipairs(names) do\n";
+    s += "\t\tpcall(function()\n";
+    s += "\t\t\tlocal e = System.GetEntityByName(name)\n";
+    s += "\t\t\tif e ~= nil then System.RemoveEntity(e.id); n = n + 1 end\n";
+    s += "\t\tend)\n";
+    s += "\tend\n";
+    s += "\tS.cat = nil\n";
+    s += "\tS.kittens = nil\n";
+    s += "\tS.moving = nil\n";
+    s += "\tpcall(" + g + ".StateQuest, id, \"gone\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" family gone from the spot, \" .. n .. \" taken away\")\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".WatchSeek(id, q, pp)\n";
     s += "\tif q.spot == nil then return end\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
@@ -13754,6 +13793,22 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tlocal last = #S.points\n";
     s += "\tlocal now = " + g + ".Now()\n";
+    // Handed in: the family lies where it is (not made again after a load; the giver is
+    // fetching them) until seekLeaveHour of the next game day, and goes then, once Henry is
+    // out of hearing of the spot (bugs.txt 9 Nov 2026). A store from before the clock
+    // (no doneAt) has them go at once.
+    s += "\tif f.done then\n";
+    s += "\t\tif f.gone then return end\n";
+    s += "\t\tlocal due = true\n";
+    s += "\t\tif f.doneAt ~= nil and f.doneHour ~= nil then\n";
+    s += "\t\t\tlocal wt = " + g + ".WorldTime()\n";
+    s += "\t\t\tlocal leaveAt = f.doneAt + (24 - f.doneHour + " + g + ".seekLeaveHour) * 3600\n";
+    s += "\t\t\tdue = wt ~= nil and wt >= leaveAt\n";
+    s += "\t\tend\n";
+    s += "\t\tlocal d = math.sqrt((pp.x - q.spot[1]) ^ 2 + (pp.y - q.spot[2]) ^ 2)\n";
+    s += "\t\tif due and d > " + g + ".seekCallMetres then " + g + ".SeekLeave(id, S) end\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     // The search mark not laid when the first holder was asked (LaySearchMark failed, or a
     // load wiped it): tried again while Henry is within keepsakeMetres of the pin.
     s += "\tif f.searching and not f.markLaid and q.searchMark ~= nil then\n";
@@ -14174,7 +14229,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // The first of them asked opens the search (bugs.txt 9 Nov 2026: "Once one of the NPCs
     // has mentioned the hen yards, a marker for that area should appear"): the search
     // token for the graph's objective, and the mark laid where the animal is first heard.
+    // Not a blank holder (Clue::blank): Sibyl, who knows nothing and wants to know nothing,
+    // is asked and her marker comes off, and the yards stay unmentioned.
     s += "\t\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\t\tif hit.blank then " + g + ".Log(\"BRIDGE quest \" .. id .. \" clue at \" .. who .. \" gave nothing\") return end\n";
     s += "\t\tif quest.searchToken ~= nil and not f.searching then\n";
     s += "\t\t\tpcall(" + g + ".StateQuest, id, \"searching\")\n";
     s += "\t\t\t" + g + ".Token(quest, quest.searchToken)\n";

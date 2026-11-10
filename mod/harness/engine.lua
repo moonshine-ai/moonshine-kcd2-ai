@@ -726,7 +726,12 @@ function Engine.installGlobals()
             e.spec = spec
             return e
         end,
-        RemoveEntity = function() end,
+        -- An entity removed by id is gone from the world (GetEntityByName finds it no more).
+        RemoveEntity = function(id)
+            for name, e in pairs(Engine.entities) do
+                if e.id == id then Engine.entities[name] = nil end
+            end
+        end,
         Quit = function() Engine.quit = true end,
     }
     -- The physics bind's ray: the world's entity-type flags as the engine's globals, and a

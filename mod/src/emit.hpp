@@ -592,6 +592,11 @@ constexpr double kSeekSpeed = 2.5;
 // at 20 Hz, since the watch's quick tick is a second and a cat set down 2.5 m at a time
 // in the gallop clip read as teleporting (bugs.txt 9 Nov 2026).
 constexpr int kSeekStrideMs = 50;
+// When the family leaves the spot after the hand-in (bugs.txt 9 Nov 2026, "Litter should
+// vanish the day after the quest is handed in"): the first watch tick at or after this
+// hour of the next game day with Henry out of hearing of the spot, the giver having
+// fetched them home. Until then they lie there, and are made again after a load.
+constexpr int kSeekLeaveHour = 6;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;
 constexpr double kSeekKittenGap = 0.15;
