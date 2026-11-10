@@ -613,6 +613,12 @@ constexpr double kSeekSpotMetres = 25.0;
 // distance, and at her once she is nearer. A fresh spot per call, since a spot plays a
 // trigger once.
 constexpr double kSeekVoiceMetres = 4.0;
+// How long she sits at a point before Henry's closeness can move her on (bugs.txt 10 Nov
+// 2026, "I hear Maggie at the first point in the path, but not on subsequent stops"): on
+// short legs he was within kSeekNearMetres as she arrived and she bolted on the next tick
+// without a call. Now she calls the tick she arrives, and goes on only once she has
+// called at that point and sat this long.
+constexpr int kSeekDwellSeconds = 2;
 constexpr double kSeekEyeMetres = 0.3;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;

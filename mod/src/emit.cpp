@@ -13710,6 +13710,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekLeaveHour = " + std::to_string(kSeekLeaveHour) + "\n";
     s += g + ".seekSpotMetres = " + health_text(kSeekSpotMetres) + "\n";
     s += g + ".seekVoiceMetres = " + health_text(kSeekVoiceMetres) + "\n";
+    s += g + ".seekDwellSeconds = " + std::to_string(kSeekDwellSeconds) + "\n";
     s += g + ".seekEyeMetres = " + health_text(kSeekEyeMetres) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
@@ -13813,7 +13814,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".SeekPose(S.cat, \"relaxed_idle_sitting\", " + g + ".SeekFace(m.to, pp))\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" at point \" .. S.leg .. \" of \" .. last)\n";
     s += "\tend\n";
-    s += "\tS.calledAt = " + g + ".Now() - " + g + ".seekCallSeconds + 2\n";
+    // She calls the tick she arrives, and sits (seekDwellSeconds) and has called before
+    // Henry's closeness moves her on (bugs.txt 10 Nov 2026: no call at the short legs).
+    s += "\tS.calledAt = " + g + ".Now() - " + g + ".seekCallSeconds\n";
+    s += "\tS.arrivedAt = " + g + ".Now()\n";
+    s += "\tS.calledHere = false\n";
     s += "end\n";
     s += "\n";
     // Her legs (emit.hpp kSeekStrideMs; bugs.txt 9 Nov 2026, "it teleports between spots
@@ -13988,6 +13993,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif S.cat == nil then return end\n";
     s += "\t\tif S.settled then S.kittens = " + g + ".SeekLitter(id, { x = at.x, y = at.y, z = z - (q.lift or 0) }, face, q.lift) end\n";
     s += "\t\tS.calledAt = now - " + g + ".seekCallSeconds + 1\n";
+    s += "\t\tS.arrivedAt = now\n";
+    s += "\t\tS.calledHere = false\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" made at point \" .. S.leg .. \" of \" .. last\n";
     s += "\t\t\t.. \" \" .. string.format(\"%.1f,%.1f,%.1f\", at.x, at.y, z) .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\"\n";
     s += "\t\t\t.. (S.settled and \", with the litter\" or \"\"))\n";
@@ -14021,7 +14028,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     // Sitting and calling: on to the next point when he is close, else a call now and then
     // while he is within hearing, and a quick tick while he is near enough to close in.
-    s += "\tif d <= " + g + ".seekNearMetres then\n";
+    s += "\tlocal sat = now - (S.arrivedAt or 0) >= " + g + ".seekDwellSeconds and (q.cue == nil or S.calledHere)\n";
+    s += "\tif d <= " + g + ".seekNearMetres and sat then\n";
     s += "\t\tlocal to = S.points[S.leg + 1]\n";
     s += "\t\tlocal len = math.sqrt((to.x - at.x) ^ 2 + (to.y - at.y) ^ 2)\n";
     s += "\t\tS.moving = { from = { x = at.x, y = at.y, z = " + g + ".Ground(at.x, at.y, at.z) }, to = to, at = now, len = len }\n";
@@ -14044,6 +14052,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
     s += "\t\tS.calledAt = now\n";
+    s += "\t\tS.calledHere = true\n";
     s += "\t\tlocal played = " + g + ".Sound(" + g + ".SeekVoice(id, S, at, pp), q.cue)\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" calls (\" .. tostring(q.cue) .. \") at point \" .. S.leg .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\" .. (played and \"\" or \", not played\"))\n";
     s += "\tend\n";

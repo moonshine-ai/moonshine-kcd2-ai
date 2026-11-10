@@ -4385,7 +4385,11 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
         local ux, uy = 1, 0
         if l > 0 then ux, uy = (here[1] - to[1]) / l, (here[2] - to[2]) / l end
         player:SetWorldPos({ x = here[1] + ux * back, y = here[2] + uy * back, z = here[3] })
-        E.advance(2100 + math.ceil(l / M.seekSpeed) * 1000 + 2100)
+        -- Henry already on her as she sits: she calls here before she goes on (bugs.txt
+        -- 10 Nov 2026, "not on subsequent stops": the short legs had no call at all).
+        E.advance(1100)
+        check(E.count("BRIDGE quest " .. id .. " cat calls (" .. q.cue .. ") at point " .. i .. " with", mark) >= 1, "a call at point " .. i .. " before she moves on")
+        E.advance(1000 + math.ceil(l / M.seekSpeed) * 1000 + 2100)
         check(math.abs(cat.pos.x - to[1]) < 0.01 and math.abs(cat.pos.y - to[2]) < 0.01, "arrived at point " .. (i + 1))
     end
     check(E.find("BRIDGE quest " .. id .. " cat settled at the spot with " .. #M.seekKittens .. " kittens", mark), "settled with the litter")
