@@ -3311,6 +3311,143 @@ case("Clues: a seek's clue asked at a holder makes that holder's own token, and 
     check(M.Count(player, q.clues[1].token) == 1 and M.QuestFlagLetters(f) == "zz", "the first holder's token, two z")
 end)
 
+local function bySearch(M)
+    local id, q
+    for cid, cq in pairs(M.quests) do
+        if cq.kind == "seek" and cq.clues ~= nil and cq.searchToken ~= nil and (id == nil or cid < id) then id, q = cid, cq end
+    end
+    return id, q
+end
+
+case("Search: the first holder asked opens it -- the token, the mark laid where the animal is first heard -- once only; a laying that failed is tried again from the watch once Henry is near", function(E, M, check)
+    -- bugs.txt 9 Nov 2026: "Once one of the NPCs has mentioned the hen yards, a marker for
+    -- that area should appear on the map as a place to search. The cat itself should be
+    -- visible/audible from the pin location."
+    local id, q = bySearch(M)
+    check(q ~= nil, "a seek with clue-holders and a place to search")
+    if q == nil then return end
+    check(q.searchMark ~= nil and q.path ~= nil and q.path[1] ~= nil, "the mark's class and the animal's first point")
+    local pin = M.SearchPin(q)
+    check(pin == q.path[1], "the pin is the animal's first point, where she is made and calls")
+    M.npc = E.soul(q.giver)
+    player:SetWorldPos({ x = pin[1] + M.keepsakeMetres + 50, y = pin[2], z = pin[3] })
+    M.QuestCommand(id, "accept")
+    local f = M.state.quests[id]
+    check(f.searching ~= true and f.markLaid ~= true and #E.ground == 0, "nothing to search for at the accept")
+    check(M.Count(player, q.searchToken) == 0, "no search token at the accept")
+    E.advance(2100)
+    check(#E.ground == 0, "and the watch lays nothing while nobody has been asked")
+    -- The first holder asked, with the ground unplaceable: the token and the store, but no mark.
+    local spawn = System.SpawnEntity
+    System.SpawnEntity = function() return nil end
+    M.npc = E.soul(q.clues[1].soul)
+    M.QuestCommand(id, "clue")
+    System.SpawnEntity = spawn
+    check(M.Count(player, q.searchToken) == 1, "the search token in Henry's pocket")
+    check(f.searching == true, "searching, in the store")
+    check(E.find("BRIDGE quest " .. id .. " search opened by " .. q.clues[1].soul), "logged as opened by her")
+    check(E.find("search mark not laid (clue)"), "the mark not laid, said so")
+    check(f.markLaid ~= true and #E.ground == 0, "nothing on the ground")
+    check(M.Count(player, q.searchMark) == 0, "nothing left in his pocket")
+    E.advance(2100)
+    check(M.Count(player, q.searchToken) == 0, "the token gone a moment later")
+    check(f.markLaid ~= true, "still not laid from afar")
+    -- Near the pin: laid from the watch.
+    player:SetWorldPos({ x = pin[1] + 10, y = pin[2], z = pin[3] })
+    E.advance(2100)
+    check(f.markLaid == true, "laid once near")
+    check(#E.ground == 1 and E.ground[1].class == q.searchMark, "one mark on the ground")
+    check(E.find("search mark laid at"), "logged as laid")
+    -- The second holder asked: nothing more is opened or laid.
+    local mark = E.mark()
+    M.npc = E.soul(q.clues[2].soul)
+    M.QuestCommand(id, "clue")
+    check(M.Count(player, q.clues[2].token) == 1, "her own asked token")
+    check(M.Count(player, q.searchToken) == 0, "no second search token")
+    check(not E.find("search opened by", mark), "not opened again")
+    check(#E.ground == 1, "not laid again")
+end)
+
+case("Search: the mark is laid at once when the first holder is asked with the ground in reach, and the cat is made only once the errand is on", function(E, M, check)
+    local id, q = bySearch(M)
+    if q == nil then return end
+    local pin = M.SearchPin(q)
+    -- Before the accept, Henry at the pin: no cat (the watch has nothing of this seek).
+    player:SetWorldPos({ x = pin[1] + 5, y = pin[2], z = pin[3] })
+    M.WatchArm("world")
+    E.advance(2100)
+    E.advance(2100)
+    check(System.GetEntityByName("mn_seek_" .. id) == nil, "no cat before the errand is accepted")
+    check(not E.find("BRIDGE quest " .. id .. " " .. tostring(q.thing) .. " made at point"), "not made")
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    M.npc = E.soul(q.clues[3] and q.clues[3].soul or q.clues[1].soul)
+    M.QuestCommand(id, "clue")
+    local f = M.state.quests[id]
+    check(f.markLaid == true, "laid as the first holder is asked")
+    check(E.find("search mark laid at"), "logged as laid")
+    check(#E.ground == 1 and E.ground[1].class == q.searchMark, "one mark on the ground")
+    E.advance(2100)
+    check(System.GetEntityByName("mn_seek_" .. id) ~= nil, "and the cat is made at the pin once the errand is on")
+end)
+
+case("Clues: a holder's marker comes off while she stands in a trespass area and goes back when she comes out, by one token each way, two ticks to be sure; nothing for one already asked, nor once the animal is found", function(E, M, check)
+    -- bugs.txt 9 Nov 2026: "Lene was indoors in a private area when I found her." The
+    -- giver gate's rule under each holder still to be asked (WatchClues).
+    local id, q
+    for cid, cq in pairs(M.quests) do
+        if cq.kind == "seek" and cq.clues ~= nil and (id == nil or cid < id) then id, q = cid, cq end
+    end
+    check(q ~= nil and #q.clues >= 2, "a seek with clue-holders")
+    if q == nil then return end
+    local her, other = q.clues[1], q.clues[2]
+    check(her.shown ~= nil and her.hidden ~= nil and her.shown ~= her.hidden, "each holder a shown and a hidden class")
+    E.labels = {}
+    local pin = M.SearchPin and M.SearchPin(q) or q.spot
+    player:SetWorldPos({ x = pin[1] + 500, y = pin[2] + 500, z = pin[3] })
+    E.soul(her.soul, { pos = { x = 100, y = 100, z = 0 } })
+    E.soul(other.soul, { pos = { x = 100, y = 110, z = 0 } })
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    -- The other asked already: the gate has nothing to do for her.
+    M.npc = E.soul(other.soul)
+    M.QuestCommand(id, "clue")
+    local f = M.state.quests[id]
+    local closed = "BRIDGE quest " .. id .. " clue holder closed " .. her.soul
+    local open = "BRIDGE quest " .. id .. " clue holder open " .. her.soul
+    local mark = E.mark()
+    E.advance(4500)
+    check(not E.find(closed, mark) and not E.find(open, mark), "in the open the map agrees already: no token")
+    E.labels = { private = true, personal = true }
+    E.advance(2100)
+    check(not E.find(closed, mark), "one reading indoors is not yet believed")
+    E.advance(2100)
+    check(E.count(closed, mark) == 1, "two readings: closed")
+    check(f.clueHidden ~= nil and f.clueHidden[her.soul] == true, "hidden, in the store, by soul")
+    check(M.Count(player, her.hidden) == 1, "her hidden token in Henry's pocket")
+    check(M.Count(player, other.hidden) == 0 and not E.find("clue holder closed " .. other.soul, mark), "nothing for the one asked")
+    E.advance(2100)
+    check(M.Count(player, her.hidden) == 0, "and gone a moment later")
+    E.advance(4500)
+    check(E.count(closed, mark) == 1, "no second token while she stays in")
+    -- Out again: one shown token after two readings.
+    E.labels = {}
+    E.advance(2100)
+    check(not E.find(open, mark), "one reading out is not yet believed")
+    E.advance(2100)
+    check(E.count(open, mark) == 1 and f.clueHidden[her.soul] == false, "out: shown, in the store")
+    check(E.count("BRIDGE quest token made", mark) == 2, "her shown token made")
+    E.advance(2100)
+    check(M.Count(player, her.shown) == 0, "and gone")
+    -- The animal found: her objective is cancelled in the graph, and the gate is quiet.
+    f.seen = true
+    E.labels = { private = true, personal = true }
+    E.advance(2100)
+    E.advance(2100)
+    E.advance(2100)
+    check(E.count(closed, mark) == 1, "nothing more once the animal is found")
+end)
+
 case("Chest: spawned once when Henry comes near with the errand on, locked and keyed, the chalice inside; taking it is the stolen ending", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.chest ~= nil and q.chestLock ~= nil, "In the Stocks keeps its thing in a chest")

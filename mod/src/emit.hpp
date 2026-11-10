@@ -173,6 +173,30 @@ std::string clue_class(const Quest& quest, std::size_t index);
 std::string clue_name(const Quest& quest, std::size_t index);
 std::string clue_objective(std::size_t index);
 std::string clue_objective_text(const Quest& quest, std::size_t index);
+// A holder's marker off while she stands where Henry may not go, and back when she comes
+// out (bugs.txt 9 Nov 2026: "Lene was indoors in a private area when I found her"): the
+// giver gate's rule (WatchGiver's Trespass) read under each holder by the Lua's WatchClues,
+// and the street night's shape on her objective, whose type gains the marker-only states
+// Shown and Hidden (clue_type) flipped by two tokens of her own, 53<ii> (S) and 68<ii> (h).
+std::string clue_shown_class(const Quest& quest, std::size_t index);
+std::string clue_shown_name(const Quest& quest, std::size_t index);
+std::string clue_hidden_class(const Quest& quest, std::size_t index);
+std::string clue_hidden_name(const Quest& quest, std::size_t index);
+std::string clue_type(const std::string& quest_id, std::size_t index);
+// The place to search (Quest::has_search; bugs.txt 9 Nov 2026: "Once one of the NPCs has
+// mentioned the hen yards, a marker for that area should appear on the map"): the `search`
+// objective, "Search <clue_text>", opened by the token of the search class (73, the letter
+// s) the Lua makes as the first holder is asked, closed by the find; its marker an
+// ItemOnGroundAsset of the search mark's class (kSearchMarkClass, a thing of the mod's own
+// in the item table: uuid5 of "moonshine:item:sucked_egg", the custom items' rule), which the Lua lays at the animal's first point as the token is made
+// (LaySearchMark) -- where she is made and calls as Henry comes within seekCallMetres, so
+// the pin is where she is seen and heard -- and again from the watch if that failed.
+std::string search_class(const Quest& quest);
+std::string search_name(const Quest& quest);
+std::string search_objective_text(const Quest& quest);
+constexpr const char* kSearchObjective = "search";
+constexpr const char* kSearchMarkClass = "86f47744-0555-564b-a32d-56ce873bb67c";
+constexpr const char* kSearchMarkName = "moonshine_sucked_egg";
 
 // A giver's hail as the game's own bark (notes.md 14 Oct 2026, In the Stocks: Benesh's
 // words over his head, not on the dialogue's caption). q_<id>_hail.xml is a one-line

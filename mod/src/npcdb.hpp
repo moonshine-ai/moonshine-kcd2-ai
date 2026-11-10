@@ -416,6 +416,13 @@ struct Quest {
         std::string guid;  // their soul_id
     };
     std::vector<Clue> clues;
+    // The place as the neighbours name it (npc_quest_lines "clue_text", written only for
+    // such a seek: the slate's place text the giver does not know), for the search
+    // objective that opens once the first of them has been asked, "Search the hen yards
+    // behind the houses on Wine Street", marked on a thing the Lua lays at the animal's
+    // first point (bugs.txt 9 Nov 2026: "a marker for that area should appear on the map
+    // as a place to search"). Empty for every other quest.
+    std::string clue_text;
     // The giver's hail (npc_quest_lines `hail`; notes.md 13 Oct 2026, Benesh): a line he
     // shouts when Henry comes near with the errand still unasked -- captioned and voiced
     // by the app in the giver's stand-in voice, outside any conversation. Empty for a
@@ -675,6 +682,11 @@ struct Quest {
     bool carries_on() const { return is_ask() && !onward_soul.empty(); }
     // A find whose marker is a keepsake laid at the spot the things grow (above).
     bool has_keepsake() const { return is_find() && !keepsake_class.empty() && !spot_pos.empty(); }
+    // A seek with clue-holders (above) and the place named for its search objective, whose
+    // find the journal writes (the objective closes on it).
+    bool has_search() const {
+        return is_seek() && !clues.empty() && !clue_text.empty() && !spot_pos.empty() && !log_found.empty();
+    }
     // Whether the Lua makes a token item for the graph to see: a pray's kneeling, a leave's
     // or a return's thing put down, a seek's creature found, an ambush sprung, a helper named by the giver, a
     // dictated letter written. Only when the journal has the line it would write.
