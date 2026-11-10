@@ -1,9 +1,7 @@
 # Moonshine AI for Kingdom Come: Deliverance II
 
 This mod gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
-name and a *Talk* option. Talk to them and they answer in character, in their own voice,
-about their own work and neighborhood, and sometimes they have something for you to do.
-Everything runs on your own PC; nothing you say leaves it.
+name, history, friends, family, and a *Talk* option. Talk to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC; nothing you say leaves it.
 
 Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted
 to explore more of the world's stories. It uses AI heavily, but it's intended as a tribute
@@ -11,14 +9,21 @@ to the amazing work by the whole Warhorse team, not a template for replacing hum
 creativity. The code is open source under an MIT license, available at
 https://github.com/moonshine-ai/moonshine-kcd.
 
-It is an early build: it will do weird things, and I very much appreciate all the bug
+This is an early build: it will do weird things, and I very much appreciate all the bug
 reports you can share. The AI-generated speech also sounds rough, especially for a game
 that's known for its voice acting. I am in the process of hiring professional actors for
 the dialog that's known ahead of time, and licensing their voices for better clones for
 freeform speech.
 
-How to install and play it follows. Building it from source is covered under *The
-repository* in the project's README at https://github.com/moonshine-ai/moonshine-kcd-ai.
+## Player Guide
+
+Load a saved game and walk up to anybody who would have been unnamed, like a Hired Hand or Housemaid, and you'll see a name above their head. Once you're close enough, a new Chat option will appear.
+
+Start a conversation, you'll see a custom greeting and a new set of dialog options. You can pick any of these, or if there's something different you're interested in, hold down RT (or V on the keyboard) and speak into the microphone.
+
+Your partner will answer in their own voice, based on what they know, and how they feel about you. These conversations are remembered over time, and people are likely to be more patient and open with questions as they get to know you better. None of this leaves your machine, it's all running completely locally.
+
+Some of these newly-named people need your help. You'll see them marked on a map, and they may even call you over as you pass. There are over fifty new stories to play through, and I'm hoping the community will add more over time.
 
 ## Installing
 
