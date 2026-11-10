@@ -30,6 +30,21 @@ constexpr const char* kHoldPrompt = "...";
 // declares, and the one thing standing between a silent dialogue and a caption saying so.
 constexpr const char* kCaptionClip = "bc.subtitles";
 
+// The caption of our own, a UI element the mod ships (mod/assets/pak/Libs/UI/
+// MoonshineCaption.gfx and UIElements/MoonshineCaption.xml, tools/gen_caption_gfx.py):
+// the game's caption widget copied -- the same field on the same font, the same shadow,
+// the same frame -- into a movie nothing else writes to, so a line set once stays up
+// until the next (Write). The names here are the variables the XML declares.
+constexpr const char* kCaptionElement = "MoonshineCaption";
+// The game's colours for the speaker's row: ColorScheme.DARK_EMPHASIS for the other
+// party, DARK_POSITIVE when the line is the player's own (hud.gfx, fc_setSubtitles).
+constexpr const char* kCaptionNameColor = "0xFFEE99";
+constexpr const char* kCaptionPlayerColor = "0x66BFFF";
+// One line's pitch less the field's own 33 px of text height for one line, which is what
+// the text row stands below the name's measured height when there is a name: the game
+// puts them in one field with a newline between, 35.8 px apart (measured, 10 Nov 2026).
+constexpr const char* kCaptionRowGap = "2.8";
+
 // The app's heartbeat file is named by the Unix time in buckets this many seconds wide
 // (app/src/turnfile.h, kAliveBucketSeconds; the Lua's aliveBucket). Wide enough that the
 // engine's single-precision clock, which steps by 128 seconds, lands in the right bucket
@@ -7878,11 +7893,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- timer that keeps them there is running. All three only mean anything while\n";
     s += "-- drawing.\n";
     s += g + ".shown = \"\"\n";
-    s += "-- And, in the caption, the line over them: the widget has a second field, the one\n";
-    s += "-- the game puts a speaker's name in, drawn in gold on its own row above the text.\n";
-    s += "-- It takes a whole sentence and wraps it, which is what puts one line above another\n";
-    s += "-- here -- a newline in the text field breaks the line but leaves the upper one\n";
-    s += "-- blank, measured. Empty means the row is not drawn.\n";
+    s += "-- And, in the caption, the line over them: the speaker's row, drawn in the game's\n";
+    s += "-- gold above the text (its own field in our element, wrapping as the game's does).\n";
+    s += "-- Empty means the row is not drawn.\n";
     s += g + ".above = \"\"\n";
     s += g + ".shownX = 0\n";
     s += g + ".shownY = 0\n";
@@ -7897,21 +7910,22 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".wrote = nil\n";
     // The instances every UI call here is aimed at, -1 meaning all of them.
     s += g + ".hudIds = { -1, 0 }\n";
-    s += "-- Paints between one assertion of our line in the game's caption and the next, or\n";
-    s += "-- zero for no assertion at all.\n";
+    s += "-- Paints between one assertion of our line in the caption and the next, or zero\n";
+    s += "-- for no assertion at all -- and zero it is.\n";
     s += "--\n";
-    s += "-- The caption takes itself down about a second after it is set, and saying the same\n";
-    s += "-- thing again resets that: written once a line, the words showed for a second and\n";
-    s += "-- then left three seconds of nothing until the next one. So the assertion is not\n";
-    s += "-- there to win the field back from the dialogue, it is there to keep the widget's\n";
-    s += "-- own timer from running out, and the rate only has to beat a second. Six paints at\n";
-    s += "-- the 49 a second the pump runs was about eight a second, and looked steady, but a\n";
-    s += "-- long line held through a few beats of the camera loop still lost a frame or two\n";
-    s += "-- now and then (Joan's answer to what is wrong; notes.md, 8 Oct 2026): a wordless\n";
-    s += "-- response beginning still empties the field, and whatever passes between that\n";
-    s += "-- and our next write is a blink. Every paint, then, which is a frame: the widget\n";
-    s += "-- was already seen not to mind being told the same thing 49 times a second.\n";
-    s += g + ".captionEvery = 1\n";
+    s += "-- When the words went into the game's own widget this was 1: the dialogue empties\n";
+    s += "-- that field at every beat and it takes itself down a second after it is set, so\n";
+    s += "-- the line had to be put back every frame, and even so a frame or two went missing\n";
+    s += "-- now and then (notes.md, 8 Oct 2026) -- the flicker. The words go into an element\n";
+    s += "-- of our own now (MoonshineCaption, Write) that nothing else writes to and that\n";
+    s += "-- holds what it is given, so one write a line is the whole of it (40 of 40 frames\n";
+    s += "-- steady through a beat, wl1 10 Nov 2026). The knob stays for a probe that wants\n";
+    s += "-- the old behaviour back.\n";
+    s += g + ".captionEvery = 0\n";
+    s += "-- Said once each: that the player has subtitles off, so the caption shows nothing;\n";
+    s += "-- and where the game would put a line, when that could not be read.\n";
+    s += g + ".captionOffTold = false\n";
+    s += g + ".captionPosTold = false\n";
     s += "-- Said once each: the size of the screen we are drawing on, and whether the font\n";
     s += "-- has been asked for. LoadFont is what makes a font available to be selected, and\n";
     s += "-- one that could not be loaded is not one to keep asking DrawText for.\n";
@@ -9502,12 +9516,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".painting = false\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    // Put back rather than set, because the dialogue owns this widget and empties it as
-    // each response begins -- twice a beat, and the beats are wordless now, so what it
-    // leaves is nothing. Whatever time passes between its clear and our next write is a
-    // gap with nothing in it, which is exactly what a caption blinking out for a frame or
-    // two is, so the interval here is the size of that blink and there is no reason for it
-    // to be more than one paint (captionEvery).
+    // The put-back of the first caption road, kept for a probe that sets captionEvery:
+    // the game's widget was emptied by the dialogue as each response began, and whatever
+    // passed between its clear and our next write was a blink. Our own element holds its
+    // words, so by default (captionEvery 0) nothing is put back and this branch is idle.
     s += "\tif " + g + ".mode == \"caption\" then\n";
     // What is put back is both rows: see Display.
     s += "\t\tlocal text, above = " + g + ".Display()\n";
@@ -9608,22 +9620,32 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "end\n";
     s += "\n";
-    // Our line in the game's own caption, which the same element that clears one declares a
-    // setter for: SetSubtitles(Text), documented as "Subtitles text to be set. (can be
-    // HTML)". A raw string, so it costs no stringId and keeps none -- which is the whole
-    // difference between this and everything the dialogue can be made to say.
+    // Our line in a caption of our own: the element the mod ships (kCaptionElement), a copy
+    // of the game's caption widget that the dialogue system never writes to.
     //
-    // What it would buy is everything the drawn words had to be talked into: the caption's
-    // own face, which is the Scaleform one no font definition can reach, its own background,
-    // its own place on the screen, and wrapping. What it costs is ownership -- the dialogue
-    // writes its own line here at the start of every response, so ours has to be put back
-    // rather than simply set.
+    // The first road put the line in the game's widget through SetSubtitles, which bought
+    // everything the drawn words had to be talked into -- the Scaleform face no font
+    // definition can reach, wrapping, the plate, the place on the screen -- at the cost of
+    // ownership: the dialogue empties that field at every beat and the widget takes itself
+    // down a second after it is set, so the line was put back every frame and still blinked
+    // now and then. Our element holds what it is given, so it is written once a line.
+    //
+    // What makes it the game's caption to look at (measured against it, wl1 10 Nov 2026,
+    // pixel for pixel): the same field, font, size and shadow in the movie; the speaker in
+    // the game's colours on a row of its own; and the game's own y -- the widget is still
+    // there, hidden (Caption false), and is asked to lay out the same words, SetSubtitles
+    // then GetPos on its clip, which it answers at once, and our 'sub' is put where it
+    // would have gone. ClearSubtitles after, so nothing is waiting in it to be shown.
+    //
+    // The player's subtitle settings are honoured as the game honours them: subtitles off
+    // shows nothing at all; the speaker's name only when they have it on; the plate only
+    // with the background on. Read only -- setting wh_ui_SubtitlesEnabled permanently
+    // ate a player's setting once (README), so nothing here writes a cvar.
     //
     // It is HTML, and it means it: a bare > was measured to vanish, taking the character
-    // after it, so both rows are escaped here and nowhere else. above is the speaker
-    // field, the gold row over the text; empty leaves that row undrawn. Text empty hides
-    // the whole widget whatever above says, which is why the line goes in the text field
-    // and the row over it is the one that comes and goes.
+    // after it, so both rows are escaped here and nowhere else. above is the speaker row
+    // over the text; empty leaves that row undrawn and the text on the first row. Text
+    // empty hides the element.
     s += "function " + g + ".Html(text)\n";
     s += "\ttext = string.gsub(text, \"&\", \"&amp;\")\n";
     s += "\ttext = string.gsub(text, \"<\", \"&lt;\")\n";
@@ -9640,56 +9662,106 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal key = above .. \"\\n\" .. text\n";
     s += "\tif key == " + g + ".wrote then return end\n";
     s += "\t" + g + ".wrote = key\n";
-    s += "\tif UIAction == nil or UIAction.CallFunction == nil then\n";
+    s += "\tif UIAction == nil or UIAction.SetVariable == nil or UIAction.ShowElement == nil then\n";
     s += "\t\tif not " + g + ".wroteTold then\n";
     s += "\t\t\t" + g + ".wroteTold = true\n";
-    s += "\t\t\t" + g + ".Log(\"UIAction.CallFunction is not there, the caption stays the\" ..\n";
-    s += "\t\t\t\t\" dialogue's\")\n";
+    s += "\t\t\t" + g + ".Log(\"UIAction.SetVariable is not there, nothing is captioned\")\n";
     s += "\t\tend\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tlocal ids = " + g + ".hudIds\n";
-    s += "\tfor i = 1, #ids do\n";
-    // Emptying goes through the function made for it rather than through a blank string,
-    // since a caption told to say nothing still has a plate to draw around it.
-    s += "\t\tif text == \"\" then\n";
-    s += "\t\t\tpcall(function()\n";
-    s += "\t\t\t\tUIAction.CallFunction(\"hud\", ids[i], \"ClearSubtitles\")\n";
-    s += "\t\t\tend)\n";
-    s += "\t\telse\n";
-    // All three parameters, which HUD.xml names as Text, SpeakerName and IsPlayer. The
-    // first call here passed only the first, and a Flash function reading two undefineds
-    // may well take a different branch than one reading an empty name and a false.
-    s += "\t\t\tpcall(function()\n";
-    s += "\t\t\t\tUIAction.CallFunction(\"hud\", ids[i], \"SetSubtitles\", " + g +
-         ".Html(text),\n";
-    s += "\t\t\t\t\t" + g + ".Html(above), false)\n";
-    s += "\t\t\tend)\n";
+    s += "\tlocal E = \"" + std::string(kCaptionElement) + "\"\n";
+    // Nothing to say, or a player who has asked for no subtitles: the element goes down.
+    // Both are told apart in the log once, since a caption that never appears is the
+    // first thing a tester reports.
+    s += "\tif text == \"\" or not " + g + ".SubtitlesOn() then\n";
+    s += "\t\tif text ~= \"\" and not " + g + ".captionOffTold then\n";
+    s += "\t\t\t" + g + ".captionOffTold = true\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE subtitles are off (wh_ui_SubtitlesEnabled), the\" ..\n";
+    s += "\t\t\t\t\" caption shows nothing\")\n";
     s += "\t\tend\n";
+    s += "\t\tpcall(function() UIAction.HideElement(E, 0) end)\n";
+    s += "\t\treturn\n";
     s += "\tend\n";
+    // The speaker's row only for a player who has speaker names on, as the game shows
+    // its own; Henry's own line in the game's colour for the player.
+    s += "\tif not " + g + ".Setting(\"wh_ui_EnableSubtitleSpeakerName\", true) then above = \"\" end\n";
+    s += "\tlocal isPlayer = above ~= \"\" and above == " + g + ".playerName\n";
+    s += "\tlocal html, over = " + g + ".Html(text), " + g + ".Html(above)\n";
+    // Where the game would put it: its own widget, hidden, lays the same words out and
+    // its clip is read back. GetPos answers at once (the layout is synchronous: measured
+    // 10 Nov 2026), and ClearSubtitles leaves nothing in the field for a Caption(true)
+    // on the way out to show. Failing a reading, the game's own rule for a caption outside
+    // a dialogue, -120 less the text's height, from our fields' own measure.
+    s += "\tlocal y = nil\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tUIAction.CallFunction(\"hud\", 0, \"SetSubtitles\", html, over, isPlayer)\n";
+    s += "\t\tlocal p = UIAction.GetPos(\"hud\", 0, \"Subtitles\")\n";
+    s += "\t\tif type(p) == \"table\" and type(p.y) == \"number\" then y = p.y end\n";
+    s += "\t\tUIAction.CallFunction(\"hud\", 0, \"ClearSubtitles\")\n";
+    s += "\tend)\n";
+    // The words, then the rows: the text one line pitch below the name's measured height
+    // when there is a name (the name wraps as the game's speaker row does), else first.
+    s += "\tpcall(function()\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"name\", over)\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"html\", html)\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"nameColor\", isPlayer and " +
+         std::string(kCaptionPlayerColor) + " or " + std::string(kCaptionNameColor) + ")\n";
+    s += "\t\tlocal rowY = 0\n";
+    s += "\t\tif over ~= \"\" then\n";
+    s += "\t\t\trowY = (tonumber(UIAction.GetVariable(E, 0, \"nameHeight\")) or 33) + " +
+         std::string(kCaptionRowGap) + "\n";
+    s += "\t\tend\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"textY\", rowY)\n";
+    s += "\t\tif y == nil then\n";
+    s += "\t\t\ty = -120 - rowY - (tonumber(UIAction.GetVariable(E, 0, \"textHeight\")) or 33)\n";
+    s += "\t\t\tif not " + g + ".captionPosTold then\n";
+    s += "\t\t\t\t" + g + ".captionPosTold = true\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE the game's caption position could not be read,\" ..\n";
+    s += "\t\t\t\t\t\" ours goes by its text height\")\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"subY\", y)\n";
+    s += "\t\tUIAction.SetVariable(E, 0, \"plateVisible\", " + g + ".Setting(\"wh_ui_EnableSubtitleBg\", false))\n";
+    s += "\t\tUIAction.ShowElement(E, 0)\n";
+    s += "\tend)\n";
     s += "\tif not " + g + ".wroteTold then\n";
     s += "\t\t" + g + ".wroteTold = true\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE asked the game's caption to say the line through\" ..\n";
-    s += "\t\t\t\" SetSubtitles\")\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE caption in \" .. E .. \" at y=\" .. string.format(\"%.1f\", y or 0))\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";
-    // The caption's background and its speaker row, asked for once as a conversation
-    // opens. The background is the plate a drawn line never got -- auxiliary geometry is
-    // not rendered in a master build, so the only fill available is one the UI already
-    // draws. The speaker row is on because it is the second line: Write fills it with
-    // whatever should sit over the text, and an empty speaker draws no row at all, so
-    // leaving it enabled costs nothing on a line with nothing above it.
+    // The player's subtitle settings, read and never written. A cvar the engine does not
+    // answer for reads as the default given, so an odd build shows the caption rather than
+    // hiding it.
+    s += "function " + g + ".Setting(name, default)\n";
+    s += "\tlocal ok, v = pcall(System.GetCVar, name)\n";
+    s += "\tv = ok and tonumber(v) or nil\n";
+    s += "\tif v == nil then return default end\n";
+    s += "\treturn v ~= 0\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".SubtitlesOn()\n";
+    s += "\treturn " + g + ".Setting(\"wh_ui_SubtitlesEnabled\", true)\n";
+    s += "end\n";
+    s += "\n";
+    // The game's own widget told the player's settings as a conversation opens. The first
+    // road forced its background and speaker row on, for the plate and the gold row our
+    // words rode in; now the widget is only our measure of where a line would go (Write),
+    // and a measure taken with the speaker row forced on for a player who has it off is a
+    // line high. So the settings go back to the player's, which is also what undoes a
+    // session of the old build in the same run.
     s += "function " + g + ".Plate()\n";
     s += "\tif UIAction == nil or UIAction.CallFunction == nil then return end\n";
     s += "\tlocal ids = " + g + ".hudIds\n";
+    s += "\tlocal bg = " + g + ".Setting(\"wh_ui_EnableSubtitleBg\", false)\n";
+    s += "\tlocal names = " + g + ".Setting(\"wh_ui_EnableSubtitleSpeakerName\", true)\n";
     s += "\tfor i = 1, #ids do\n";
     s += "\t\tpcall(function()\n";
-    s += "\t\t\tUIAction.CallFunction(\"hud\", ids[i], \"SetSubtitleBgEnable\", true)\n";
+    s += "\t\t\tUIAction.CallFunction(\"hud\", ids[i], \"SetSubtitleBgEnable\", bg)\n";
     s += "\t\tend)\n";
     s += "\t\tpcall(function()\n";
     s += "\t\t\tUIAction.CallFunction(\"hud\", ids[i], \"SetSubtitleSpeakerNameEnable\",\n";
-    s += "\t\t\t\ttrue)\n";
+    s += "\t\t\t\tnames)\n";
     s += "\t\tend)\n";
     s += "\tend\n";
     s += "end\n";
@@ -9702,15 +9774,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif not ok then " + g + ".Log(\"  SendInfoText raised \" .. tostring(err)) end\n";
     s += "\t\treturn ok\n";
     s += "\tend\n";
-    // The caption road stops here: the words are handed to the widget and the pump is
-    // started to keep putting them back, and nothing is drawn, since a line the game itself
-    // is captioning does not want a second copy of itself over the top in another face.
+    // The caption road stops here: the words are handed to our element, which holds them
+    // until the next line, and nothing is drawn, since a line that is captioned does not
+    // want a second copy of itself over the top in another face.
     s += "\tif " + g + ".mode == \"caption\" then\n";
     s += "\t\t" + g + ".shown = text\n";
     s += "\t\t" + g + ".PageSet(text, " + g + ".more)\n";
     s += "\t\t" + g + ".Write(" + g + ".Display())\n";
-    // No frame timer unless the line is being put back, which it is not: one write holds
-    // until the next line, so there is nothing for a pump to do between them.
+    // No frame timer unless a probe has asked for the line to be put back (captionEvery):
+    // one write holds until the next line, so there is nothing for a pump to do between.
     s += "\t\tif " + g + ".captionEvery > 0 and not " + g + ".painting then\n";
     s += "\t\t\t" + g + ".painting = true\n";
     s += "\t\t\t" + g + ".Paint()\n";
@@ -10326,16 +10398,15 @@ std::string emit_conversation_lua(const std::string& modid,
     // here leaves them hidden until the next launch rebuilds the UI, which is a great deal
     // better than the reverse bargain.
     //
-    // When the caption is where our words were going it is emptied instead of shown, since
-    // it was never hidden and would otherwise keep the last line of the conversation up
-    // afterwards, waiting for whatever the game next has to say to overwrite it.
+    // On the caption road our own element is emptied first, which takes it down (Write),
+    // so the last line of the conversation does not stay up over whatever the game next
+    // has to say.
     s += "\tif " + g + ".mode == \"caption\" then\n";
     s += "\t\t" + g + ".shown = \"\"\n";
     s += "\t\t" + g + ".above = \"\"\n";
     s += "\t\t" + g + ".Write(\"\")\n";
-    s += "\telse\n";
-    s += "\t\t" + g + ".Caption(true)\n";
     s += "\tend\n";
+    s += "\t" + g + ".Caption(true)\n";
     s += "\t" + g + ".Log(\"BRIDGE left, \" .. why .. \", \" ..\n";
     s += "\t\tstring.format(\"%.1f\", " + g + ".gap) .. \"m away\")\n";
     // The loop only reads the global at the end of a beat, so a player who has
@@ -15239,17 +15310,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".paints = 0\n";
     s += "\t" + g + ".paintFrom = " + g + ".ticks\n";
     s += "\t" + g + ".rateTold = false\n";
-    // Before the first beat, so the caption is already out of the way by the time the
-    // dialogue has a line to put in it -- unless the caption is where our own words are
-    // going, in which case it is wanted visible and wanted to have its plate, and a session
-    // that hid it earlier in this run has to be undone.
+    // Before the first beat, so the game's caption is already out of the way by the time
+    // the dialogue has a line to put in it. On the caption road too: our words go in an
+    // element of our own (Write), and the game's widget, hidden, is only the measure of
+    // where they should go -- told the player's own settings first (Plate), since the old
+    // road forced its speaker row on and a measure taken that way is a line high.
     s += "\t" + g + ".wrote = nil\n";
-    s += "\tif " + g + ".mode == \"caption\" then\n";
-    s += "\t\t" + g + ".Caption(true)\n";
-    s += "\t\t" + g + ".Plate()\n";
-    s += "\telse\n";
-    s += "\t\t" + g + ".Caption(false)\n";
-    s += "\tend\n";
+    s += "\t" + g + ".Caption(false)\n";
+    s += "\tif " + g + ".mode == \"caption\" then " + g + ".Plate() end\n";
     // The hint gets the screen to itself before the first line, because a conversation
     // that has started is the one moment a player needs telling how to end one, and
     // because a line arriving on top of it would take it away again -- info text by

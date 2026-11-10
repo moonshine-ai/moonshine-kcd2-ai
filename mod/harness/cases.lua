@@ -181,35 +181,106 @@ case("Say: a line in two beats is held twice and heard once", function(E, M, che
     check(M.choosing == true, "and the menu is asked for")
 end)
 
-case("Say: in the game's caption the speaker is on the gold row and the words stand alone", function(E, M, check)
+-- What the caption of our own (MoonshineCaption, emit.cpp Write) was last given: the text
+-- and the speaker row, as SetSubtitles' two arguments used to be read.
+local function captionShows(E)
+    local v = E.hud.vars.MoonshineCaption
+    if v == nil then return nil end
+    return { v.html, v.name, y = v.subY, rowY = v.textY, color = v.nameColor, plate = v.plateVisible,
+             up = E.hud.shown.MoonshineCaption }
+end
+
+case("Say: in the caption the speaker is on the gold row and the words stand alone", function(E, M, check)
     -- notes.md 7 Oct 2026: "Joan: words" in the text field, in the text's colour, was the
-    -- typing prototype's layout. The game's own captions put the speaker in SetSubtitles'
-    -- second argument, and so does the mod now, on both halves of an exchange.
+    -- typing prototype's layout. The game's own captions put the speaker on a row of its
+    -- own over the words, and so does the mod, on both halves of an exchange.
     live(E, M)
     M.npcName = "Bartel"
-    local function lastSubtitles()
-        for i = #E.hud.calls, 1, -1 do
-            if E.hud.calls[i] == "SetSubtitles" then return E.hud.args[i] end
-        end
-    end
     check(M.mode == "caption", "the caption road is the default")
     M.Say(1, "Past the smithy, then left.")
-    local args = lastSubtitles()
+    local args = captionShows(E)
     check(args ~= nil, "the caption was written")
+    check(args and args.up == true, "and shown")
     check(args and args[1] == "Past the smithy, then left.", "the words alone in the text: " .. tostring(args and args[1]))
     check(args and args[2] == M.npcName, "the speaker in the gold row: " .. tostring(args and args[2]))
+    check(args and args.color == 0xFFEE99, "in the game's gold")
+    check(args and args.rowY and args.rowY > 33, "the words a row below the name: " .. tostring(args and args.rowY))
+    check(args and args.y == -122.2, "at the y the game's own clip gave: " .. tostring(args and args.y))
     check(not string.find(M.shown, ":", 1, true), "no name riding in the text")
-    -- Henry's picked line the same way until the reply replaces it.
+    -- The game's widget was asked to lay the line out, for its y, and left empty after.
+    local measured, cleared = false, false
+    for i = 1, #E.hud.calls do
+        if E.hud.calls[i] == "SetSubtitles" then measured = true; cleared = false end
+        if E.hud.calls[i] == "ClearSubtitles" and measured then cleared = true end
+    end
+    check(measured and cleared, "the game's widget measured and cleared")
+    -- Henry's picked line the same way until the reply replaces it, in the player's colour.
     M.Said("Which way to the mill?")
-    args = lastSubtitles()
+    args = captionShows(E)
     check(args and args[1] == "Which way to the mill?" and args[2] == M.playerName,
           "Henry's line under his name: " .. tostring(args and args[2]) .. " / " .. tostring(args and args[1]))
+    check(args and args.color == 0x66BFFF, "in the game's blue for the player")
     -- The name stays in front where there is no speaker row to put it in.
     check(M.Named("words") == M.npcName .. ": words", "Named still serves the drawn and info roads")
-    -- A line of the mod's own has no speaker.
+    -- A line of the mod's own has no speaker, and the words take the first row.
     M.Say(2, "[Moonshine] the app is not running", true)
-    args = lastSubtitles()
+    args = captionShows(E)
     check(args and args[2] == "", "bare words draw no speaker row")
+    check(args and args.rowY == 0, "and stand on the first row")
+    -- HTML means it: the one character measured to eat the next is escaped.
+    M.Say(3, "Fish & chips, 2 > 1")
+    args = captionShows(E)
+    check(args and args[1] == "Fish &amp; chips, 2 &gt; 1", "escaped for the field: " .. tostring(args and args[1]))
+    -- Leaving takes the caption down and gives the game's back.
+    M.Leave("done")
+    args = captionShows(E)
+    check(args and args.up == false, "the caption down with the conversation")
+end)
+
+case("Caption: the player's subtitle settings are honoured, and never written", function(E, M, check)
+    -- The game shows no subtitles with wh_ui_SubtitlesEnabled off, no speaker's name with
+    -- wh_ui_EnableSubtitleSpeakerName off, and a background only with
+    -- wh_ui_EnableSubtitleBg on; the mod's caption does the same, by reading the cvars.
+    -- Reading only: setting wh_ui_SubtitlesEnabled once ate a player's setting (README).
+    E.cvars.wh_ui_SubtitlesEnabled = "1"
+    E.cvars.wh_ui_EnableSubtitleSpeakerName = "0"
+    E.cvars.wh_ui_EnableSubtitleBg = "1"
+    live(E, M)
+    M.npcName = "Mabel Eldris"
+    -- The widget told the player's own settings as the conversation opens (Begin), not
+    -- forced on as the first road had them.
+    M.Plate()
+    local bgTold, namesTold
+    for i = 1, #E.hud.calls do
+        if E.hud.calls[i] == "SetSubtitleBgEnable" then bgTold = E.hud.args[i][1] end
+        if E.hud.calls[i] == "SetSubtitleSpeakerNameEnable" then namesTold = E.hud.args[i][1] end
+    end
+    check(bgTold == true and namesTold == false, "the game's widget told the player's settings: bg=" .. tostring(bgTold) .. " names=" .. tostring(namesTold))
+    M.Say(1, "Oof, I hate sweeping.")
+    local args = captionShows(E)
+    check(args and args.up == true and args[1] == "Oof, I hate sweeping.", "the words shown")
+    check(args and args[2] == "", "no speaker's row for a player with names off")
+    check(args and args.rowY == 0, "the words on the first row")
+    check(args and args.plate == true, "the plate for a player with the background on")
+    -- Subtitles off: nothing, and said once.
+    E.cvars.wh_ui_SubtitlesEnabled = "0"
+    local mark = E.mark()
+    M.Say(2, "There is always more dust than there was.")
+    args = captionShows(E)
+    check(args and args.up == false, "nothing shown with subtitles off")
+    check(args and args[1] == "Oof, I hate sweeping.", "and nothing written: " .. tostring(args and args[1]))
+    check(E.find("BRIDGE subtitles are off", mark), "said in the log")
+    M.Say(3, "Not that it matters.")
+    check(args and args.up == false, "still nothing")
+    for name, v in pairs(E.cvars) do
+        if name == "wh_ui_SubtitlesEnabled" then check(v == "0", "the player's setting untouched") end
+    end
+    -- On again mid-conversation: the next line shows.
+    E.cvars.wh_ui_SubtitlesEnabled = "1"
+    M.Say(4, "Well then.")
+    args = captionShows(E)
+    check(args and args.up == true and args[1] == "Well then.", "shown again once subtitles are on")
+    M.Leave("done")
 end)
 
 case("Caption: a long line is shown in pages at its sentence ends, turned as the voice should reach them, the last with the audio's end", function(E, M, check)
@@ -217,11 +288,7 @@ case("Caption: a long line is shown in pages at its sentence ends, turned as the
     -- The voice is one piece of audio and is not cut; the words under it turn over.
     live(E, M)
     M.npcName = "Benesh"
-    local function lastSubtitles()
-        for i = #E.hud.calls, 1, -1 do
-            if E.hud.calls[i] == "SetSubtitles" then return E.hud.args[i] end
-        end
-    end
+    local function lastSubtitles() return captionShows(E) end
     local parts = {}
     for i = 1, 7 do
         parts[i] = "You have it, then, and that is the " .. ({ "first", "second", "third", "fourth", "fifth", "sixth", "seventh" })[i]

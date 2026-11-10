@@ -593,8 +593,8 @@ int main(int argc, char** argv) {
                   << "\n"
                   << "  words on screen: "
                   << (o.screen.mode == "caption"
-                          ? std::string("the dialogue's own caption, in the game's face, on "
-                                        "its background, through UIAction SetSubtitles")
+                          ? std::string("a caption of the mod's own (Libs/UI/MoonshineCaption."
+                                        "gfx), the game's face and place, set once a line")
                           : o.screen.mode == "draw"
                           ? "drawn " + std::to_string(o.screen.x).substr(0, 4) + " across and " +
                                 std::to_string(o.screen.y).substr(0, 4) +

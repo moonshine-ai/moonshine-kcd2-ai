@@ -804,8 +804,11 @@ function Engine.installGlobals()
         IsLoadingEngineSaveGame = function() return false end,
     }
     -- calls is the names in order; args the arguments of each, by the same index, so a case
-    -- can read what SetSubtitles was given (the text and the speaker row).
-    Engine.hud = { rows = nil, calls = {}, args = {} }
+    -- can read what the HUD was asked. vars is what each element's variables were set to
+    -- (vars.MoonshineCaption.html is the caption's text, .name its speaker row), shown
+    -- whether each element is up. The game's caption clip answers GetPos with a y of the
+    -- kind the game gives a one-line caption in a dialogue (wl1, 10 Nov 2026).
+    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
     UIAction = {
         SetArray = function(_, _, name, values) if name == "SequenceList" then Engine.hud.rows = values end end,
         CallFunction = function(_, _, name, ...)
@@ -813,6 +816,22 @@ function Engine.installGlobals()
             Engine.hud.args[#Engine.hud.calls] = { ... }
         end,
         SetVisible = function() end,
+        SetVariable = function(element, _, name, value)
+            Engine.hud.vars[element] = Engine.hud.vars[element] or {}
+            Engine.hud.vars[element][name] = value
+        end,
+        GetVariable = function(element, _, name)
+            -- A field's measured height: one 28 px line is 33, each wrapped line 36 more;
+            -- the stub counts a line per 60 characters of what was set.
+            if name == "nameHeight" or name == "textHeight" then
+                local v = Engine.hud.vars[element] and Engine.hud.vars[element][name == "nameHeight" and "name" or "html"] or ""
+                return 33 + 36 * math.floor(#v / 60)
+            end
+            return Engine.hud.vars[element] and Engine.hud.vars[element][name]
+        end,
+        ShowElement = function(element) Engine.hud.shown[element] = true end,
+        HideElement = function(element) Engine.hud.shown[element] = false end,
+        GetPos = function(_, _, clip) if clip == "Subtitles" then return { x = -480, y = -122.2, z = 0 } end end,
     }
     Shops = {
         DoMoneyTransaction = function(soulId, deci, _)
@@ -938,7 +957,8 @@ function Engine.reset()
     Engine.ports = {}
     Engine.questState = {}
     Engine.dialog = { open = false, npc = nil, menu = false, beats = 0 }
-    Engine.hud = { rows = nil, calls = {}, args = {} }
+    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
+    Engine.cvars = { sys_PakPriority = "0" }
     Engine.maps = {}
     Engine.files = {}
     Engine.infoTexts = {}

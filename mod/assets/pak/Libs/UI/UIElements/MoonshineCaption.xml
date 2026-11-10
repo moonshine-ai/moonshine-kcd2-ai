@@ -1,0 +1,55 @@
+<UIElements name="Moonshine">
+
+  <!-- The conversation caption of our own (tools/gen_caption_gfx.py writes the movie;
+       emit.cpp's Write fills it). A copy of the dialogue caption's tree in hud.gfx
+       (bc.subtitles.inside.tField: the same field on the same font with the same shadow)
+       that the dialogue system never writes to, so the words are set once and stay instead
+       of being put back every frame (and now and then lost: the flicker, notes 8 Oct 2026).
+
+       Fullscreen, as hud.gfx is: the movie runs at noScale (its own DoAction) and puts
+       'all' at (W/2, H) scaled H/1080, the HUD's bc frame, so a y read off the game's own
+       widget (UIAction.GetPos "hud" "Subtitles") can be given to 'sub' as it is.
+       force_no_unload, since a conversation can open at any time and the element has to
+       be there to receive its words without a load in the middle of the first line. -->
+  <UIElement name="MoonshineCaption" mouseevents="0" keyevents="0" cursor="0" controller_input="0" force_no_unload="1">
+
+    <GFx file="MoonshineCaption.gfx" layer="26">
+      <Constraints>
+        <Align mode="fullscreen" />
+      </Constraints>
+    </GFx>
+
+    <functions>
+    </functions>
+
+    <events>
+    </events>
+
+    <variables>
+      <!-- The words (HTML, escaped by the Lua), their measured height, and the row they
+           start on: 0 with no speaker, one line pitch below the name's height with one. -->
+      <Variable name="html" varname="all.sub.text.htmlText" />
+      <Variable name="textHeight" varname="all.sub.text.textHeight" />
+      <Variable name="textY" varname="all.sub.text._y" />
+      <!-- The speaker's row over them: the game's gold for the other party, its blue for
+           Henry's own line (ColorScheme.DARK_EMPHASIS / DARK_POSITIVE). -->
+      <Variable name="name" varname="all.sub.name.htmlText" />
+      <Variable name="nameHeight" varname="all.sub.name.textHeight" />
+      <Variable name="nameColor" varname="all.sub.name.textColor" />
+      <!-- Where the game would have put this caption, read off its clip. -->
+      <Variable name="subY" varname="all.sub._y" />
+      <!-- The plate under the words, for a player with the subtitle background on. -->
+      <Variable name="plateVisible" varname="all.sub.plate._visible" />
+    </variables>
+
+    <MovieClips>
+      <MovieClip name="all" instancename="all" />
+      <MovieClip name="sub" instancename="all.sub" />
+      <MovieClip name="plate" instancename="all.sub.plate" />
+      <MovieClip name="text" instancename="all.sub.text" />
+      <MovieClip name="name" instancename="all.sub.name" />
+    </MovieClips>
+
+  </UIElement>
+
+</UIElements>
