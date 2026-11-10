@@ -4375,9 +4375,16 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     E.floorAt = q.spot[3] + 0.6
     for i = 2, #points - 1 do
         local here = points[i]
-        player:SetWorldPos({ x = here[1] - M.seekNearMetres + 1, y = here[2], z = here[3] })
         local to = points[i + 1]
         local l = math.sqrt((to[1] - here[1]) ^ 2 + (to[2] - here[2]) ^ 2)
+        -- Henry stands just within seekNearMetres of this point, on the side away from the
+        -- next one, so he is never nearer the spot than the path puts him (a fixed offset
+        -- in x put him within seekFoundMetres of the litter when the last point was
+        -- moved, 10 Nov 2026 drop, and he "found" them before she had settled).
+        local back = M.seekNearMetres - 1
+        local ux, uy = 1, 0
+        if l > 0 then ux, uy = (here[1] - to[1]) / l, (here[2] - to[2]) / l end
+        player:SetWorldPos({ x = here[1] + ux * back, y = here[2] + uy * back, z = here[3] })
         E.advance(2100 + math.ceil(l / M.seekSpeed) * 1000 + 2100)
         check(math.abs(cat.pos.x - to[1]) < 0.01 and math.abs(cat.pos.y - to[2]) < 0.01, "arrived at point " .. (i + 1))
     end
