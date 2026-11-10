@@ -13762,8 +13762,32 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // The family gone from the spot: every entity of theirs removed, the store's gone (so
     // WatchPending lets the errand go), and the strides left nothing to move.
+    // Her voice: an AudioTriggerSpot kept at her position, since a trigger run on the
+    // BasicEntity she is made of returns without error and makes no sound (bugs.txt 9 Nov
+    // 2026, "I don't hear any audio from the cat": the same cue from a spot entity three
+    // metres off was heard at once). Made when first wanted, found by name after a load,
+    // moved to where she sits before each call, taken away with the family.
+    s += "function " + g + ".SeekVoice(id, at)\n";
+    s += "\tlocal name = \"mn_seek_\" .. id .. \"_voice\"\n";
+    s += "\tlocal v = nil\n";
+    s += "\tpcall(function() v = System.GetEntityByName(name) end)\n";
+    s += "\tif v == nil then\n";
+    s += "\t\tlocal ok, ent = pcall(System.SpawnEntity, {\n";
+    s += "\t\t\tclass = \"AudioTriggerSpot\", name = name, position = { x = at.x, y = at.y, z = at.z + 0.3 },\n";
+    s += "\t\t\torientation = { x = 0, y = 1, z = 0 },\n";
+    s += "\t\t\tproperties = { audioTriggerPlayTriggerName = \"\", audioTriggerStopTriggerName = \"\", bEnabled = 1,\n";
+    s += "\t\t\t\tbPlayRandom = 0, fRadiusRandom = 0, eiSoundObstructionType = 1 },\n";
+    s += "\t\t})\n";
+    s += "\t\tif not ok or ent == nil then return nil end\n";
+    s += "\t\tv = ent\n";
+    s += "\telse\n";
+    s += "\t\tpcall(function() v:SetWorldPos({ x = at.x, y = at.y, z = at.z + 0.3 }) end)\n";
+    s += "\tend\n";
+    s += "\treturn v\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".SeekLeave(id, S)\n";
-    s += "\tlocal names = { \"mn_seek_\" .. id }\n";
+    s += "\tlocal names = { \"mn_seek_\" .. id, \"mn_seek_\" .. id .. \"_voice\" }\n";
     s += "\tfor i = 1, #" + g + ".seekKittens do names[#names + 1] = \"mn_seek_\" .. id .. \"_kit\" .. i end\n";
     s += "\tlocal n = 0\n";
     s += "\tfor _, name in ipairs(names) do\n";
@@ -13880,7 +13904,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
     s += "\t\tS.calledAt = now\n";
-    s += "\t\tlocal played = " + g + ".Sound(S.cat, q.cue)\n";
+    s += "\t\tlocal played = " + g + ".Sound(" + g + ".SeekVoice(id, at), q.cue)\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" calls (\" .. tostring(q.cue) .. \") at point \" .. S.leg .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\" .. (played and \"\" or \", not played\"))\n";
     s += "\tend\n";
     s += "\tif d <= 3 * " + g + ".seekNearMetres then " + g + ".watchQuick = true end\n";

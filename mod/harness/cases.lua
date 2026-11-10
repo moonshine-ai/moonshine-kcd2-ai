@@ -4273,13 +4273,19 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(cat.anims[1] ~= nil and cat.anims[1].clip == "relaxed_idle_sitting", "sitting")
     check(E.count("BRIDGE quest " .. id .. " cat made at point 1", mark) == 1, "said once")
     E.advance(M.seekCallSeconds * 1000 + 2100)
-    check(#cat.sounds >= 1 and cat.sounds[1] == q.cue, "she calls, with the quest's cue")
-    local calls = #cat.sounds
+    -- Her voice is a sound spot at her position, not the BasicEntity (bugs.txt 9 Nov 2026,
+    -- "I don't hear any audio from the cat": the cue is silent from the entity, heard from a spot).
+    local voice = E.entities["mn_seek_" .. id .. "_voice"]
+    check(voice ~= nil and voice.spec.class == "AudioTriggerSpot", "her voice is a sound spot")
+    check(voice ~= nil and math.abs(voice.pos.x - cat.pos.x) < 0.01 and math.abs(voice.pos.y - cat.pos.y) < 0.01, "at her position")
+    check(#cat.sounds == 0, "nothing played on the cat herself")
+    check(voice ~= nil and #voice.sounds >= 1 and voice.sounds[1] == q.cue, "she calls, with the quest's cue")
+    local calls = #voice.sounds
     E.advance(M.seekCallSeconds * 1000 + 100)
-    check(#cat.sounds > calls, "and again after the interval")
+    check(#voice.sounds > calls, "and again after the interval")
     -- Each call logged (bugs.txt 9 Nov 2026, "I wasn't hearing any meowing"): the log is
     -- the only witness that she called, since the engine says nothing about playback.
-    check(E.count("BRIDGE quest " .. id .. " cat calls (" .. q.cue .. ") at point 1 with Henry at", mark) == #cat.sounds, "each call logged")
+    check(E.count("BRIDGE quest " .. id .. " cat calls (" .. q.cue .. ") at point 1 with Henry at", mark) == #voice.sounds, "each call logged")
     check(E.count("BRIDGE quest " .. id .. " cat made", mark) == 1, "not made again while she stands")
     -- Henry comes close: she gallops to the next point, the position moved along the way.
     player:SetWorldPos({ x = first[1] - M.seekNearMetres + 1, y = first[2], z = first[3] })
@@ -4417,7 +4423,8 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(System.GetEntityByName(name) == nil, "the cat gone")
     for i = 1, #M.seekKittens do check(System.GetEntityByName(name .. "_kit" .. i) == nil, "kitten " .. i .. " gone") end
     check(f2.gone == true, "gone, in the store")
-    check(E.find("BRIDGE quest " .. id .. " family gone from the spot, " .. (1 + #M.seekKittens) .. " taken away", mark), "and said so")
+    check(E.find("BRIDGE quest " .. id .. " family gone from the spot, " .. (2 + #M.seekKittens) .. " taken away", mark), "and said so, her voice with them")
+    check(System.GetEntityByName(name .. "_voice") == nil, "the voice spot gone too")
     pending = M.WatchPending()
     for _, p in ipairs(pending) do check(p ~= id, "no longer watched") end
     -- Back at the spot the next tick: nothing made again.
