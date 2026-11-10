@@ -13436,12 +13436,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // A spot entity at a point: the AudioTriggerSpot class, which has no shape and is what the
     // probes placed things against and played sounds from. Swept away after a while.
-    s += "function " + g + ".SpotEntity(name, x, y, z)\n";
+    s += "function " + g + ".SpotEntity(name, x, y, z, obstruction)\n";
     s += "\tlocal ok, ent = pcall(System.SpawnEntity, {\n";
     s += "\t\tclass = \"AudioTriggerSpot\", name = name, position = { x = x, y = y, z = z },\n";
     s += "\t\torientation = { x = 0, y = 1, z = 0 },\n";
     s += "\t\tproperties = { audioTriggerPlayTriggerName = \"\", audioTriggerStopTriggerName = \"\", bEnabled = 1,\n";
-    s += "\t\t\tbPlayRandom = 0, fRadiusRandom = 0, eiSoundObstructionType = 1 },\n";
+    s += "\t\t\tbPlayRandom = 0, fRadiusRandom = 0, eiSoundObstructionType = obstruction or 1 },\n";
     s += "\t})\n";
     s += "\tif not ok or ent == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE spot entity could not be made: \" .. tostring(ent))\n";
@@ -13618,6 +13618,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekStrideMs = " + std::to_string(kSeekStrideMs) + "\n";
     s += g + ".seekLeaveHour = " + std::to_string(kSeekLeaveHour) + "\n";
     s += g + ".seekSpotMetres = " + health_text(kSeekSpotMetres) + "\n";
+    s += g + ".seekVoiceMetres = " + health_text(kSeekVoiceMetres) + "\n";
     s += g + ".seekEyeMetres = " + health_text(kSeekEyeMetres) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
@@ -13801,32 +13802,30 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".HailShow(text, \"Henry\", 0)\n";
     s += "end\n";
     s += "\n";
-    // Her voice: an AudioTriggerSpot kept at her position, since a trigger run on the
-    // BasicEntity she is made of returns without error and makes no sound (bugs.txt 9 Nov
-    // 2026, "I don't hear any audio from the cat": the same cue from a spot entity three
-    // metres off was heard at once). Made when first wanted, found by name after a load,
-    // moved to where she sits before each call, taken away with the family.
-    s += "function " + g + ".SeekVoice(id, at)\n";
-    s += "\tlocal name = \"mn_seek_\" .. id .. \"_voice\"\n";
-    s += "\tlocal v = nil\n";
-    s += "\tpcall(function() v = System.GetEntityByName(name) end)\n";
-    s += "\tif v == nil then\n";
-    s += "\t\tlocal ok, ent = pcall(System.SpawnEntity, {\n";
-    s += "\t\t\tclass = \"AudioTriggerSpot\", name = name, position = { x = at.x, y = at.y, z = at.z + 0.3 },\n";
-    s += "\t\t\torientation = { x = 0, y = 1, z = 0 },\n";
-    s += "\t\t\tproperties = { audioTriggerPlayTriggerName = \"\", audioTriggerStopTriggerName = \"\", bEnabled = 1,\n";
-    s += "\t\t\t\tbPlayRandom = 0, fRadiusRandom = 0, eiSoundObstructionType = 1 },\n";
-    s += "\t\t})\n";
-    s += "\t\tif not ok or ent == nil then return nil end\n";
-    s += "\t\tv = ent\n";
-    s += "\telse\n";
-    s += "\t\tpcall(function() v:SetWorldPos({ x = at.x, y = at.y, z = at.z + 0.3 }) end)\n";
+    // Her voice (bugs.txt 9 Nov 2026, "I don't hear any audio from the cat"; the probes of
+    // that evening): a trigger run on the BasicEntity she is made of returns without error
+    // and makes no sound, an AudioTriggerSpot plays -- but a spot plays a given trigger
+    // once (a second execute on the same proxy is silent, stopped first or not), and the
+    // game's cat cues are mixed for a cat underfoot: heard at 3 and 6 metres, faint at 9,
+    // nothing from 12. So each call is a fresh spot (swept with the sound spots), placed
+    // on the line from Henry towards her within kSeekVoiceMetres of him -- the direction
+    // is hers, the loudness a hearing's -- or at her when she is nearer than that; and no
+    // obstruction, so a yard wall does not take what is left.
+    s += "function " + g + ".SeekVoice(id, S, at, pp)\n";
+    s += "\tS.calls = (S.calls or 0) + 1\n";
+    s += "\tlocal dx, dy = at.x - pp.x, at.y - pp.y\n";
+    s += "\tlocal d = math.sqrt(dx * dx + dy * dy)\n";
+    s += "\tlocal x, y, z = at.x, at.y, at.z\n";
+    s += "\tif d > " + g + ".seekVoiceMetres then\n";
+    s += "\t\tlocal t = " + g + ".seekVoiceMetres / d\n";
+    s += "\t\tx, y = pp.x + dx * t, pp.y + dy * t\n";
+    s += "\t\tz = " + g + ".Ground(x, y, pp.z)\n";
     s += "\tend\n";
-    s += "\treturn v\n";
+    s += "\treturn " + g + ".SpotEntity(\"mn_seek_\" .. id .. \"_voice\" .. S.calls, x, y, z + 0.3, 0)\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".SeekLeave(id, S)\n";
-    s += "\tlocal names = { \"mn_seek_\" .. id, \"mn_seek_\" .. id .. \"_voice\" }\n";
+    s += "\tlocal names = { \"mn_seek_\" .. id }\n";
     s += "\tfor i = 1, #" + g + ".seekKittens do names[#names + 1] = \"mn_seek_\" .. id .. \"_kit\" .. i end\n";
     s += "\tlocal n = 0\n";
     s += "\tfor _, name in ipairs(names) do\n";
@@ -13954,7 +13953,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
     s += "\t\tS.calledAt = now\n";
-    s += "\t\tlocal played = " + g + ".Sound(" + g + ".SeekVoice(id, at), q.cue)\n";
+    s += "\t\tlocal played = " + g + ".Sound(" + g + ".SeekVoice(id, S, at, pp), q.cue)\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" calls (\" .. tostring(q.cue) .. \") at point \" .. S.leg .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\" .. (played and \"\" or \", not played\"))\n";
     s += "\tend\n";
     s += "\tif d <= 3 * " + g + ".seekNearMetres then " + g + ".watchQuick = true end\n";

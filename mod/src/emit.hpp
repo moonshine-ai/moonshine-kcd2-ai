@@ -602,6 +602,12 @@ constexpr int kSeekLeaveHour = 6;
 // (InView, with the cat's own height) -- and `discovered` at the find. Neither over a
 // conversation; the first kept in the store so a load does not have him say it twice.
 constexpr double kSeekSpotMetres = 25.0;
+// How far from Henry her call is placed when she is farther than this (SeekVoice): the
+// game's cat cues carry about six metres (the probes of 9 Nov 2026: heard at 3 and 6, faint
+// at 9, nothing from 12), so the sound spot is set on the line towards her at this
+// distance, and at her once she is nearer. A fresh spot per call, since a spot plays a
+// trigger once.
+constexpr double kSeekVoiceMetres = 4.0;
 constexpr double kSeekEyeMetres = 0.3;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;
