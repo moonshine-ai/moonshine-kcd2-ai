@@ -6122,6 +6122,8 @@ std::string state_lua(const std::string& g) {
     // A seek's family gone from the place (the morning after the hand-in, bugs.txt 9 Nov
     // 2026: "Litter should vanish the day after the quest is handed in").
     s += "\tif command == \"gone\" then facts.gone = true end\n";
+    // Henry's sighting of her said (WatchSeek), so a load does not have him say it again.
+    s += "\tif command == \"spotted\" then facts.spotted = true end\n";
     // A beat's man down, a beat's or a mind's target dead, a pray knelt, a mind's visit made
     // (with the game's clock at the moment, for the next to be due against).
     s += "\tif command == \"beaten\" then facts.beaten = true end\n";
@@ -6215,7 +6217,8 @@ std::string state_lua(const std::string& g) {
     // been told and sent Henry on with the word; e, a find's keepsake is in Henry's pocket;
     // n, an unyielding holder has rebuffed Henry; a, the giver has named the one who can
     // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
-    // was denounced and Henry walked out with nothing; one z per clue-holder a seek's
+    // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
+    // place (the morning after the hand-in, fetched home); one z per clue-holder a seek's
     // Henry has asked; W followed by three
     // digits, a dictated letter is written, each digit a part's outcome (0 as said, 1 left
     // out, 2 softened, 3 made larger), last so the digits run to the end of the letters.
@@ -6229,7 +6232,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.onward and \"w\" or \"\") .. (facts.keepsake and \"e\" or \"\")\n";
     s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.named and \"a\" or \"\")\n";
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
-    s += "\t\t.. (facts.denounced and \"d\" or \"\")\n";
+    s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
     s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
     s += "end\n";
@@ -7500,6 +7503,9 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", path = { " + path + " }, thing = \"" + lua_escape(q.item_name) + "\"";
             if (!q.cue_sound.empty()) s += ", cue = \"" + lua_escape(q.cue_sound) + "\"";
             if (!q.spot_lift.empty()) s += ", lift = " + health_text(std::atof(q.spot_lift.c_str()));
+            // Henry's asides at the sighting and the find (WatchSeek).
+            if (!q.spotted.empty()) s += ", spotted = \"" + lua_escape(q.spotted) + "\"";
+            if (!q.discovered.empty()) s += ", discovered = \"" + lua_escape(q.discovered) + "\"";
             // The clue-holders (Quest::clues): each soul and the asked token of their own
             // class (emit.hpp clue_class), for QuestCommand's `clue` at the one Henry is
             // talking to.
@@ -13611,6 +13617,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".seekSpeed = " + health_text(kSeekSpeed) + "\n";
     s += g + ".seekStrideMs = " + std::to_string(kSeekStrideMs) + "\n";
     s += g + ".seekLeaveHour = " + std::to_string(kSeekLeaveHour) + "\n";
+    s += g + ".seekSpotMetres = " + health_text(kSeekSpotMetres) + "\n";
+    s += g + ".seekEyeMetres = " + health_text(kSeekEyeMetres) + "\n";
     s += g + ".seekKittenScale = " + health_text(kSeekKittenScale) + "\n";
     s += g + ".seekKittenSpread = " + health_text(kSeekKittenSpread) + "\n";
     s += g + ".seekKittenGap = " + health_text(kSeekKittenGap) + "\n";
@@ -13762,6 +13770,37 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // The family gone from the spot: every entity of theirs removed, the store's gone (so
     // WatchPending lets the errand go), and the strides left nothing to move.
+    // Whether the cat (a small thing: her own height, not a man's eye line) is before Henry's
+    // eyes -- in the frame and nothing between -- as InView judges a holder.
+    s += "function " + g + ".SeekInView(cat, pp)\n";
+    s += "\tif cat == nil then return false, \"no cat\" end\n";
+    s += "\tlocal tp = nil\n";
+    s += "\tpcall(function() tp = cat:GetWorldPos() end)\n";
+    s += "\tif tp == nil then return false, \"no position\" end\n";
+    s += "\tlocal head = { x = tp.x, y = tp.y, z = tp.z + " + g + ".seekEyeMetres }\n";
+    s += "\tlocal framed = true\n";
+    s += "\tpcall(function() if System.IsPointVisible(head) == false then framed = false end end)\n";
+    s += "\tif not framed then return false, \"out of frame\" end\n";
+    s += "\tlocal clear = true\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tclear = System.RayTraceCheck({ x = pp.x, y = pp.y, z = pp.z + " + g + ".followEyeMetres }, head, " + g + ".Player().id, cat.id) ~= false\n";
+    s += "\tend)\n";
+    s += "\tif not clear then return false, \"hidden\" end\n";
+    s += "\treturn true, \"in view\"\n";
+    s += "end\n";
+    s += "\n";
+    // Henry's aside on the seek (spotted, discovered): his voice and the narrative line, not
+    // over a conversation (the app's turn, or the game's own Talk), and said in the log.
+    s += "function " + g + ".SeekAside(id, q, text, what)\n";
+    s += "\tif text == nil or text == \"\" then return end\n";
+    s += "\tif " + g + ".active or " + g + ".InDialog() then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. what .. \" aside kept back, in conversation\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Voice(\"henry\", text)\n";
+    s += "\t" + g + ".HailShow(text, \"Henry\", 0)\n";
+    s += "end\n";
+    s += "\n";
     // Her voice: an AudioTriggerSpot kept at her position, since a trigger run on the
     // BasicEntity she is made of returns without error and makes no sound (bugs.txt 9 Nov
     // 2026, "I don't hear any audio from the cat": the same cue from a spot entity three
@@ -13886,6 +13925,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" found at \" .. string.format(\"%.1f\", d) .. \"m\")\n";
     s += "\t\t\tpcall(" + g + ".StateQuest, id, \"seen\")\n";
     s += "\t\t\t" + g + ".Token(q)\n";
+    s += "\t\t\t" + g + ".SeekAside(id, q, q.discovered, \"discovered\")\n";
     s += "\t\tend\n";
     s += "\t\treturn\n";
     s += "\tend\n";
@@ -13901,6 +13941,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".watchQuick = true\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" moves off to point \" .. S.leg .. \" of \" .. last .. \", \" .. string.format(\"%.1f\", len) .. \"m\")\n";
     s += "\t\treturn\n";
+    s += "\tend\n";
+    // The sighting (q.spotted): she sits at a point within seekSpotMetres, before his eyes.
+    s += "\tif q.spotted ~= nil and not f.spotted and not S.spotted and d <= " + g + ".seekSpotMetres then\n";
+    s += "\t\tlocal shown, why = " + g + ".SeekInView(S.cat, pp)\n";
+    s += "\t\tif shown then\n";
+    s += "\t\t\tS.spotted = true\n";
+    s += "\t\t\tpcall(" + g + ".StateQuest, id, \"spotted\")\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" spotted at point \" .. S.leg .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\")\n";
+    s += "\t\t\t" + g + ".SeekAside(id, q, q.spotted, \"spotted\")\n";
+    s += "\t\tend\n";
     s += "\tend\n";
     s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
     s += "\t\tS.calledAt = now\n";

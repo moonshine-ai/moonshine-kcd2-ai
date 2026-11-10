@@ -117,6 +117,7 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.apologised = at->second.find('p') != std::string::npos;
         facts.refused = at->second.find('r') != std::string::npos;
         facts.seen = at->second.find('s') != std::string::npos;
+        facts.gone = at->second.find('v') != std::string::npos;
         facts.beaten = at->second.find('k') != std::string::npos;
         facts.dead = at->second.find('x') != std::string::npos;
         facts.prayed = at->second.find('y') != std::string::npos;

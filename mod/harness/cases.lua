@@ -4287,11 +4287,29 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     -- the only witness that she called, since the engine says nothing about playback.
     check(E.count("BRIDGE quest " .. id .. " cat calls (" .. q.cue .. ") at point 1 with Henry at", mark) == #voice.sounds, "each call logged")
     check(E.count("BRIDGE quest " .. id .. " cat made", mark) == 1, "not made again while she stands")
+    -- Henry's aside at the sighting (bugs.txt 9 Nov 2026, "Henry should remark to himself
+    -- when he spots Maggie"): not from this far, nor with her out of his frame; once she
+    -- is before his eyes within seekSpotMetres, said in his voice and kept in the store.
+    check(q.spotted ~= nil and q.spotted ~= "", "the sighting written")
+    check(not E.find("BRIDGE voice henry " .. tostring(q.spotted), mark), "nothing said from " .. (M.seekCallMetres - 5) .. "m")
+    E.framed = false
+    player:SetWorldPos({ x = first[1] - M.seekSpotMetres + 5, y = first[2], z = first[3] })
+    E.advance(2100)
+    check(not E.find("BRIDGE voice henry " .. tostring(q.spotted), mark), "nor with her out of his frame")
+    E.framed = nil
+    mark = E.mark()
+    E.advance(2100)
+    check(E.find("BRIDGE quest " .. id .. " cat spotted at point 1", mark), "the sighting logged")
+    check(E.find("BRIDGE voice henry " .. tostring(q.spotted), mark), "said in Henry's voice")
+    check(M.state.quests[id].spotted == true, "and kept in the store")
+    E.advance(2100)
+    check(E.count("BRIDGE voice henry " .. tostring(q.spotted), mark) == 1, "once")
     -- Henry comes close: she gallops to the next point, the position moved along the way.
     player:SetWorldPos({ x = first[1] - M.seekNearMetres + 1, y = first[2], z = first[3] })
     mark = E.mark()
     E.advance(2100)
     check(E.find("BRIDGE quest " .. id .. " cat moves off to point 2", mark), "she moves off")
+    check(E.count("BRIDGE voice henry " .. tostring(q.spotted), mark) == 0, "the sighting not said again as she runs")
     check(cat.anims[#cat.anims].clip == "relaxed_idle_gallop", "galloping")
     check(M.watchQuick == true, "the watch ticking quickly while she runs")
     local nextPt = q.path[2] or q.spot
@@ -4308,7 +4326,11 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     end
     local part = math.sqrt((cat.pos.x - first[1]) ^ 2 + (cat.pos.y - first[2]) ^ 2)
     check(steps >= 4, "moved in strides, " .. steps .. " of 5")
-    check(part > 0.3 and part < M.seekSpeed, "less than a second's run on, in strides, " .. string.format("%.2f m", part))
+    -- How far she is along is the time since she moved off at seekSpeed (the move-off fell
+    -- somewhere in the last watch tick, so the clock, not a fixed figure, is the measure).
+    local ran = (M.Now() - M.seek[id].moving.at) * M.seekSpeed
+    check(part > 0.3 and math.abs(part - ran) < 0.3 and part < 2 * M.seekSpeed,
+          "as far on as the clock says, in strides, " .. string.format("%.2f m of %.2f", part, ran))
     E.advance(1100 - 5 * M.seekStrideMs)
     part = math.sqrt((cat.pos.x - first[1]) ^ 2 + (cat.pos.y - first[2]) ^ 2)
     check(part > 0.5 and part < len, "part of the way there after a second, " .. string.format("%.1f of %.1f", part, len))
@@ -4382,6 +4404,9 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(M.state.quests[id].seen == true, "found, in the store")
     check(M.QuestFlagLetters(M.state.quests[id]) == "s", "the letter s, got " .. M.QuestFlagLetters(M.state.quests[id]))
     check(E.count("BRIDGE quest token made", mark) == 1, "the token made")
+    -- And his aside at the find (bugs.txt 9 Nov 2026), once.
+    check(q.discovered ~= nil and q.discovered ~= "", "the find's aside written")
+    check(E.count("BRIDGE voice henry " .. tostring(q.discovered), mark) == 1, "said in Henry's voice at the find")
     E.advance(4100)
     check(E.count("BRIDGE quest token made", mark) == 1, "once")
     check(M.Count(player, q.token) == 0, "and gone again")
@@ -4423,6 +4448,7 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(System.GetEntityByName(name) == nil, "the cat gone")
     for i = 1, #M.seekKittens do check(System.GetEntityByName(name .. "_kit" .. i) == nil, "kitten " .. i .. " gone") end
     check(f2.gone == true, "gone, in the store")
+    check(string.find(M.QuestFlagLetters(f2), "v", 1, true) ~= nil, "the letter v for the app, got " .. M.QuestFlagLetters(f2))
     check(E.find("BRIDGE quest " .. id .. " family gone from the spot, " .. (2 + #M.seekKittens) .. " taken away", mark), "and said so, her voice with them")
     check(System.GetEntityByName(name .. "_voice") == nil, "the voice spot gone too")
     pending = M.WatchPending()

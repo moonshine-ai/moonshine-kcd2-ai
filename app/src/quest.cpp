@@ -748,6 +748,29 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
                              reply.empty() ? plain_reply : reply, std::string(command)});
     };
     if (facts.done) {
+        // Told as it was: the family is hers again, and she has news of it when asked --
+        // once fetched home (the store's `gone`, the morning after), how they are keeping
+        // and that she will not part them yet (bugs.txt 9 Nov 2026); before that, only
+        // that she means to fetch them. Anything else was settled and is not raised.
+        if (facts.how.empty() && facts.seen) {
+            if (facts.gone) {
+                plan.block = "This person found your " + thing + " for you, with what was found with it, "
+                             "and told you where; you went and fetched the lot home the next morning, and "
+                             "they are all under your roof now and doing well. You will not part them from "
+                             "each other until they are older, and you say so to anyone who suggests it. "
+                             "You do not raise the errand, but if this person asks after them you tell them "
+                             "gladly how they are keeping, in a sentence or two.";
+                if (!quest.news.empty()) {
+                    plan.block += " When they ask, this is how you put it: " + in_quotes(quest.news);
+                }
+            } else {
+                plan.block = "This person found your " + thing + " for you, with what was found with it, "
+                             "and told you where, and you gave them what you promised. You have not fetched "
+                             "them home yet, but mean to, as soon as you can; if this person asks, say so. "
+                             "You do not raise the errand yourself.";
+            }
+            return plan;
+        }
         plan.block = "This person went looking for your " + thing + at_where + " and came back "
                      "and told you what they found, or would not; either way it is settled between "
                      "you, and you do not ask again.";

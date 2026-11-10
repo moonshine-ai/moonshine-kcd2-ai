@@ -597,6 +597,12 @@ constexpr int kSeekStrideMs = 50;
 // hour of the next game day with Henry out of hearing of the spot, the giver having
 // fetched them home. Until then they lie there, and are made again after a load.
 constexpr int kSeekLeaveHour = 6;
+// Henry's asides (bugs.txt 9 Nov 2026): `spotted`, said once when the cat is first before
+// his eyes -- sitting at a point within kSeekSpotMetres, in the frame and nothing between
+// (InView, with the cat's own height) -- and `discovered` at the find. Neither over a
+// conversation; the first kept in the store so a load does not have him say it twice.
+constexpr double kSeekSpotMetres = 25.0;
+constexpr double kSeekEyeMetres = 0.3;
 constexpr double kSeekKittenScale = 0.3;
 constexpr double kSeekKittenSpread = 0.35;
 constexpr double kSeekKittenGap = 0.15;

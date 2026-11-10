@@ -533,6 +533,10 @@ struct Quest {
     std::string path;
     std::string log_found;
     std::string spot_lift;
+    // Henry to himself (bugs.txt 9 Nov 2026): `spotted` when the animal is first before his
+    // eyes ("That's Maggie, is it? Let's see where she's off to"), `discovered` as he finds
+    // the litter. Said in his voice on the narrative line (WatchSeek). Optional.
+    std::string spotted, discovered;
     // A mind (kind "mind"): look in on the target `count` times, hours of game time apart.
     // The target's menu is his own: Henry's `check` and one reply per visit (the sequences
     // are gated on the visit count and whether the next is due, dialogue globals the Lua

@@ -169,6 +169,10 @@ struct Quest {
     // before he has been, since the giver cannot tell. An ask's are the same five, once the
     // one who knows has told (`handed`): the truth carried back, a lie, and silence.
     std::string tell, lie, quiet, lie_reply, quiet_reply;
+    // A seek's giver the day after, the family fetched home (the store's `gone`): how the
+    // creature and what was found with it are keeping, in her words, for when Henry asks
+    // (bugs.txt 9 Nov 2026). Optional; the brief says it plainly without.
+    std::string news;
     // A beat's and a mind's lines at the giver's: Henry's row that he knocked the man down
     // rather than getting his word (`fought`, a beat's paid completion when the store has him
     // beaten and no handover) and the giver's answer (`fought_reply`); Henry's row that the
@@ -388,6 +392,9 @@ struct QuestFacts {
     // seek: the player has stood over the thing at the end of its path. The mod's Watch sets
     // it; the dump carries it as the flag letter s.
     bool seen = false;
+    // A seek: the family has gone from the place (flag v), the morning after the hand-in --
+    // fetched home by the giver, as far as she tells it. The giver's news turns on it.
+    bool gone = false;
     // A beat: the man has been knocked down (flag k); a beat or a mind: he is dead (flag x).
     // A pray: the prayer has been said at the place (flag y). A mind: how many visits have
     // been made (one flag c each).

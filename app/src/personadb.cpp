@@ -135,6 +135,7 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 if (facts.apologised) f.apologised = true;
                 if (facts.refused) f.refused = true;
                 if (facts.seen) f.seen = true;
+                if (facts.gone) f.gone = true;
                 if (facts.beaten) f.beaten = true;
                 if (facts.dead) f.dead = true;
                 if (facts.prayed) f.prayed = true;
@@ -973,7 +974,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "AND field IN ('apologise', 'apologise_yes', 'apologise_no', "
                 "'report', 'keep', 'kept_reply', 'count', 'pry', 'pry_yes', 'pry_no', "
                 "'greet_handed', 'told', 'told_reply', 'lie_soft', 'lie_soft_reply', 'lie_big', 'lie_big_reply', 'lie_caught', "
-                "'tell', 'lie', 'quiet', 'lie_reply', 'quiet_reply', "
+                "'tell', 'lie', 'quiet', 'lie_reply', 'quiet_reply', 'news', "
                 "'fought', 'fought_reply', 'confess', 'dead_reply', 'spot_text', "
                 "'greet_owed', 'greet_settle_unasked', 'greet_offer', 'thanks_onward', "
                 "'offer_2', 'agreed', 'more', 'more_reply', 'opener', "
@@ -1049,6 +1050,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "quiet") quest.quiet = text_at(row, 1);
                 else if (field == "lie_reply") quest.lie_reply = text_at(row, 1);
                 else if (field == "quiet_reply") quest.quiet_reply = text_at(row, 1);
+                else if (field == "news") quest.news = text_at(row, 1);
                 else if (field == "fought") quest.fought = text_at(row, 1);
                 else if (field == "fought_reply") quest.fought_reply = text_at(row, 1);
                 else if (field == "confess") quest.confess = text_at(row, 1);

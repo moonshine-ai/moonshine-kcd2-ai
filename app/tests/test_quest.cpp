@@ -1421,6 +1421,7 @@ Quest annas_maggie() {
     quest.tell = "I found her. She's lying up by the hen coops with a litter of newborn kittens.";
     quest.quiet = "I went and I looked. What I found is my own business.";
     quest.quiet_reply = "Then you can whistle for your supper.";
+    quest.news = "Home, the lot of them, in a basket by my hearth. She eats for an army and the kittens are fat as butter. They stay with her till they're weaned.";
     return quest;
 }
 
@@ -1463,7 +1464,30 @@ TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henr
     CHECK(back.rows[1].reply == quest.quiet_reply);
     CHECK(back.rows[1].command == kQuestQuiet);
 
+    // Settled without the truth told (quiet, given up): nothing more is said of it.
+    QuestFacts kept = at("done");
+    kept.how = "quiet";
+    kept.seen = true;
+    CHECK(plan_quest(quest, kept, {}).block.find("settled") != std::string::npos);
     CHECK(plan_quest(quest, at("done"), {}).block.find("settled") != std::string::npos);
+    // Told as it was: the same day she means to fetch them; once the family is gone from
+    // the place (the store's `gone`, the morning after) she has news of them when asked,
+    // in her own words, and will not part them (bugs.txt 9 Nov 2026).
+    QuestFacts told = at("done");
+    told.seen = true;
+    QuestPlan sameday = plan_quest(quest, told, {});
+    CHECK(sameday.block.find("not fetched them home yet") != std::string::npos);
+    CHECK(sameday.block.find(quest.news) == std::string::npos);
+    CHECK(sameday.rows.empty());
+    told.gone = true;
+    QuestPlan after = plan_quest(quest, told, {});
+    CHECK(after.block.find("doing well") != std::string::npos);
+    CHECK(after.block.find("not part them") != std::string::npos);
+    CHECK(after.block.find(quest.news) != std::string::npos);
+    CHECK(after.rows.empty());
+    Quest newsless = quest;
+    newsless.news.clear();
+    CHECK(plan_quest(newsless, told, {}).block.find("how you put it") == std::string::npos);
     CHECK(quest_aside(quest, found, {quest}, {found}).find("look for your cat") != std::string::npos);
     QuestFacts locked;
     locked.locked = true;
