@@ -2560,6 +2560,73 @@ case("Talk: released before the pause, the line goes when the pause comes, or as
     M.typingLoaded = false
 end)
 
+-- The HUD calls since `mark` that put the say hint up or took it down, in order: "show"
+-- for the game's in-dialogue tutorial with the mod's hint id, "hide" for HideTutorial
+-- with it, "rows" for a draw of the rows (which fades whatever hint is up). Each goes to
+-- every HUD instance id (hudIds), so a run of the same call counts once.
+local function hintCalls(E, mark)
+    local out = {}
+    local function add(what)
+        if out[#out] ~= what then out[#out + 1] = what end
+    end
+    for i = mark + 1, #E.hud.calls do
+        local name, a = E.hud.calls[i], E.hud.args[i]
+        if name == "ShowTutorial" and a[1] == "moonshine_say" then
+            add("show")
+            out.text, out.inDialog, out.actionHint = a[2], a[4], a[7]
+        elseif name == "HideTutorial" and a[1] == "moonshine_say" then
+            add("hide")
+        elseif name == "SetDialogSequences" then
+            add("rows")
+        end
+    end
+    return out, table.concat(out, " ")
+end
+
+case("Talk: the hint that the button can be held goes up with the say row and down without it", function(E, M, check)
+    M.sayHintTold = false
+    local mark = #E.hud.calls
+    check(sayMenu(E, M, "@opt 1 help 5:Help? @opt 2 ask 4:Ask? @rows 2"), "menu presented")
+    local calls, order = hintCalls(E, mark)
+    check(order == "rows show", "the hint asked for after the rows it goes with: " .. order)
+    check(calls.inDialog == true and calls.actionHint == false, "as the game's in-dialogue tutorial, no codex link")
+    check(calls.text:find("$mtalk^;", 1, true) ~= nil, "the talk action as a held button, for the engine to draw")
+    check(calls.text:find("<head>", 1, true) == 1 and calls.text:find("<body>", 1, true) ~= nil, "in the game's tutorial markup")
+    check(E.find("BRIDGE say hint shown beside the menu"), "logged once")
+    -- The microphone has the slot: the rows are redrawn (the HUD fades the hint with
+    -- them) and the hint is not asked for again, the row's own words saying what is up.
+    mark = #E.hud.calls
+    talk(E, M, "press")
+    _, order = hintCalls(E, mark)
+    check(order == "rows hide", "listening, the hint down with the redraw: " .. order)
+    check(E.count("BRIDGE say hint shown") == 1, "not logged again")
+    -- Let go with nothing heard: the row back to its words, the hint with it.
+    mark = #E.hud.calls
+    talk(E, M, "release")
+    E.advance(M.sayReleaseMillis + 100)
+    _, order = hintCalls(E, mark)
+    check(order == "rows show", "the hint back with the say row: " .. order)
+    -- The way out takes it down.
+    mark = #E.hud.calls
+    M.Picked(M.menuLeaveRow)
+    _, order = hintCalls(E, mark)
+    check(order:find("hide", 1, true) ~= nil and order:find("show", 1, true) == nil, "down on leaving: " .. order)
+    M.typingLoaded = false
+end)
+
+case("Talk: a closed list has no say row, so no hint", function(E, M, check)
+    live(E, M)
+    M.Choose()
+    M.Directives("@opt 1 write:1 7:As said @opt 2 soften:1 7:Gentler @rows 2 closed")
+    E.advance(100)
+    local mark = #E.hud.calls
+    M.Beat()
+    E.advance(M.menuDelayMillis + M.menuGraceMillis + 10)
+    check(M.menuSayRow == 0, "no say row")
+    local _, order = hintCalls(E, mark)
+    check(order == "rows hide", "the rows drawn, the hint kept down: " .. order)
+end)
+
 case("Talk: nothing heard closes the slot after the grace; B closes it at once; the menu is as it was", function(E, M, check)
     talkSlot(E, M, check, "@opt 1 help 5:Help? @opt 2 ask 4:Ask? @rows 2")
     local drawn = E.count("BRIDGE menu drawn")

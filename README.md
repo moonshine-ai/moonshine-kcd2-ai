@@ -131,7 +131,8 @@ in the interaction menu. Choose it.
 - A menu follows with a few things Henry might say, then **(Say something else)** and
   **(End dialog)**.
 - To speak, **hold the right trigger** (or **V** on the keyboard) while the menu is up
-  and say your line. The words appear on screen as they are heard; let go when you are
+  and say your line. A hint beside the menu shows the button, drawn for whichever
+  device you last touched. The words appear on screen as they are heard; let go when you are
   done and the line is sent as soon as the app hears you have finished. Keep holding to
   carry on talking. **B** (or **Escape**) cancels and leaves the menu as it was.
 - To type instead, choose **(Say something else)**: a line opens for the keyboard, and
