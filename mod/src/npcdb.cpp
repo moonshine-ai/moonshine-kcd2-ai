@@ -1006,8 +1006,9 @@ std::vector<std::string> Quest::resolutions() const {
     if (is_find()) return out;   // brought is the plain completion, and the only one
     if (is_travel() || is_spot() || is_seek()) {
         // Told as it was is the plain completion; the lie and the silence have their own.
-        // (A leave's, a return's and a seek's rows at the giver's are the travel's.)
-        if (!log_completed_lied.empty()) out.emplace_back("lied");
+        // (A leave's and a return's rows at the giver's are the travel's; a seek's are
+        // the tell and the quiet, with no lie, so its generator writes no lied log.)
+        if (!is_seek() && !log_completed_lied.empty()) out.emplace_back("lied");
         if (!log_completed_quiet.empty()) out.emplace_back("quiet");
         return out;
     }

@@ -1419,8 +1419,6 @@ Quest annas_maggie() {
     quest.offer = "Matilda says my Maggie went off into the hen yards behind the houses on Wine Street. Look for her there, and there's a hot supper in it.";
     quest.thanks = "Kittens! So that's where the fat went, the sly madam.";
     quest.tell = "I found her. She's lying up by the hen coops with a litter of newborn kittens.";
-    quest.lie = "I looked all through those hen yards. There's no sign of her.";
-    quest.lie_reply = "Gone, then. Well. You went looking, which is more than my neighbours did.";
     quest.quiet = "I went and I looked. What I found is my own business.";
     quest.quiet_reply = "Then you can whistle for your supper.";
     return quest;
@@ -1428,7 +1426,7 @@ Quest annas_maggie() {
 
 }  // namespace
 
-TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henry's word: the truth and silence once it is found, a lie at any time") {
+TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henry's word: the truth and silence once it is found, and no lie") {
     const Quest quest = annas_maggie();
     QuestFacts fresh;
     CHECK(offerable(quest, fresh));
@@ -1444,29 +1442,26 @@ TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henr
     CHECK(first.direction.find("last seen") != std::string::npos);
     CHECK(first.rows.empty());
 
-    // Agreed and not yet found: only the lie is on the menu, and it pays.
+    // Agreed and not yet found: nothing to settle with but the give-up. No lie on a seek
+    // (bugs.txt 9 Nov 2026: the "dead in a ditch" row was mean-spirited and taken out).
     QuestPlan looking = plan_quest(quest, at("accepted"), {});
-    REQUIRE(looking.rows.size() == 2);
-    CHECK(looking.rows[1].intent == "give_up");
-    CHECK(looking.rows[0].intent == "lie");
-    CHECK(looking.rows[0].text == quest.lie);
-    CHECK(looking.rows[0].reply == quest.lie_reply);
-    CHECK(looking.rows[0].command == kQuestLie);
+    REQUIRE(looking.rows.size() == 1);
+    CHECK(looking.rows[0].intent == "give_up");
+    for (const auto& row : looking.rows) CHECK(row.command != kQuestLie);
 
-    // Found (the mod's `seen`): the truth (paid) and silence (unpaid) join it, in the written words.
+    // Found (the mod's `seen`): the truth (paid) and silence (unpaid), in the written words.
     QuestFacts found = at("accepted");
     found.seen = true;
     QuestPlan back = plan_quest(quest, found, {});
-    REQUIRE(back.rows.size() == 3);
+    REQUIRE(back.rows.size() == 2);
     CHECK(back.rows[0].intent == "tell");
     CHECK(back.rows[0].text == quest.tell);
     CHECK(back.rows[0].reply == quest.thanks);
     CHECK(back.rows[0].command == kQuestComplete);
-    CHECK(back.rows[1].command == kQuestLie);
-    CHECK(back.rows[2].intent == "quiet");
-    CHECK(back.rows[2].text == quest.quiet);
-    CHECK(back.rows[2].reply == quest.quiet_reply);
-    CHECK(back.rows[2].command == kQuestQuiet);
+    CHECK(back.rows[1].intent == "quiet");
+    CHECK(back.rows[1].text == quest.quiet);
+    CHECK(back.rows[1].reply == quest.quiet_reply);
+    CHECK(back.rows[1].command == kQuestQuiet);
 
     CHECK(plan_quest(quest, at("done"), {}).block.find("settled") != std::string::npos);
     CHECK(quest_aside(quest, found, {quest}, {found}).find("look for your cat") != std::string::npos);
@@ -1482,7 +1477,7 @@ TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henr
     bare.quiet.clear();
     bare.spot_text.clear();
     QuestPlan plain = plan_quest(bare, found, {});
-    REQUIRE(plain.rows.size() == 3);
+    REQUIRE(plain.rows.size() == 2);
     for (const auto& row : plain.rows) {
         CHECK_FALSE(row.text.empty());
         CHECK_FALSE(row.reply.empty());

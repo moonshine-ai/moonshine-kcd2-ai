@@ -730,8 +730,10 @@ QuestPlan plan_spot(const Quest& quest, const QuestFacts& facts) {
 // not know -- she has asked the neighbours and been told nothing, and it is they who
 // tell Henry (their own knowledge) where it went. The finding is the mod's (its own animal
 // at the place, leading Henry to where it lies up; standing over it sets `seen`); the giver
-// knows nothing until Henry says, and takes his word, true or false. The giver's rows are
-// the travel's three.
+// knows nothing until Henry says, and takes his word. The giver's rows are the travel's
+// truth and silence, both once it is found; there is no lie (bugs.txt 9 Nov 2026: the
+// "dead in a ditch" row was mean-spirited and not the game's style, and a seek with no
+// lie is a kinder errand than a travel), so before the find the menu is only the give-up.
 QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
     QuestPlan plan;
     if (quest.role != QuestRole::Giver) return plan;
@@ -762,11 +764,6 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
             row("tell", quest.tell, quest.thanks, kQuestComplete,
                 "I found your " + thing + ". Alive and well" + (knows_where ? ", at " + quest.spot_text : std::string()) + ".",
                 "God be thanked. Here: " + pay + ", as I said.");
-        }
-        row("lie", quest.lie, quest.lie_reply, kQuestLie,
-            "I looked. There's no sign of your " + thing + "; I'd give it up for lost.",
-            "Lost, then. Well. You went, which is more than the rest did. Here, " + pay + ".");
-        if (facts.seen) {
             row("quiet", quest.quiet, quest.quiet_reply, kQuestQuiet,
                 "I went and I looked. What I found is my business.",
                 "Then you've had your walk and I've had nothing. Nothing for nothing.");

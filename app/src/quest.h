@@ -350,7 +350,7 @@ struct Quest {
     bool is_buy() const { return kind == "buy"; }
     // A seek (Sweepings and Strays): nobody is spoken to but the giver; the thing is found
     // at a place (the mod notes the finding as the travel's `seen`) and the giver's rows are
-    // the travel's three.
+    // the travel's truth and silence, once it is found; a seek has no lie.
     bool is_seek() const { return kind == "seek"; }
     // The kinds with nothing carried: taken up on a word and settled on a word. A leave's
     // thing is carried, but away from the giver, and nothing is ever brought to them; an

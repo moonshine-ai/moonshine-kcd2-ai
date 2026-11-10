@@ -525,7 +525,8 @@ struct Quest {
     // an interval, moves it on to the next point as he comes close, and at `spot_pos` the
     // animal settles with its litter; Henry standing over them is the find (the travel's
     // `seen` in the store, the token, and `log_found` as the objective's update). Henry's
-    // three rows at the giver's are the travel's (tell, lie, quiet). `spot_lift` (metres,
+    // rows at the giver's are the travel's tell and quiet; a seek has no lie (bugs.txt 9
+    // Nov 2026), so no `lied` way is dealt. `spot_lift` (metres,
     // "0.3") raises the family above the floor the physics gives at the spot, where the
     // floor's look is higher -- a straw heap's render mesh sits above what Henry stands
     // on, and a lying cat set at the physics was inside it (bugs.txt 9 Nov 2026).
