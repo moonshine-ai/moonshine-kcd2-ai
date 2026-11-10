@@ -2171,6 +2171,20 @@ void Session::offer() {
         add({{0, row.intent, row.text}});
     }
     const int room = kMenuOptions - (give_up ? 1 : 0);
+    // Another soul's errand's row at this one: a seek's clue they hold (Topic::clue_quest),
+    // in the errand's place ahead of the seeds, as the game puts its objectives' rows
+    // first; it was third, under "I have a question" (bugs.txt 9 Nov 2026).
+    for (const Topic& topic : persona_.scripted.topics) {
+        if (topic.clue_quest.empty() || !knows_of(topic)) continue;
+        if (std::find(told_.begin(), told_.end(), topic.key) != told_.end()) continue;
+        if (static_cast<int>(rows_.size()) >= room) break;
+        const std::string intent = ask_intent(topic.key);
+        // Not twice: the round after "I have a question" lays it already.
+        bool laid = false;
+        for (const MenuOption& row : preset) laid = laid || row.intent == intent;
+        for (const MenuOption& row : rows_) laid = laid || row.intent == intent;
+        if (!laid) add({{0, intent, ask_row(topic)}});
+    }
     if (!persona_.quest.apologise_row.empty() &&
         std::find(told_.begin(), told_.end(), "apologise") == told_.end() &&
         static_cast<int>(rows_.size()) < room) {

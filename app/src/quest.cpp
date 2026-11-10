@@ -727,7 +727,7 @@ QuestPlan plan_spot(const Quest& quest, const QuestFacts& facts) {
 
 // A seek: a creature of the giver's gone missing; the giver wants it looked for. With a
 // spot_text the giver knows where it was last seen and says so; without one the giver does
-// not know -- she has asked the street and been told nothing, and it is the neighbours who
+// not know -- she has asked the neighbours and been told nothing, and it is they who
 // tell Henry (their own knowledge) where it went. The finding is the mod's (its own animal
 // at the place, leading Henry to where it lies up; standing over it sets `seen`); the giver
 // knows nothing until Henry says, and takes his word, true or false. The giver's rows are
@@ -786,11 +786,11 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
                      name_it(quest);
     } else {
         plan.block = "Your " + thing + " has not come home, and you do not know where it went: you have "
-                     "asked up and down the street and been told nothing. You want somebody to ask the "
+                     "asked round the neighbourhood and been told nothing. You want somebody to ask the "
                      "neighbours where you cannot, look for it, and bring you word, and cannot go "
                      "yourself. Nobody has agreed to yet. " + offer_words(quest) +
                      " If this person offers, take them up on it, say plainly that nobody will tell you "
-                     "where it went, send them to ask along the street, and " + name_it(quest) +
+                     "where it went, send them to ask round the neighbours, and " + name_it(quest) +
                      " You name no place, because you do not know one.";
     }
     if (!quest.offer.empty()) {
@@ -802,7 +802,7 @@ QuestPlan plan_seek(const Quest& quest, const QuestFacts& facts) {
     plan.direction = knows_where
         ? "[They have agreed to go. You tell them again where your " + thing +
               " was last seen, and that it is " + pay + " when they come back with word.]"
-        : "[They have agreed to go. You tell them again that nobody on the street would say where your " +
+        : "[They have agreed to go. You tell them again that none of the neighbours would say where your " +
               thing + " went, that the neighbours may tell a stranger more, and that it is " + pay +
               " when they come back with word.]";
     return plan;

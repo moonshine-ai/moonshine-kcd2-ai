@@ -1082,6 +1082,16 @@ TEST_CASE("a seek's clue topic picked owes the mod @quest <id> clue, and its row
     f.open(tailer);
     f.play_all(tailer);
     const std::size_t calls = f.llm.calls.size();
+    // The opening round: the clue first, where the game puts an objective's row, then the
+    // seeds; and once only, though the fill would offer it too.
+    REQUIRE(f.game.menu().size() >= 3);
+    CHECK(f.game.menu()[0] == "Tell me about the missing cat.");
+    CHECK(f.offered[0].intent == "ask:the_cat");
+    CHECK(f.game.menu()[1] == kFirstRoundSeeds[1]);
+    std::size_t cat_rows = 0;
+    for (const std::string& row : f.game.menu()) cat_rows += row == "Tell me about the missing cat.";
+    CHECK(cat_rows == 1);
+    // And after "I have a question", first of the topics, still once.
     f.game.picked(2, "ask", std::string(kFirstRoundSeeds[1]));
     f.drain(tailer);
     f.play_all(tailer);
@@ -1089,6 +1099,9 @@ TEST_CASE("a seek's clue topic picked owes the mod @quest <id> clue, and its row
     CHECK(f.game.menu()[0] == "Tell me about the missing cat.");
     const std::size_t at = f.offered.size() - f.game.menu().size();
     CHECK(f.offered[at].intent == "ask:the_cat");
+    cat_rows = 0;
+    for (const std::string& row : f.game.menu()) cat_rows += row == "Tell me about the missing cat.";
+    CHECK(cat_rows == 1);
 
     f.game.picked(1, "ask:the_cat", "Tell me about the missing cat.");
     f.drain(tailer);

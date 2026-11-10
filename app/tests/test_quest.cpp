@@ -1490,14 +1490,17 @@ TEST_CASE("a seek asks for a creature looked for at a place, and is paid on Henr
     CHECK(plain.rows[0].text.find("I found your cat") != std::string::npos);
 
     // No spot_text: the giver does not know where it went (Sweepings and Strays as the
-    // narrative has it: she has asked the street and got nothing; the neighbours tell Henry).
-    // The brief says so, names no place, and sends Henry to ask along the street.
+    // narrative has it: she has asked the neighbours and got nothing; they tell Henry). The
+    // brief says so, names no place, and sends Henry round the neighbours -- not "the
+    // street", since the women are in the same quarter and not always next door (bugs.txt
+    // 9 Nov 2026).
     QuestPlan unknown = plan_quest(bare, fresh, {});
     CHECK(unknown.block.find("you do not know where it went") != std::string::npos);
     CHECK(unknown.block.find("ask the neighbours") != std::string::npos);
     CHECK(unknown.block.find("the place you named") == std::string::npos);
     CHECK(unknown.block.find("last seen") == std::string::npos);
-    CHECK(unknown.direction.find("nobody on the street") != std::string::npos);
+    CHECK(unknown.direction.find("none of the neighbours") != std::string::npos);
+    CHECK(unknown.block.find("street") == std::string::npos);
     CHECK(unknown.question.find(" at ") == std::string::npos);
     CHECK(plan_quest(bare, at("accepted"), {}).block.find("you do not know where it went") != std::string::npos);
     CHECK(quest_aside(bare, found, {bare}, {found}).find(" at ") == std::string::npos);
