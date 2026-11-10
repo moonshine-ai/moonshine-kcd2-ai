@@ -13789,7 +13789,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif d <= " + g + ".seekCallMetres and q.cue ~= nil and now - S.calledAt >= " + g + ".seekCallSeconds then\n";
     s += "\t\tS.calledAt = now\n";
-    s += "\t\t" + g + ".Sound(S.cat, q.cue)\n";
+    s += "\t\tlocal played = " + g + ".Sound(S.cat, q.cue)\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. tostring(q.thing) .. \" calls (\" .. tostring(q.cue) .. \") at point \" .. S.leg .. \" with Henry at \" .. string.format(\"%.1f\", d) .. \"m\" .. (played and \"\" or \", not played\"))\n";
     s += "\tend\n";
     s += "\tif d <= 3 * " + g + ".seekNearMetres then " + g + ".watchQuick = true end\n";
     s += "end\n";

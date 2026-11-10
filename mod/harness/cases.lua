@@ -4249,6 +4249,9 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     local calls = #cat.sounds
     E.advance(M.seekCallSeconds * 1000 + 100)
     check(#cat.sounds > calls, "and again after the interval")
+    -- Each call logged (bugs.txt 9 Nov 2026, "I wasn't hearing any meowing"): the log is
+    -- the only witness that she called, since the engine says nothing about playback.
+    check(E.count("BRIDGE quest " .. id .. " cat calls (" .. q.cue .. ") at point 1 with Henry at", mark) == #cat.sounds, "each call logged")
     check(E.count("BRIDGE quest " .. id .. " cat made", mark) == 1, "not made again while she stands")
     -- Henry comes close: she gallops to the next point, the position moved along the way.
     player:SetWorldPos({ x = first[1] - M.seekNearMetres + 1, y = first[2], z = first[3] })
