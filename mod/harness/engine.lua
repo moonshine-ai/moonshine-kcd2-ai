@@ -390,6 +390,11 @@ function Engine.makePlayer()
     function p.human:InterruptDialogs() Engine.closeDialog("interrupted") end
     function p.human:Dismount() Engine.mounted = false end
     function p.human:IsMounted() return Engine.mounted == true end
+    -- The interactor's action hints (SinglePlayer:OnChatUsableMessage hands the game's
+    -- own this way): the last list handed over stands, as a case can read in
+    -- Engine.luaActions.
+    p.player = {}
+    function p.player:AddLuaActions(actions) Engine.luaActions = actions end
     -- The thing put down on the ground at a spot entity (a leave's, a return's, a find's
     -- keepsake): out of the pocket and onto Engine.ground by class, where a case can find it.
     function p.human:PlaceItem(wuid, spotId, _)
@@ -764,6 +769,7 @@ function Engine.installGlobals()
         end,
     }
     Engine.cvars = { sys_PakPriority = "0" }
+    Engine.luaActions = nil
     Script = {
         SetTimer = function(ms, fn) Engine.setTimer(ms, fn) end,
         -- The game loads a pak path; here a file of that name beside the mod file, which
@@ -810,7 +816,12 @@ function Engine.installGlobals()
     -- kind the game gives a one-line caption in a dialogue (wl1, 10 Nov 2026).
     Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
     UIAction = {
-        SetArray = function(_, _, name, values) if name == "SequenceList" then Engine.hud.rows = values end end,
+        -- The HUD's action hints as last set (SetActionHints draws what the array holds
+        -- and hides the rest), kept in hud.hints for a case to read.
+        SetArray = function(_, _, name, values)
+            if name == "SequenceList" then Engine.hud.rows = values end
+            if name == "ActionHints" then Engine.hud.hints = values end
+        end,
         CallFunction = function(_, _, name, ...)
             Engine.hud.calls[#Engine.hud.calls + 1] = name
             Engine.hud.args[#Engine.hud.calls] = { ... }
@@ -959,6 +970,7 @@ function Engine.reset()
     Engine.dialog = { open = false, npc = nil, menu = false, beats = 0 }
     Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
     Engine.cvars = { sys_PakPriority = "0" }
+    Engine.luaActions = nil
     Engine.maps = {}
     Engine.files = {}
     Engine.infoTexts = {}

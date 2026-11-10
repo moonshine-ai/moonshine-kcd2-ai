@@ -341,7 +341,8 @@ int main(int argc, char** argv) {
         // dialogue to speak. Both end up in the same table as the persona names.
         std::vector<std::pair<std::string, std::string>> loc_extras = {
             {kcd2::conversation_hint_key(o.modid), o.conversation_hint},
-            {kcd2::favour_hint_key(o.modid), o.favour_hint}};
+            {kcd2::favour_hint_key(o.modid), o.favour_hint},
+            {kcd2::say_hint_key(o.modid), kcd2::say_hint_text()}};
 
         // The concept graph reaches the dialogue beside it by relative path, so
         // the node, the file and the string keys are all named from this.

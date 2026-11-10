@@ -45,21 +45,36 @@ constexpr const char* kCaptionPlayerColor = "0x66BFFF";
 // puts them in one field with a newline between, 35.8 px apart (measured, 10 Nov 2026).
 constexpr const char* kCaptionRowGap = "2.8";
 
-// The hint beside the menu that the talk button can be held: the game's own in-dialogue
-// tutorial (hud.gfx fc_showTutorial with InDialogue set, the `tutorialInDialog` clip),
-// which the HUD draws on the side across from the rows at the height the game's dialogue
-// hints use, fades with the rows (hideDialog) and comes back with the next list
-// (showDialog). The text is the game's tutorial markup: `<head>` and `<body>` are the
-// styles its TutorialNotification declares (28 px bold, 22 px), and `$action^;` is a
-// button: the HUD asks the engine (getButtonId) which key or pad button the action is
-// bound to for the device last touched, and draws that glyph -- the keyboard's key cap or
-// the pad's trigger -- with `^` for a hold. So one text serves both devices, and the
-// mod never decides which one the player has in hand. The action is the mod's own talk
-// action (mtalk, V or the right trigger: emit_typing_actionmaps). The id is what
-// HideTutorial takes.
+// The hint under the menu that the talk button can be held: an action hint, the kind the
+// game shows for a quick chat or a reply (Scripts/Entities/AI/Shared/BasicAIActions.lua,
+// GetChatActions): a word and the button, bottom right, the button ringed for a hold.
+// The game's come from Lua as a list of actions handed to the engine's interactor
+// (player:AddLuaActions), which resolves each to the button it is bound to and has the
+// HUD draw them (SetActionHints). The mod hands one over the same way, once a
+// conversation, and then draws on the HUD itself (SayHint in the Lua says why: the
+// engine draws it dimmed and takes nothing back, but falls quiet once it has one). The
+// word is both a localized string of the mod's (say_hint_key, for the engine's road, which
+// looks a literal up word by word) and the raw text (for the HUD's, which draws what it is
+// given). The road tried first and not taken: the game's in-dialogue tutorial
+// (ShowTutorial), a framed box to the side, which is a tutorial's look and not a prompt's.
+constexpr const char* kSayHintText = "Speak";
 constexpr const char* kSayHintId = "moonshine_say";
-constexpr const char* kSayHintText =
-    "<head>Say something else</head><body>Hold $mtalk^; to say it in your own words.</body>";
+// The engine's hint types (AHT_HOLD) and classes (AHC_BASIC) as the game's Lua has them.
+constexpr int kHintHold = 2;
+constexpr int kHintClassBasic = 0;
+// The HUD's own (hud.gfx Enum): the type is flags, HINT_HOLD; the class HINT_CLASS_BASIC.
+constexpr int kHudHintHold = 1;
+constexpr int kHudHintClassBasic = 0;
+// The HUD's button ids (hud.gfx ControlsEnum): a key is its DirectInput scan code less
+// one (V is 0x2F), a pad button its index past the pad's base (512 for XInput, 1024 for
+// the other pad), and "no button" is 2^32-1, given as a string so it arrives whole.
+constexpr int kHudControlKeyV = 46;
+constexpr int kHudControlPadTriggerR = 512 + 33;
+constexpr int kHudControlPadR2 = 1024 + 8;
+constexpr const char* kHudNoControl = "4294967295";
+// How long after handing the engine its action before ours is drawn over its dimmed one
+// a second time, past the frame its own telling lands in.
+constexpr int kSayHintAgainMillis = 400;
 
 // The app's heartbeat file is named by the Unix time in buckets this many seconds wide
 // (app/src/turnfile.h, kAliveBucketSeconds; the Lua's aliveBucket). Wide enough that the
@@ -453,6 +468,14 @@ std::string conversation_hint_key(const std::string& modid) {
 
 std::string favour_hint_key(const std::string& modid) {
     return modid + "_favour";
+}
+
+std::string say_hint_key(const std::string& modid) {
+    return modid + "_say_hint";
+}
+
+std::string say_hint_text() {
+    return kSayHintText;
 }
 
 std::string emit_storm_root(const std::string& modid, bool with_roles) {
@@ -7331,8 +7354,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".menuSay = \"(Say something else)\"\n";
     s += "-- What the say row reads while the microphone has it: the words show in the caption.\n";
     s += g + ".menuSayListening = \"(Listening...)\"\n";
-    s += "-- The hint beside the menu that the talk button can be held (SayHint) has been\n";
-    s += "-- logged once this session.\n";
+    s += "-- The hint under the menu that the talk button can be held (SayHint): whether the\n";
+    s += "-- engine has been handed its action this conversation, whether the hint is up, and\n";
+    s += "-- whether it has been logged this session.\n";
+    s += g + ".sayHintPushed = false\n";
+    s += g + ".sayHintOn = false\n";
     s += g + ".sayHintTold = false\n";
     s += "-- Say-mode: a line of Henry's own, from the menu. The line so far is `typed`, as it\n";
     s += "-- is for the F9 keyboard. Two ways in, told apart by sayMode: \"typed\" is the say\n";
@@ -10383,9 +10409,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".menuWait = false\n";
     s += "\t" + g + ".menuUp = false\n";
     s += "\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
-    // The hint beside the menu goes with the menu, should the rows' own fade not have
-    // taken it.
+    // The hint under the menu goes with the menu; and the engine's list of actions goes
+    // with the dialogue, so the next conversation hands it over again.
     s += "\t" + g + ".SayHint(false)\n";
+    s += "\t" + g + ".sayHintPushed = false\n";
     // Before the caption is emptied below, so the typed line goes with it, and before
     // anything else so that a keyboard is never left owning w and space after the camera
     // has given movement back.
@@ -11740,35 +11767,85 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     // The hint goes with the say row in its usual words: not on a closed list, which has
     // no say row, and not while the microphone has it, when the row itself says what is
-    // happening. Each draw of the rows fades the hint with them (the HUD's hideDialog), so
-    // it is asked for again on every draw that wants it.
+    // happening. Told on every draw, since a draw is where either changes.
     s += "\t" + g + ".SayHint(" + g + ".menuSayRow > 0 and sayText == nil)\n";
     s += "end\n";
     s += "\n";
-    // The hint that the talk button can be held, beside the menu (kSayHintText): the
-    // game's in-dialogue tutorial, which draws the key or the pad button the engine has
-    // the action on, for whichever device the player last touched. On, it is inserted
-    // after the rows it goes with (ShowTutorial with InDialogue: the HUD queues it and
-    // plays it with the list that is up); off, it is taken down if it is up (HideTutorial
-    // finds it by id, and does nothing when the rows' own fade has it already).
+    // The hint that the talk button can be held, under the menu (kSayHintText): an action
+    // hint, the kind the game shows for a quick chat -- the word and the button, bottom
+    // right, ringed for a hold -- drawn by the HUD's own action-hint widget
+    // (SetActionHints, with the ActionHints array a hint a row: id, type, class, control,
+    // text, modifier, priority). Hidden the same way with an empty array, which takes
+    // down every hint not in it. The control is the button's id in the HUD's table
+    // (ControlsEnum): a key by its scan code (V), the pad's right trigger, the other pad's
+    // R2, by the device the player last touched (wh_ui_InputDevice, read each time, so a
+    // pad picked up mid-talk is drawn at the next menu); the key's cap reads the key's
+    // name for the layout, the engine's own lookup. The modifier is the HUD's "none" as a
+    // string, since the number does not survive the float on the way in. Measured on
+    // wl1, 10 Nov 2026 (runs 18-22).
+    //
+    // Once a conversation, first: the same hint handed to the engine's interactor the
+    // way the game's own Lua hands its quick-chat hint (player:AddLuaActions). Not for
+    // the drawing -- the engine draws it dimmed, and takes nothing back from Lua (a
+    // second list is ignored, action by action) -- but because while its list is empty
+    // the engine keeps telling the HUD so, and anything drawn there from here is gone in
+    // the frame; with one action of ours on its list it falls quiet until the dialogue
+    // ends, and the HUD is ours to draw on. Ours is drawn over its dimmed one at once and
+    // once more a moment later, for the frame its own telling lands in.
     s += "function " + g + ".SayHint(on)\n";
-    s += "\tif UIAction == nil or UIAction.CallFunction == nil then return end\n";
+    s += "\tif UIAction == nil or UIAction.SetArray == nil or UIAction.CallFunction == nil then return end\n";
+    s += "\tif not on and not " + g + ".sayHintPushed then return end\n";
+    s += "\tlocal again = false\n";
+    s += "\tif on and not " + g + ".sayHintPushed then\n";
+    s += "\t\tlocal me = " + g + ".Player()\n";
+    s += "\t\tif me == nil or me.player == nil or me.player.AddLuaActions == nil then return end\n";
+    s += "\t\tlocal ok, err = pcall(function() me.player:AddLuaActions({ { hint = \"@" +
+         lua_escape(say_hint_key(modid)) + "\", action = \"mtalk\",\n";
+    s += "\t\t\tactionMap = " + g + ".typingToggleMap, enabled = true, hintType = " + std::to_string(kHintHold) +
+         ", hintClass = " + std::to_string(kHintClassBasic) + ", uiVisible = true, func = function() end } }) end)\n";
+    s += "\t\tif not ok then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE say hint raised \" .. tostring(err))\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
+    s += "\t\t" + g + ".sayHintPushed = true\n";
+    s += "\t\tagain = true\n";
+    s += "\tend\n";
+    s += "\tlocal hints = {}\n";
+    s += "\tif on then\n";
+    s += "\t\thints = { \"" + std::string(kSayHintId) + "\", " + std::to_string(kHudHintHold) + ", " +
+         std::to_string(kHudHintClassBasic) + ", " + g + ".SayHintControl(), \"" + lua_escape(kSayHintText) +
+         "\", \"" + std::string(kHudNoControl) + "\", 1 }\n";
+    s += "\tend\n";
     s += "\tlocal ok, err = pcall(function()\n";
     s += "\t\tfor _, id in ipairs(" + g + ".hudIds) do\n";
-    s += "\t\t\tif on then\n";
-    s += "\t\t\t\tUIAction.CallFunction(\"hud\", id, \"ShowTutorial\", \"" + std::string(kSayHintId) + "\", \"" +
-         lua_escape(kSayHintText) + "\", 0, true, 1, 0, false, \"\")\n";
-    s += "\t\t\telse\n";
-    s += "\t\t\t\tUIAction.CallFunction(\"hud\", id, \"HideTutorial\", \"" + std::string(kSayHintId) + "\")\n";
-    s += "\t\t\tend\n";
+    s += "\t\t\tUIAction.SetArray(\"hud\", id, \"ActionHints\", hints)\n";
+    s += "\t\t\tUIAction.CallFunction(\"hud\", id, \"SetActionHints\", \"\", \"\", \"\", 0, 0, 0, 0, 0, 0)\n";
     s += "\t\tend\n";
     s += "\tend)\n";
     s += "\tif not ok then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE say hint raised \" .. tostring(err))\n";
-    s += "\telseif on and not " + g + ".sayHintTold then\n";
-    s += "\t\t" + g + ".sayHintTold = true\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE say hint shown beside the menu\")\n";
+    s += "\t\treturn\n";
     s += "\tend\n";
+    s += "\tif again then\n";
+    s += "\t\tpcall(function() Script.SetTimer(" + std::to_string(kSayHintAgainMillis) + ", function()\n";
+    s += "\t\t\tif " + g + ".active and " + g + ".sayHintOn then " + g + ".SayHint(true) end\n";
+    s += "\t\tend) end)\n";
+    s += "\tend\n";
+    s += "\t" + g + ".sayHintOn = on == true\n";
+    s += "\tif on and not " + g + ".sayHintTold then\n";
+    s += "\t\t" + g + ".sayHintTold = true\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE say hint shown under the menu\")\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // The button the hint shows, by the device the player last touched: the HUD's id for
+    // the V key (its scan code), the pad's right trigger, the other pad's R2.
+    s += "function " + g + ".SayHintControl()\n";
+    s += "\tlocal ok, v = pcall(System.GetCVar, \"wh_ui_InputDevice\")\n";
+    s += "\tlocal device = ok and tonumber(v) or 1\n";
+    s += "\tif device == 2 then return " + std::to_string(kHudControlPadTriggerR) + " end\n";
+    s += "\tif device >= 4 then return " + std::to_string(kHudControlPadR2) + " end\n";
+    s += "\treturn " + std::to_string(kHudControlKeyV) + "\n";
     s += "end\n";
     s += "\n";
     // The exit script of the menu row the player confirmed, 1-based. The last row is the
@@ -11804,6 +11881,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".menuUp = false\n";
     s += "\t" + g + ".menuWait = false\n";
     s += "\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
+    // The menu is going, and the hint under it with it.
+    s += "\t" + g + ".SayHint(false)\n";
     s += "\tif leaving then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE picked \" .. row .. \" leave -- \" .. " + g + ".menuLeave)\n";
     s += "\t\t" + g + ".Leave(\"ended\")\n";
@@ -12036,6 +12115,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\telse\n";
     s += "\t\t" + g + ".Log(\"BRIDGE menu draw raised \" .. tostring(err))\n";
     s += "\tend\n";
+    // No say row on this list, so no hint under it.
+    s += "\t" + g + ".SayHint(false)\n";
     s += "end\n";
     s += "\n";
     // Escape or B. Typed: the line cleared, or with nothing to clear the menu brought

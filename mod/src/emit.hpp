@@ -16,6 +16,10 @@ std::string ui_name_key(const std::string& modid, const std::string& soul_name);
 std::string conversation_hint_key(const std::string& modid);
 // The localization key for the prompt shown on a giver whose favour is still to be taken up.
 std::string favour_hint_key(const std::string& modid);
+// The localization key and the word for the action hint under the menu that the talk
+// button can be held (SayHint in the Lua).
+std::string say_hint_key(const std::string& modid);
+std::string say_hint_text();
 
 // Data/libs/Storm/storm__<modid>.xml -- merged into the game's storm root to
 // add our rules files as sources of the existing tasks. The roles task is only

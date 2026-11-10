@@ -2560,71 +2560,90 @@ case("Talk: released before the pause, the line goes when the pause comes, or as
     M.typingLoaded = false
 end)
 
--- The HUD calls since `mark` that put the say hint up or took it down, in order: "show"
--- for the game's in-dialogue tutorial with the mod's hint id, "hide" for HideTutorial
--- with it, "rows" for a draw of the rows (which fades whatever hint is up). Each goes to
--- every HUD instance id (hudIds), so a run of the same call counts once.
-local function hintCalls(E, mark)
-    local out = {}
-    local function add(what)
-        if out[#out] ~= what then out[#out + 1] = what end
-    end
-    for i = mark + 1, #E.hud.calls do
-        local name, a = E.hud.calls[i], E.hud.args[i]
-        if name == "ShowTutorial" and a[1] == "moonshine_say" then
-            add("show")
-            out.text, out.inDialog, out.actionHint = a[2], a[4], a[7]
-        elseif name == "HideTutorial" and a[1] == "moonshine_say" then
-            add("hide")
-        elseif name == "SetDialogSequences" then
-            add("rows")
-        end
-    end
-    return out, table.concat(out, " ")
+-- The say hint as the HUD's action-hint widget last had it (the ActionHints array
+-- SetActionHints drew: a hint a row of seven), or nil for an empty array (the hint
+-- down) or none set.
+local function sayHint(E)
+    local a = E.hud.hints
+    if a == nil or #a == 0 then return nil end
+    return { id = a[1], type = a[2], class = a[3], control = a[4], text = a[5], modifier = a[6], priority = a[7], rows = #a / 7 }
 end
 
 case("Talk: the hint that the button can be held goes up with the say row and down without it", function(E, M, check)
     M.sayHintTold = false
+    M.sayHintPushed = false
     local mark = #E.hud.calls
     check(sayMenu(E, M, "@opt 1 help 5:Help? @opt 2 ask 4:Ask? @rows 2"), "menu presented")
-    local calls, order = hintCalls(E, mark)
-    check(order == "rows show", "the hint asked for after the rows it goes with: " .. order)
-    check(calls.inDialog == true and calls.actionHint == false, "as the game's in-dialogue tutorial, no codex link")
-    check(calls.text:find("$mtalk^;", 1, true) ~= nil, "the talk action as a held button, for the engine to draw")
-    check(calls.text:find("<head>", 1, true) == 1 and calls.text:find("<body>", 1, true) ~= nil, "in the game's tutorial markup")
-    check(E.find("BRIDGE say hint shown beside the menu"), "logged once")
-    -- The microphone has the slot: the rows are redrawn (the HUD fades the hint with
-    -- them) and the hint is not asked for again, the row's own words saying what is up.
-    mark = #E.hud.calls
+    -- The engine handed its action once, so it leaves the HUD's hints alone.
+    local pushed = E.luaActions
+    check(pushed ~= nil and #pushed == 1 and pushed[1].action == "mtalk" and pushed[1].actionMap == M.typingToggleMap
+        and pushed[1].hintType == 2 and pushed[1].hintClass == 0 and pushed[1].hint == "@moonshine_names_say_hint",
+        "the talk action handed to the engine's interactor as the game hands its quick chat, the word a localized id")
+    check(M.sayHintPushed == true, "and remembered as handed")
+    -- And the HUD drawn on: one hint, a hold in the basic class, the V key (no pad here).
+    local hint = sayHint(E)
+    check(hint ~= nil and hint.rows == 1, "one hint in the HUD's array")
+    check(hint.id == "moonshine_say" and hint.type == 1 and hint.class == 0, "a hold, in the basic class (the quick chat's)")
+    check(hint.control == 46 and hint.text == "Speak" and hint.modifier == "4294967295", "the V key, the word, no modifier")
+    local n = 0
+    for i = mark + 1, #E.hud.calls do if E.hud.calls[i] == "SetActionHints" then n = n + 1 end end
+    check(n >= 1, "drawn through SetActionHints")
+    -- Drawn again a moment on, past the frame the engine's own telling lands in.
+    local before = n
+    E.advance(500)
+    n = 0
+    for i = mark + 1, #E.hud.calls do if E.hud.calls[i] == "SetActionHints" then n = n + 1 end end
+    check(n > before and sayHint(E) ~= nil, "and once more after the engine's")
+    check(E.find("BRIDGE say hint shown under the menu"), "logged once")
+    -- The microphone has the slot: the rows are redrawn with the row listening, and the
+    -- hint goes, the row's own words saying what is up.
     talk(E, M, "press")
-    _, order = hintCalls(E, mark)
-    check(order == "rows hide", "listening, the hint down with the redraw: " .. order)
+    check(sayHint(E) == nil and E.hud.hints ~= nil, "listening, an empty array takes the hint down")
     check(E.count("BRIDGE say hint shown") == 1, "not logged again")
-    -- Let go with nothing heard: the row back to its words, the hint with it.
-    mark = #E.hud.calls
+    -- Let go with nothing heard: the row back to its words, the hint with it -- without
+    -- handing the engine another action.
+    E.luaActions = nil
     talk(E, M, "release")
     E.advance(M.sayReleaseMillis + 100)
-    _, order = hintCalls(E, mark)
-    check(order == "rows show", "the hint back with the say row: " .. order)
-    -- The way out takes it down.
-    mark = #E.hud.calls
-    M.Picked(M.menuLeaveRow)
-    _, order = hintCalls(E, mark)
-    check(order:find("hide", 1, true) ~= nil and order:find("show", 1, true) == nil, "down on leaving: " .. order)
+    check(sayHint(E) ~= nil and E.luaActions == nil, "the hint back with the say row, the engine not told again")
+    -- A pick takes the menu, and the hint with it.
+    M.Picked(1)
+    check(sayHint(E) == nil, "down on a pick")
+    -- The conversation over, the engine's list is gone with the dialogue, so the next one
+    -- hands its action over again.
+    M.Leave("test")
+    check(M.sayHintPushed == false, "to be handed over again next conversation")
     M.typingLoaded = false
 end)
 
-case("Talk: a closed list has no say row, so no hint", function(E, M, check)
+case("Talk: the hint shows the pad's trigger for a pad, and R2 for the other pad", function(E, M, check)
+    live(E, M)
+    M.sayHintPushed = false
+    E.cvars.wh_ui_InputDevice = "2"
+    M.SayHint(true)
+    check(sayHint(E) ~= nil and sayHint(E).control == 512 + 33, "XInput: the right trigger")
+    E.cvars.wh_ui_InputDevice = "16"
+    M.SayHint(true)
+    check(sayHint(E).control == 1024 + 8, "the other pad: R2")
+    E.cvars.wh_ui_InputDevice = nil
+    M.SayHint(true)
+    check(sayHint(E).control == 46, "no device known: the key")
+    M.SayHint(false)
+    M.sayHintPushed = false
+end)
+
+case("Talk: a closed list has no say row, so no hint; nor the list drawn as a spoken line", function(E, M, check)
     live(E, M)
     M.Choose()
     M.Directives("@opt 1 write:1 7:As said @opt 2 soften:1 7:Gentler @rows 2 closed")
     E.advance(100)
-    local mark = #E.hud.calls
+    E.luaActions = nil
     M.Beat()
     E.advance(M.menuDelayMillis + M.menuGraceMillis + 10)
     check(M.menuSayRow == 0, "no say row")
-    local _, order = hintCalls(E, mark)
-    check(order == "rows hide", "the rows drawn, the hint kept down: " .. order)
+    check(sayHint(E) == nil and E.luaActions == nil, "the rows drawn, no hint and nothing handed to the engine")
+    M.MenuSpoken("Where is the mill?")
+    check(sayHint(E) == nil and E.luaActions == nil, "the spoken line's list has no say row, no hint")
 end)
 
 case("Talk: nothing heard closes the slot after the grace; B closes it at once; the menu is as it was", function(E, M, check)
