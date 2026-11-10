@@ -4285,6 +4285,10 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     local points = {}
     for _, p in ipairs(q.path) do points[#points + 1] = p end
     points[#points + 1] = q.spot
+    -- The hen yard has a straw floor laid above the terrain (bugs.txt 9 Nov 2026, "there's
+    -- straw on the floor so maybe they're too low"): the family is set down on what a ray
+    -- meets, not at the terrain's height under it.
+    E.floorAt = q.spot[3] + 0.6
     for i = 2, #points - 1 do
         local here = points[i]
         player:SetWorldPos({ x = here[1] - M.seekNearMetres + 1, y = here[2], z = here[3] })
@@ -4300,6 +4304,9 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     check(kit ~= nil and kit.spec.properties.object_Model == M.seekKittens[1] and kit.spec.scale.x == M.seekKittenScale,
           "a kitten of the mod's own, small")
     check(kit ~= nil and math.sqrt((kit.pos.x - q.spot[1]) ^ 2 + (kit.pos.y - q.spot[2]) ^ 2) < M.seekKittenSpread + 0.01, "beside her")
+    check(math.abs(cat.pos.z - E.floorAt) < 0.01, "she lies on the straw floor the ray met, not under it")
+    check(kit ~= nil and math.abs(kit.pos.z - E.floorAt) < 0.01, "and so does the kitten")
+    E.floorAt = nil
     check(M.state.quests[id].seen ~= true, "not found until Henry stands over them")
     -- Henry stands over them: seen in the store (flag s), the token for the graph, once.
     player:SetWorldPos({ x = q.spot[1] + 1, y = q.spot[2], z = q.spot[3] })

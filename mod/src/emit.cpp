@@ -13449,9 +13449,24 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn ok\n";
     s += "end\n";
     s += "\n";
-    // Ground height at a point when the engine will say, else the height given.
+    // The floor at a point: what a ray dropped from a little above the height given first
+    // meets of the built world or the terrain, within the band kGroundBandMetres about it --
+    // a yard's straw floor, a shed's boards, a step -- since the terrain's own height is
+    // under a building's floor, and a thing set at it there is sunk out of sight (bugs.txt
+    // 9 Nov 2026, the cat and kittens unseen at the hen yard). Then the terrain's height
+    // when the engine will say and it is within the band, else the height given.
     s += "function " + g + ".Ground(x, y, z)\n";
     s += "\tlocal h = nil\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tlocal hits = {}\n";
+    s += "\t\tlocal p = " + g + ".Player()\n";
+    s += "\t\tlocal n = Physics.RayWorldIntersection({ x = x, y = y, z = z + " + health_text(kGroundAboveMetres) + " },\n";
+    s += "\t\t\t{ x = 0, y = 0, z = -" + health_text(kGroundAboveMetres + kGroundBandMetres) + " }, 1, ent_static + ent_terrain + ent_sleeping_rigid,\n";
+    s += "\t\t\tp and p.id or nil, nil, hits)\n";
+    s += "\t\tif type(n) == \"number\" and n > 0 and hits[1] ~= nil and hits[1].pos ~= nil then h = hits[1].pos.z end\n";
+    s += "\tend)\n";
+    s += "\tif type(h) == \"number\" and math.abs(h - z) <= " + health_text(kGroundBandMetres) + " then return h end\n";
+    s += "\th = nil\n";
     s += "\tpcall(function() h = System.GetTerrainElevation({ x = x, y = y, z = z }) end)\n";
     s += "\tif type(h) ~= \"number\" or h <= 0 then return z end\n";
     s += "\tif math.abs(h - z) > 6 then return z end\n";

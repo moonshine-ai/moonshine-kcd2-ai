@@ -728,6 +728,20 @@ function Engine.installGlobals()
         RemoveEntity = function() end,
         Quit = function() Engine.quit = true end,
     }
+    -- The physics bind's ray: the world's entity-type flags as the engine's globals, and a
+    -- downward ray meets the floor a case has laid (Engine.floorAt, a height) and nothing
+    -- otherwise; hits fill the table given and the count comes back, as the bind does it.
+    ent_static, ent_terrain, ent_rigid, ent_sleeping_rigid, ent_living, ent_independent = 1, 2, 4, 8, 16, 32
+    ent_all = 63
+    Physics = {
+        RayWorldIntersection = function(from, dir, maxHits, types, skip1, skip2, hits)
+            Engine.rays[#Engine.rays + 1] = { from = from, dir = dir, types = types, skip1 = skip1 }
+            if Engine.floorAt == nil or dir.z >= 0 then return 0 end
+            if Engine.floorAt > from.z or Engine.floorAt < from.z + dir.z then return 0 end
+            if hits ~= nil then hits[1] = { pos = { x = from.x, y = from.y, z = Engine.floorAt }, dist = from.z - Engine.floorAt } end
+            return 1
+        end,
+    }
     Engine.cvars = { sys_PakPriority = "0" }
     Script = {
         SetTimer = function(ms, fn) Engine.setTimer(ms, fn) end,
@@ -907,6 +921,7 @@ function Engine.reset()
     Engine.files = {}
     Engine.infoTexts = {}
     Engine.rays = {}
+    Engine.floorAt = nil
     Engine.walled = false
     Engine.framed = true
     Engine.framedAsked = {}

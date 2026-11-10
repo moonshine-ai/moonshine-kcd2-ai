@@ -623,6 +623,14 @@ constexpr const char* kGutsSlapSound = "f_vi_laundry_wet_fabric_hit";
 constexpr const char* kGutsSlopSound = "f_ge_liquid_plop";
 constexpr const char* kCoughSound = "f_ge_cough_man";
 constexpr const char* kWindSound = "q_M12_wind_tunnel";
+// The floor under a point (the Lua's Ground): a ray dropped from kGroundAboveMetres above
+// the height given, meeting the built world or the terrain, taken when it lands within
+// kGroundBandMetres of that height. The terrain's own height is under a building's floor
+// -- a yard's straw, a shed's boards -- and a thing set at it there is sunk out of sight
+// (bugs.txt 9 Nov 2026, the cat and kittens unseen at the hen yard). The start is a cat's
+// height up, under any lintel; the band is a step or two.
+constexpr double kGroundAboveMetres = 1.2;
+constexpr double kGroundBandMetres = 2.0;
 constexpr const char* kBatsSound = "a_o_netopyr_scared";
 constexpr const char* kBatsEffect = "WH_Particels.other.bats";
 constexpr const char* kDustEffect = "cinematics.other.dust_hit";
