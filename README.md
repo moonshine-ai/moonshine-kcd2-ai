@@ -59,7 +59,7 @@ game closed.
 
 ### Step 1: Download the installer
 
-Download [download.moonshine.ai/kcd2/0.9.102.27/Moonshine-0.9.102.27-setup.exe](https://download.moonshine.ai/kcd2/0.9.102.27/Moonshine-0.9.102.27-setup.exe); it is around
+Download [download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe](https://download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe); it is around
 40 MB. It is the only file you need: the models and the rest come down while it runs.
 
 **You should see** `Moonshine-<version>-setup.exe` in your Downloads folder.
