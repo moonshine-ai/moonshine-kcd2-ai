@@ -6,7 +6,7 @@ name, history, [friends](https://liber.moonshine.ai) , family, and a *Talk* opti
 ![Screenshot showing a conversation dialog with Henry in the background](images/screenshot-0.png)
 
 Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted
-to experience more stories in the amazing world the Warhorse team built. It uses AI heavily, but my intention is to explore how to use it thoughtfully, not replace human creativity. The code is open source under an MIT license, available at
+to experience more stories in the amazing world the Warhorse team built. It uses AI heavily, but I hope also thoughtfully. You'll have to judge if it's a successful experiment, but I'm trying to explore how local, decentralized AI can augment, not replace, human creativity. The code is open source under an MIT license, available at
 https://github.com/moonshine-ai/moonshine-kcd.
 
 This is an early build: it will do weird things, and I very much appreciate [all the bug
