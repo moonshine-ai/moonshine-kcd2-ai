@@ -7,11 +7,12 @@ Program
   moonshine_app.exe       this project
   llama.cpp               MIT                 llama.cpp.txt        https://github.com/ggml-org/llama.cpp
   Moonshine Voice         MIT                 moonshine-voice.txt  https://github.com/moonshine-ai/moonshine
-                          (moonshine.dll; the speech-to-text library)
+                          (linked into moonshine_app.exe; the speech-to-text library, and the
+                          C++ Phonon text-to-speech engine, a port of Gradium's xn-ptts)
   ONNX Runtime            MIT                 onnxruntime.txt      https://github.com/microsoft/onnxruntime
                           (onnxruntime.dll)
-  Phonon runtime (xn-ptts)  MIT or Apache 2.0   xn-ptts.txt          https://github.com/gradium-ai/xn-ptts
-                          (ptts_ffi.dll; the text-to-speech runtime, MIT here)
+  xn-ptts (Gradium)       MIT or Apache 2.0   xn-ptts.txt          https://github.com/gradium-ai/xn-ptts
+                          (the Phonon runtime Moonshine's engine follows; the text is kept here)
   Opus                    BSD 3-clause        opus.txt             https://opus-codec.org
   cpp-httplib, nlohmann/json, doctest, miniz
                           MIT                 (headers carry their own notices)
@@ -20,11 +21,13 @@ Program
 Model weights
   models\llm\*.gguf       Qwen3 (Alibaba Cloud)              Apache 2.0   Apache-2.0.txt
                           https://huggingface.co/Qwen -- Qwen3-4B-Instruct-2507, unsloth's Q4_K_M GGUF
-  models\phonon-31m-en    Phonon 31M English (Gradium)       Apache 2.0   Apache-2.0.txt
-                          https://huggingface.co/gradium/phonon-31m-en -- the voice model; and
-                          under voices\, twelve speaker embeddings from the Phonon voice
+  models\phonon           Phonon 31M English (Gradium)       Apache 2.0   Apache-2.0.txt
+                          https://huggingface.co/gradium/phonon-31m-en -- the voice model, and
+                          Gradium's Mimi decoder (https://huggingface.co/gradium/phonon-mimi),
+                          exported to ONNX Runtime graphs by Moonshine's export script; and
+                          under voices\, the speaker embeddings from the Phonon voice
                           catalogue, https://huggingface.co/gradium/phonon-voices (Apache 2.0),
-                          each renamed from its catalogue id to a first name
+                          named by first name
   models\stt\medium-streaming-en
                           Moonshine streaming STT (Moonshine AI)   MIT     moonshine-voice.txt
                           https://download.moonshine.ai (medium-streaming-en)

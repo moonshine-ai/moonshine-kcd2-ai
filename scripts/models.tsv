@@ -5,10 +5,15 @@
 # Licences (the text of each is under installer/LICENSES/):
 #   embeddinggemma  Gemma Terms of Use, https://ai.google.dev/gemma/terms -- the knowledge
 #                   base's embedder; the drop's vectors were made by the same model
-#   phonon-31m-en   Apache-2.0 (gradium/phonon-31m-en, and the voices from gradium/phonon-voices)
-#                   -- the souls' voices: the model, and twelve British English speaker
-#                   embeddings under voices/, each renamed from its catalogue id to the name
-#                   the app speaks it by (voice.h, voice_for)
+#   phonon          Apache-2.0 (Gradium's Phonon 31M English, its Mimi decoder and the voice
+#                   catalogue, https://huggingface.co/gradium/phonon-31m-en, phonon-mimi and
+#                   phonon-voices) -- the souls' voices, as the ONNX Runtime graphs Moonshine's
+#                   exporter makes, from Moonshine's download server. The folder keeps the name
+#                   "phonon": the framework's engine reads <models>/phonon/... The app speaks
+#                   it through the Moonshine library (src/phonon.cpp). scripts/fetch_phonon.*
+#                   makes the same folder from source, for when the pins are not enough
+#                   (the server's folder is not versioned: a re-export there changes the
+#                   bytes, and these pins then need moving).
 #   llm             Apache-2.0 (Qwen3-4B-Instruct-2507, unsloth's Q4_K_M GGUF) -- the talker
 #   stt             MIT (Moonshine medium-streaming-en, 2026-08-21 export) -- the ear. The
 #                   export's decoder_kv_with_attention.ort (140 MB) is left out: the app
@@ -16,22 +21,52 @@
 #
 # dest	url	bytes	sha256
 embeddinggemma-300m-q8_0.gguf	https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf	333590944	b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
-phonon-31m-en/config.json	https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/config.json	2851	7062ea376e6b158543c8abec8e5af67df171c49ad70eb7e2a0fb25c16f265e06
-phonon-31m-en/tokenizer.json	https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/tokenizer.json	277967	691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936
-phonon-31m-en/model.q8.gguf	https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/model.q8.gguf	64512352	a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae
-phonon-31m-en/default-voice.safetensors	https://huggingface.co/gradium/phonon-31m-en/resolve/8c64b55ec301728e2d1695bfea87a08a267d0c2d/default-voice.safetensors	256136	f739e8c4c76ee7f92e7c94a82002748c8cd22e99582ac49f7b9b94cd63786e18
-phonon-31m-en/voices/toby.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/dME3IWyZBvmh1n1q.safetensors	256136	09ab315c7f4b72b4d71e66cb756184cedfb1f14d222d096e115bf95bfe7b29dc
-phonon-31m-en/voices/alfie.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/X6NceqF285Gr04gb.safetensors	256136	4de75497fff3030168e8aa6dca23ffeb332b1bc8c25d0bf3507ceadac953ae9c
-phonon-31m-en/voices/edwin.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/zUCxzrOrugTSis03.safetensors	256136	ff1d0735b8b45710462b1d1f846da040f970c6eb62c7c2f36dbfb8e5bde74f1e
-phonon-31m-en/voices/hugh.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/YyKcxPG7iIgS3jsK.safetensors	256136	3169d74b47a54d1eb15e4c243f56393abe9fe90c7e1c308ecf96ee67618b152a
-phonon-31m-en/voices/spencer.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/JOW0vchyswkQUMDS.safetensors	256136	cc9ac1107b0ffce282374a19beb7bfa95847724e6b7afbac991b4ae4277d5e6d
-phonon-31m-en/voices/teddy.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/Zn7g6NxLqXlJb7Qi.safetensors	256136	baea0ea9506f3237a5ebfc61afb7c72dbd189c5603b199ef42fbb00dbda379e0
-phonon-31m-en/voices/maeve.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/6PWnV0Nq4wu7RVBT.safetensors	256136	56494ee67d533ad227ff0dfd0b1c13ff5aa91f1ad6e596e66c2986ba3005e844
-phonon-31m-en/voices/freya.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/GgfEkEJtxZR7gnpy.safetensors	256136	eb3cd47418349e618408c16bea7153988b3ad04b41a6033039dd474a9a4dcd23
-phonon-31m-en/voices/pippa.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/uem82D50GRv2Dwma.safetensors	256136	d41a8f01d6e33450f1ce062d332914da10beee99e585dab531750706f187c48a
-phonon-31m-en/voices/elodie-rose.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/y9bQqIDnyxwqK01t.safetensors	256136	21eade9d83b2e66b9364e1b6cd999a3a6704c000a71f27f34e05ace5cdfd58bb
-phonon-31m-en/voices/imogen.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/gDT1nz7Ie36ZhL-C.safetensors	256136	1980ab3c35fa98a25b5f3b5e643fd852e14ca8a12a4a26b06aaf1abf2a8c68b1
-phonon-31m-en/voices/lottie.safetensors	https://huggingface.co/gradium/phonon-voices/resolve/da6c9ec0d47be8df5c87c730a3aa97187f3229c3/voices/m9MxpY6IUGXtWp76.safetensors	256136	a906ebf17e43fded12b3d6bd077abb2df33bc86eff51c1beeb82e5d416527db3
+phonon/backbone.ort	https://download.moonshine.ai/tts/phonon/backbone.ort	75754464	01276ab8f3b4216a20b1ab5676cff62f5faea34d97fff71c2ec8b639bb762207
+phonon/embed_latent.ort	https://download.moonshine.ai/tts/phonon/embed_latent.ort	337168	7b2336f458df6499ab9ad84d391ea24dcff3bdb779d7df14f894bbed756cf146
+phonon/embed_prompt.ort	https://download.moonshine.ai/tts/phonon/embed_prompt.ort	9518856	a44800f2d541b2a26aafcf64f53bfe572001989fda690176c753413f43f3d242
+phonon/flow_head.ort	https://download.moonshine.ai/tts/phonon/flow_head.ort	38087864	51fc33cb8ea96a55c756ea79f3a1706c16801046314ec0386e106b1dbde3929c
+phonon/mimi_seanet.ort	https://download.moonshine.ai/tts/phonon/mimi_seanet.ort	16032368	990978e79beb0080644d3c41aa87ecc4629aa869e5f17111fb1fcac5f494a55a
+phonon/mimi_transformer.ort	https://download.moonshine.ai/tts/phonon/mimi_transformer.ort	25410016	7d1542df2ddb6b6ef179adc4e052d7fc81bc9aba58681cd6f995115cd554376e
+phonon/model.json	https://download.moonshine.ai/tts/phonon/model.json	823	8eec513800bb5847d6c42d84cbaaae7e218f74ca7ceeeae7ab8898f01fa91481
+phonon/tokenizer.bin	https://download.moonshine.ai/tts/phonon/tokenizer.bin	43295	150bc180e3c91eaec5b7608278feabb4755b7627aff284dcd7ef07c718b5d7a6
+phonon/voices.json	https://download.moonshine.ai/tts/phonon/voices.json	14790	0f9ed4d2122e8254393a6647eb6ec91d295be943eb26cedb3ac58e6b9db0d38a
+phonon/voices/alfie.safetensors	https://download.moonshine.ai/tts/phonon/voices/alfie.safetensors	256136	4de75497fff3030168e8aa6dca23ffeb332b1bc8c25d0bf3507ceadac953ae9c
+phonon/voices/azgorath.safetensors	https://download.moonshine.ai/tts/phonon/voices/azgorath.safetensors	256136	83900e020c14946426614c6553c5a138ba6277e1aaa69832223bd0f0f8b73893
+phonon/voices/bryony.safetensors	https://download.moonshine.ai/tts/phonon/voices/bryony.safetensors	256136	bcc207a73b7885e45b49ab633d3377a10158292e3a7cef9cd6764ad107f1cb9b
+phonon/voices/captain_silas_blackwater.safetensors	https://download.moonshine.ai/tts/phonon/voices/captain_silas_blackwater.safetensors	256136	a09f615b0084980ebc4076d71550bf73ccd8d4df076bbbee4a9beb523a1379d9
+phonon/voices/delia.safetensors	https://download.moonshine.ai/tts/phonon/voices/delia.safetensors	256136	a0c3dcb91b2247eca56536be9ae8e8becc1c807b1136c5fe101552d6a155b24a
+phonon/voices/easton.safetensors	https://download.moonshine.ai/tts/phonon/voices/easton.safetensors	256136	45c582673cb20edb04ddcca2b5a8865ddfb0a82599efadb269021e87d20fbdd4
+phonon/voices/edwin.safetensors	https://download.moonshine.ai/tts/phonon/voices/edwin.safetensors	256136	ff1d0735b8b45710462b1d1f846da040f970c6eb62c7c2f36dbfb8e5bde74f1e
+phonon/voices/elodie-rose.safetensors	https://download.moonshine.ai/tts/phonon/voices/elodie-rose.safetensors	256136	21eade9d83b2e66b9364e1b6cd999a3a6704c000a71f27f34e05ace5cdfd58bb
+phonon/voices/everly.safetensors	https://download.moonshine.ai/tts/phonon/voices/everly.safetensors	256136	958ea94da14f46dd48c7f64adac11ed2ad2aa45f7ccd165dfebab5272664402e
+phonon/voices/fairy_godmother.safetensors	https://download.moonshine.ai/tts/phonon/voices/fairy_godmother.safetensors	256136	f390c09f5e279c0f2171995a534b92f5ca5c83443906879da68fc27445f89d89
+phonon/voices/fennick_the_young_elf.safetensors	https://download.moonshine.ai/tts/phonon/voices/fennick_the_young_elf.safetensors	256136	a05944e4c69d61d10d66f689175ba0b081930df2d77b22f04d00ac40d3d69ecb
+phonon/voices/freya.safetensors	https://download.moonshine.ai/tts/phonon/voices/freya.safetensors	256136	eb3cd47418349e618408c16bea7153988b3ad04b41a6033039dd474a9a4dcd23
+phonon/voices/grub_the_ogre.safetensors	https://download.moonshine.ai/tts/phonon/voices/grub_the_ogre.safetensors	256136	b30fa847686ec1eb6be8c5bea4b6a5c5076ea66c3ff053cf98210a155d8aad1e
+phonon/voices/hadley.safetensors	https://download.moonshine.ai/tts/phonon/voices/hadley.safetensors	256136	a879938aa9a2df0a8220bdadef88137929f71e887bd91e7db205bd5fa11661d2
+phonon/voices/harper.safetensors	https://download.moonshine.ai/tts/phonon/voices/harper.safetensors	256136	6b3da6e2d796a20c51af892c482bd6509fb88267a221aff83c870843dee2a123
+phonon/voices/hugh.safetensors	https://download.moonshine.ai/tts/phonon/voices/hugh.safetensors	256136	3169d74b47a54d1eb15e4c243f56393abe9fe90c7e1c308ecf96ee67618b152a
+phonon/voices/imogen.safetensors	https://download.moonshine.ai/tts/phonon/voices/imogen.safetensors	256136	1980ab3c35fa98a25b5f3b5e643fd852e14ca8a12a4a26b06aaf1abf2a8c68b1
+phonon/voices/juniper.safetensors	https://download.moonshine.ai/tts/phonon/voices/juniper.safetensors	256136	444378eb06b7c492b86e8fc7d13e4db1a3c0cf3e68891a960bf6f0a41a13ef35
+phonon/voices/lottie.safetensors	https://download.moonshine.ai/tts/phonon/voices/lottie.safetensors	256136	a906ebf17e43fded12b3d6bd077abb2df33bc86eff51c1beeb82e5d416527db3
+phonon/voices/maeve.safetensors	https://download.moonshine.ai/tts/phonon/voices/maeve.safetensors	256136	56494ee67d533ad227ff0dfd0b1c13ff5aa91f1ad6e596e66c2986ba3005e844
+phonon/voices/master_aldric.safetensors	https://download.moonshine.ai/tts/phonon/voices/master_aldric.safetensors	256136	a83430cc022b85c83753f859f9e44f406651646dab994fced8ef7a9a88005971
+phonon/voices/micah.safetensors	https://download.moonshine.ai/tts/phonon/voices/micah.safetensors	256136	0de1098d1051686a138d068e83ff09deb5053328bc74ec9541a1fdb90bfc24da
+phonon/voices/miles.safetensors	https://download.moonshine.ai/tts/phonon/voices/miles.safetensors	256136	eab20e4f159b48cfbc01b1885804e24f681f80e7a64f909182763a4e3361bee8
+phonon/voices/morwenna_of_the_deep.safetensors	https://download.moonshine.ai/tts/phonon/voices/morwenna_of_the_deep.safetensors	256136	2ff2db91e70648623df8d42c0dcd7c336b2f14cb4362d602a20f292a4d862154
+phonon/voices/old_mortlake.safetensors	https://download.moonshine.ai/tts/phonon/voices/old_mortlake.safetensors	256136	d3f9429205e5906dcd3c78edaf7c9d5148c7e389e34c82c86f72f154adb5d923
+phonon/voices/pippa.safetensors	https://download.moonshine.ai/tts/phonon/voices/pippa.safetensors	256136	d41a8f01d6e33450f1ce062d332914da10beee99e585dab531750706f187c48a
+phonon/voices/preston.safetensors	https://download.moonshine.ai/tts/phonon/voices/preston.safetensors	256136	6e04b84d3ae8751b22bca0a4f63936f9cb648f4f2182b2d0788071ea1c0b68a1
+phonon/voices/russell.safetensors	https://download.moonshine.ai/tts/phonon/voices/russell.safetensors	256136	beae9e4030efce0a935fcb0f807dc0784d598bcaa87ad4aacb047436b1eaa411
+phonon/voices/sir_bramwell.safetensors	https://download.moonshine.ai/tts/phonon/voices/sir_bramwell.safetensors	256136	b3cea6789aeb58822af16ba08c4e5105d7febb840dcb67b47f426c19d1a8f209
+phonon/voices/spencer.safetensors	https://download.moonshine.ai/tts/phonon/voices/spencer.safetensors	256136	cc9ac1107b0ffce282374a19beb7bfa95847724e6b7afbac991b4ae4277d5e6d
+phonon/voices/teddy.safetensors	https://download.moonshine.ai/tts/phonon/voices/teddy.safetensors	256136	baea0ea9506f3237a5ebfc61afb7c72dbd189c5603b199ef42fbb00dbda379e0
+phonon/voices/the_snow_queen.safetensors	https://download.moonshine.ai/tts/phonon/voices/the_snow_queen.safetensors	256136	bc8a8fcb95bb4f32d2d4376aa69d81b186b3ba2f8e9b6cb6a403b2b194590e85
+phonon/voices/the_thing_under_the_stairs.safetensors	https://download.moonshine.ai/tts/phonon/voices/the_thing_under_the_stairs.safetensors	256136	bfa37bac98aefbb9de80f792c47d01a0f9e3b94e73776169040c249c8b722759
+phonon/voices/toby.safetensors	https://download.moonshine.ai/tts/phonon/voices/toby.safetensors	256136	09ab315c7f4b72b4d71e66cb756184cedfb1f14d222d096e115bf95bfe7b29dc
+phonon/voices/trevor.safetensors	https://download.moonshine.ai/tts/phonon/voices/trevor.safetensors	256136	dc1341c8937af5534e6bbcc5c0fc5e7c10312229b59061228074f93683fe2261
+phonon/voices/vyrmathrax_the_ancient.safetensors	https://download.moonshine.ai/tts/phonon/voices/vyrmathrax_the_ancient.safetensors	256136	63ab4b15427844a804480a1603774262e8903dee33cb279e2749860dbfaedd10
+phonon/voices/zoey.safetensors	https://download.moonshine.ai/tts/phonon/voices/zoey.safetensors	256136	97c7f8c253413574406ab80dd23f49c3ebb2517163b00a9bf86b9c4cf43e7e23
 llm/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf	2497281120	3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597
 stt/medium-streaming-en/adapter.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/adapter.ort	3651296	3f2a287def57cc094367a0eec3c4f5fc36a32ec420e86764b696920991b20281
 stt/medium-streaming-en/cross_kv.ort	https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/cross_kv.ort	11643776	642f6e21cd305be79342207c6f9e6b681d469d55bc48c72b27b84846fb71fd1e

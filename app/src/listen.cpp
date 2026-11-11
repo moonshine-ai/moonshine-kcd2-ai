@@ -384,7 +384,8 @@ Ear::Ear(fs::path model_dir) : model_dir_(std::move(model_dir)) {
                                  " is from its name (medium-streaming-en and the like)");
     }
     // The thread pool is the library's business. On Windows it sizes ONNX Runtime's pool to
-    // the P-cores with spinning off (moonshine c13be73, the pin in scripts/fetch_moonshine.*):
+    // the P-cores with spinning off (in the library since v0.1.6, the release in scripts/fetch_moonshine.*;
+    // first seen as moonshine c13be73, which this app was pinned to before there was a release):
     // the default pool ran medium-streaming-en at 0.14x real time on a 24-core i9-13900HX,
     // so a line held for six seconds showed nothing (30 Oct 2026); the library's policy
     // runs it at 4.5x. For the two days between, this constructor set

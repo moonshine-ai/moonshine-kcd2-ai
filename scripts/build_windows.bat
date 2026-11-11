@@ -14,15 +14,18 @@ rem experiment (--gpu, MOONSHINE_TTS_BACKEND=gpu), the three CUDA DLLs are 600 M
 rem tester would download for nothing, and the embedder's CUDA fault beside the game's
 rem own GPU use is a known crash. Its own build directory, since CMake caches GGML_CUDA
 rem once it is on and the app's CMakeLists only ever forces it on. What ships still wants
-rem the VC++ runtime: moonshine.dll and onnxruntime.dll import MSVCP140 and VCRUNTIME140
+rem the VC++ runtime: onnxruntime.dll imports MSVCP140 and VCRUNTIME140
 rem whatever this exe is linked against, so the installer carries vc_redist.x64.exe
 rem rather than this build carrying a static CRT.
 rem
-rem Wants: Visual Studio 2022 (Build Tools are enough) with the C++ workload and CMake, git
-rem with the llama.cpp and xn-ptts submodules checked out (git submodule update --init), Rust
-rem (cargo, from https://rustup.rs) for the voice's runtime, and, for the
-rem ear, Moonshine Voice under third_party\moonshine (scripts\fetch_moonshine.ps1; run from
-rem this file's developer prompt, or MOONSHINE_ROOT names another checkout).
+rem Wants: Visual Studio 2022 17.14 (MSVC toolset 14.44) or later, Build Tools being enough,
+rem with the C++ workload and CMake. The prebuilt Moonshine library was built with a
+rem toolset newer than 14.41 and calls STL helpers (__std_search_1 and friends) that 14.41
+rem lacks, so a build there fails to link (10 Nov 2026, wl1). Also git
+rem with the llama.cpp submodule checked out (git submodule update --init), and Moonshine
+rem Voice's prebuilt release under third_party\moonshine-voice (scripts\fetch_moonshine.ps1;
+rem MOONSHINE_ROOT names another unpacked release). The ear and the voice both come from
+rem it: nothing of Moonshine is compiled here, and no Rust is needed.
 setlocal
 
 rem This file's parent's parent: the checkout's root.
@@ -64,17 +67,6 @@ if not exist app\vendor\llama.cpp\CMakeLists.txt (
     echo app\vendor\llama.cpp is empty: git submodule update --init
     exit /b 1
 )
-if not exist app\vendor\xn-ptts\ptts-ffi\Cargo.toml (
-    echo app\vendor\xn-ptts is empty: git submodule update --init
-    exit /b 1
-)
-rem cargo, for the voice's runtime. rustup puts it under %USERPROFILE%\.cargo\bin, which a
-rem session begun before the install (an ssh one, say) does not have on its PATH yet.
-where cargo >nul 2>&1 || set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
-where cargo >nul 2>&1 || (
-    echo no cargo on the PATH: install Rust from https://rustup.rs for the voice
-    exit /b 1
-)
 rem Ninja, which vcvars64 has just put on the PATH, in its multi-config form so that the
 rem binaries land in app\build\RelWithDebInfo\ as they did under the Visual Studio
 rem generator. The difference is the CUDA backend: MSBuild compiles its 189 .cu files one
@@ -89,22 +81,39 @@ if exist %BUILD%\CMakeCache.txt (
         rmdir /s /q %BUILD%
     )
 )
-rem The Moonshine Voice library, for the ear behind the talk button (app/src/listen.cpp):
-rem third_party\moonshine, built as a DLL by scripts\fetch_moonshine.ps1, or MOONSHINE_ROOT.
-rem Kokoro stays off: this build speaks through Phonon (app\vendor\xn-ptts, built by cargo
-rem at configure time; rustup.rs puts cargo on the PATH), and the Kokoro build would ask for
-rem its assets at start-up. Without the library the app builds
-rem as before, without the ear, and the installer's staging step refuses the result.
-if not defined MOONSHINE_ROOT set "MOONSHINE_ROOT=%ROOT%\third_party\moonshine"
+rem A build directory whose cached compiler is gone (a Visual Studio update replaces the
+rem toolset folder, 14.41 for 14.44) cannot be reconfigured either: cleared the same way.
+if exist %BUILD%\CMakeCache.txt (
+    for /f "tokens=2 delims==" %%c in ('findstr /b /c:"CMAKE_CXX_COMPILER:" %BUILD%\CMakeCache.txt') do (
+        if not exist "%%c" (
+            echo clearing %BUILD%, its compiler %%c is gone
+            rmdir /s /q %BUILD%
+        )
+    )
+)
+rem The Moonshine Voice release, for the ear behind the talk button (app/src/listen.cpp)
+rem and the voice (app/src/phonon.cpp, Moonshine's Phonon): third_party\moonshine-voice,
+rem fetched by scripts\fetch_moonshine.ps1, or MOONSHINE_ROOT. It is linked statically, with
+rem onnxruntime.dll beside it, which the build copies next to the exe. Kokoro stays off:
+rem this build speaks through Phonon, and the Kokoro build would ask for its assets at
+rem start-up. Without the library the app builds as before, without the ear and the
+rem voice, and the installer's staging step refuses the result.
+if not defined MOONSHINE_ROOT set "MOONSHINE_ROOT=%ROOT%\third_party\moonshine-voice"
 set "MOONSHINE="
+rem The default release folder is fetched when it is not there yet (a download of about
+rem 40 MB, checked against its pinned sha256); a MOONSHINE_ROOT of your own is not touched.
+if "%MOONSHINE_ROOT%"=="%ROOT%\third_party\moonshine-voice" if not exist "%MOONSHINE_ROOT%\lib\moonshine.lib" (
+    echo fetching the Moonshine Voice release
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch_moonshine.ps1 || exit /b 1
+)
 set "MROOT=%MOONSHINE_ROOT:\=/%"
-if exist "%MOONSHINE_ROOT%\core\build\Release\moonshine.dll" (
+if exist "%MOONSHINE_ROOT%\lib\moonshine.lib" (
     rem Quoted: a checkout under a home folder with a space in it (C:\Users\Pete Warden on
     rem wl2) otherwise reaches cmake as two arguments, and the ear is silently left out.
     set "MOONSHINE=-DMOONSHINE_ROOT="%MROOT%" -DMOONSHINE_TTS=OFF"
-    echo ear: Moonshine Voice from %MROOT%
+    echo ear and voice: Moonshine Voice from %MROOT%
 ) else (
-    echo no moonshine.dll under %MROOT%; building without the ear ^(scripts\fetch_moonshine.ps1^)
+    echo no moonshine.lib under %MROOT%\lib; building without the ear ^(scripts\fetch_moonshine.ps1^)
 )
 if "%GEN%"=="Ninja Multi-Config" (
     cmake -S app -B %BUILD% -G "%GEN%" %MOONSHINE% %RELEASE_FLAGS% || exit /b 1

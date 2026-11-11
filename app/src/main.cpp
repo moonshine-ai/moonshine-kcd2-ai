@@ -456,7 +456,7 @@ void usage() {
         "  --speak TEXT    say this and exit. The voice named by --actor when it is set,\n"
         "                  otherwise the Kokoro voice from --voice\n"
         "  --actor NAME    with --speak or the terminal, which voice: one of the Phonon\n"
-        "                  catalogue's (toby, maeve, ...; models/phonon-31m-en/voices)\n"
+        "                  catalogue's (toby, maeve, ...; models/phonon/voices)\n"
         "  --out FILE      with --speak, write a wav instead of playing it\n"
         "  --render FILE   write a batch of wavs and exit. Each line is a voice id,\n"
         "                  a tab, a wav path, a tab, and the words\n"
@@ -1715,11 +1715,11 @@ int preflight(const Args& args) {
         if (clones_built()) {
             model = find_clone_model();
             if (model.empty() && phonon) {
-                missing("voice", "no Phonon model (models/phonon-31m-en/model.q8.gguf, or PHONON_MODEL_DIR)");
+                missing("voice", "no Phonon model (models/phonon, or PHONON_MODEL_DIR; scripts/fetch_models.sh --only phonon)");
             } else if (model.empty()) {
                 missing("voice", "no Qwen3-TTS model (models/qwen3-tts-0.6b/model.safetensors, or QWEN_MODEL_DIR)");
             } else if (phonon) {
-                say("voice", model.string() + ", Phonon on the CPU");
+                say("voice", model.string() + ", Phonon through Moonshine Voice on the CPU");
             } else {
                 say("voice", model.string() + ", the Qwen3-TTS engine on the " +
                                  [] {

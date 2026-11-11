@@ -19,7 +19,7 @@
 #     data\kcd2\npcs-vectors.sqlite ...and of the knowledge base's vectors beside it
 #     data\kcd2\voices\             phrases\ (the lines in voices this package has), voices.txt, facials.txt, lexicon.tsv
 #     models\embeddinggemma-300m-q8_0.gguf
-#     models\phonon-31m-en\         the voice: model, tokenizer, voices\*.safetensors
+#     models\phonon\               the voice: graphs, tokenizer, voices\*.safetensors
 #     models\llm\<name>.gguf        the one GGUF under models\llm
 #     models\stt\medium-streaming-en\ the one folder under models\stt
 #     mod\moonshine_names\          from release\mod; Fetch-Package copies it into the game
@@ -175,7 +175,7 @@ if (-not (Test-Path -LiteralPath $exe)) { Fail "no release build at $exe -- run 
 $dlls = @(Get-ChildItem -LiteralPath $build -Filter '*.dll')
 $cuda = @($dlls | Where-Object { $_.Name -match '^(cublas|cudart|cublasLt|ggml-cuda)' })
 if ($cuda.Count -gt 0) { Fail ("the release build has CUDA DLLs beside it: " + (($cuda | ForEach-Object Name) -join ', ') + " -- that is not the release build") }
-foreach ($need in @('ptts_ffi.dll', 'moonshine.dll', 'onnxruntime.dll')) {
+foreach ($need in @('onnxruntime.dll')) {
     if (-not ($dlls | Where-Object Name -eq $need)) { Fail "the release build is missing $need" }
 }
 Copy-Same $exe (Join-Path $pkg 'moonshine_app.exe')
@@ -251,7 +251,7 @@ chk.close()
 Step 'voices'
 $voices = Join-Path $Repo 'data\kcd2\voices'
 $voicesOut = Join-Path $pkg 'data\kcd2\voices'
-# The voices themselves are in the Phonon model folder (models\phonon-31m-en\voices), below.
+# The voices themselves are in the Phonon model folder (models\phonon\voices), below.
 # The clones\ folder of .qvoice recordings was the Qwen3-TTS engine's and is not shipped;
 # one left in the stage by an earlier build goes.
 if (Test-Path -LiteralPath (Join-Path $voicesOut 'clones')) { Remove-Item -LiteralPath (Join-Path $voicesOut 'clones') -Recurse -Force }
@@ -262,7 +262,7 @@ if (Test-Path -LiteralPath (Join-Path $voicesOut 'clones')) { Remove-Item -Liter
 # it stays behind; the folder ships with its index and whatever lines pass, or empty.
 $phrasesIn = Join-Path $voices 'phrases'
 $phrasesOut = Join-Path $voicesOut 'phrases'
-$voiceNames = @(Get-ChildItem -LiteralPath (Join-Path $Repo 'models\phonon-31m-en\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
+$voiceNames = @(Get-ChildItem -LiteralPath (Join-Path $Repo 'models\phonon\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
 if (Test-Path -LiteralPath $phrasesOut) { Remove-Item -LiteralPath $phrasesOut -Recurse -Force }
 Ensure-Dir $phrasesOut
 $kept = New-Object System.Collections.Generic.List[string]
@@ -298,13 +298,19 @@ Step 'models'
 $models = Join-Path $Repo 'models'
 $modelsOut = Join-Path $pkg 'models'
 Copy-Same (Join-Path $models 'embeddinggemma-300m-q8_0.gguf') (Join-Path $modelsOut 'embeddinggemma-300m-q8_0.gguf')
-# The voice: Phonon's checkpoint with the souls' voices inside it. The Qwen3-TTS folder an
-# earlier stage left behind goes.
-Mirror (Join-Path $models 'phonon-31m-en') (Join-Path $modelsOut 'phonon-31m-en') @('.cache', '.git') @('.gitattributes', '*.md')
-if (-not (Test-Path -LiteralPath (Join-Path $modelsOut 'phonon-31m-en\model.q8.gguf'))) { Fail 'phonon-31m-en has no model.q8.gguf -- scripts\fetch_models.ps1' }
-$phononVoices = @(Get-ChildItem -LiteralPath (Join-Path $modelsOut 'phonon-31m-en\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue)
-if ($phononVoices.Count -eq 0) { Fail 'phonon-31m-en\voices holds no .safetensors -- scripts\fetch_models.ps1' }
-Write-Output ("  voice: phonon-31m-en, " + $phononVoices.Count + " voices")
+# The voice: the Moonshine framework's Phonon bundle (scripts\fetch_models.ps1), the graphs
+# and tokenizer with the souls' voices in voices\. The folder keeps the name "phonon": the
+# engine reads <models>\phonon\... An earlier stage's phonon-31m-en (the xn-ptts GGUF
+# checkpoint) and the Qwen3-TTS folder go.
+if (-not (Test-Path -LiteralPath (Join-Path $models 'phonon\backbone.ort'))) {
+    Fail ("no Phonon model at " + (Join-Path $models 'phonon') + " -- run scripts\fetch_models.ps1 -Only phonon")
+}
+Mirror (Join-Path $models 'phonon') (Join-Path $modelsOut 'phonon') @('.cache', '.git') @('.gitattributes', '*.md')
+if (-not (Test-Path -LiteralPath (Join-Path $modelsOut 'phonon\backbone.ort'))) { Fail 'phonon has no backbone.ort -- scripts\fetch_models.ps1 -Only phonon' }
+$phononVoices = @(Get-ChildItem -LiteralPath (Join-Path $modelsOut 'phonon\voices') -Filter '*.safetensors' -ErrorAction SilentlyContinue)
+if ($phononVoices.Count -eq 0) { Fail 'phonon\voices holds no .safetensors -- scripts\fetch_models.ps1 -Only phonon' }
+Write-Output ("  voice: phonon, " + $phononVoices.Count + " voices")
+if (Test-Path -LiteralPath (Join-Path $modelsOut 'phonon-31m-en')) { Write-Output '  removing phonon-31m-en'; Remove-Item -LiteralPath (Join-Path $modelsOut 'phonon-31m-en') -Recurse -Force }
 if (Test-Path -LiteralPath (Join-Path $modelsOut 'qwen3-tts-0.6b')) { Write-Output '  removing qwen3-tts-0.6b'; Remove-Item -LiteralPath (Join-Path $modelsOut 'qwen3-tts-0.6b') -Recurse -Force }
 
 # The language model: the one GGUF under models\llm, which the launcher passes as --gguf.

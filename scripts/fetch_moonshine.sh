@@ -1,94 +1,86 @@
 #!/usr/bin/env bash
-# Moonshine Voice, for the ear (and Kokoro, where wanted): clone the moonshine tree at its
-# pin into third_party/moonshine and build the library the app links (app/CMakeLists.txt,
-# MOONSHINE_ROOT). macOS and Linux; scripts/fetch_moonshine.ps1 is the Windows half.
+# Moonshine Voice, the prebuilt library: download the release archive for this machine into
+# third_party/moonshine-voice (include/ and lib/) and check it against its pinned sha256.
+# Nothing is compiled. The app links it (app/CMakeLists.txt, MOONSHINE_ROOT) for the ear,
+# for Kokoro where that is wanted, and for the voices: Phonon is in the library.
+# macOS and Linux; scripts/fetch_moonshine.ps1 is the Windows half.
 #
-#   scripts/fetch_moonshine.sh            clone (or fetch) at the pin, build libmoonshine
-#   scripts/fetch_moonshine.sh --no-build  the checkout only
+#   scripts/fetch_moonshine.sh            download and unpack, unless it is already there
+#   scripts/fetch_moonshine.sh --force    download and unpack again
 #
-# The pin is a commit on the moonshine repository (MOONSHINE_PIN below); moving it is a
-# change to this file, so a build says which Moonshine Voice it was made with. The library
-# is built from source rather than taken from a release because the app links the shared
-# library with ONNX Runtime found by rpath beside it, which is the checkout's layout; the
-# release archives carry a static library only.
+# The pin is a release tag on github.com/moonshine-ai/moonshine (MOONSHINE_VERSION below);
+# moving it is an edit to this file and to the hashes under it, so a build says which
+# Moonshine Voice it was made with.
 #
-# The tree keeps its ONNX Runtime binaries and two generated source files in Git LFS. Those
-# are pulled after the clone; when GitHub's LFS quota for the repository is spent (it says
-# "exceeded its LFS budget"), MOONSHINE_LFS_FROM=/path/to/another/moonshine/checkout takes
-# the objects out of that clone's own store instead. MOONSHINE_REPO may likewise be a local
-# path.
+# What the archives hold differs by platform, and app/CMakeLists.txt deals with each:
+#   macOS arm64    lib/libmoonshine.a, static, with ONNX Runtime merged in
+#   linux x86_64   lib/libmoonshine.so and lib/libonnxruntime.so.1, found by $ORIGIN rpath
+#   linux arm64    the same
+#   windows        see fetch_moonshine.ps1
+# There is no Intel macOS archive in the release; the library has to be built from source
+# there (core/ in the moonshine repository), and MOONSHINE_ROOT pointed at an unpacked tree
+# of the same layout.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MOONSHINE_REPO="${MOONSHINE_REPO:-https://github.com/moonshine-ai/moonshine}"
-# c13be73 (dev-v0.1.6, 1 Nov 2026): ONNX Runtime's thread pool sized to the P-cores with
-# spinning off, on Windows. Measured on the i9-13900HX laptop: medium-streaming-en from
-# 0.14x real time (0.81x on one thread, which app/src/listen.cpp forced until this pin) to
-# 4.5x. The app must not set MOONSHINE_ORT_SINGLE_THREAD with this pin: the policy stands
-# down when it is set, and medium falls back to 1.0x.
-MOONSHINE_PIN="${MOONSHINE_PIN:-c13be733f6e5b41bfe64147bd6202c7fcc6ab2ec}"
-root="third_party/moonshine"
-build=1
-[[ "${1:-}" == "--no-build" ]] && build=0
+MOONSHINE_VERSION="${MOONSHINE_VERSION:-v0.1.6}"
+MOONSHINE_RELEASE_URL="${MOONSHINE_RELEASE_URL:-https://github.com/moonshine-ai/moonshine/releases/download/$MOONSHINE_VERSION}"
 
-if [[ ! -d "$root/.git" ]]; then
-    echo "=== cloning moonshine into $root ==="
-    # Pointers only for now; the LFS objects come next, by whichever way works.
-    GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none "$MOONSHINE_REPO" "$root"
-fi
-have=$(git -C "$root" rev-parse HEAD)
-if [[ "$have" != "$MOONSHINE_PIN" ]]; then
-    echo "=== checking out $MOONSHINE_PIN ==="
-    git -C "$root" fetch --quiet origin "$MOONSHINE_PIN"
-    GIT_LFS_SKIP_SMUDGE=1 git -C "$root" checkout --quiet "$MOONSHINE_PIN"
-fi
-git -C "$root" log --oneline -1
+force=0
+[[ "${1:-}" == "--force" ]] && force=1
 
-# The LFS objects the build on this platform reads: ORT for it, and the two generated
-# sources. A pointer file is a few lines starting "version https://git-lfs"; a real one is
-# megabytes, so the size says which is which.
-needed() {
-    git -C "$root" lfs ls-files -n | grep -E 'core/cpp-annote/|core/moonshine-tts/src/|core/third-party/onnxruntime/lib/(macos|linux)/'
+case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64)
+        platform=macos-arm64
+        want=809555a4e2c9a6972c0960a4cbf08b95121763ca17bce69f817adaac3b804fd0 ;;
+    Linux-x86_64)
+        platform=linux-x86_64
+        want=0e6074838d47f174b0188533f1819d502f376e77dccb771df5c09380737b76ec ;;
+    Linux-aarch64|Linux-arm64)
+        platform=linux-arm64
+        want=1e0a88f27c428cab43590ce1635fe122406ef9e70236b58d077daf4b95cf162c ;;
+    *)
+        echo "no Moonshine Voice $MOONSHINE_VERSION archive for $(uname -s) $(uname -m)." >&2
+        echo "Build core/ from the moonshine repository and point MOONSHINE_ROOT at a folder" >&2
+        echo "with include/ and lib/ in it." >&2
+        exit 1 ;;
+esac
+# A pin that is moved without its hash is not the pin it was: the hash only holds for v0.1.6.
+if [[ "$MOONSHINE_VERSION" != "v0.1.6" && -z "${MOONSHINE_SHA256:-}" ]]; then
+    echo "MOONSHINE_VERSION=$MOONSHINE_VERSION needs MOONSHINE_SHA256 for its $platform archive." >&2
+    exit 1
+fi
+want="${MOONSHINE_SHA256:-$want}"
+
+sha256() {
+    if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
-missing=()
-while IFS= read -r f; do
-    if [[ ! -f "$root/$f" ]] || (( $(stat -f %z "$root/$f" 2>/dev/null || stat -c %s "$root/$f") < 1024 )); then
-        missing+=("$f")
-    fi
-done < <(needed)
-if (( ${#missing[@]} )); then
-    echo "=== pulling ${#missing[@]} LFS objects ==="
-    if [[ -n "${MOONSHINE_LFS_FROM:-}" ]]; then
-        # From that checkout's object store, or, when git lfs prune has emptied it, from its
-        # working tree where the file is the same object (the sha256 is the oid).
-        from="$MOONSHINE_LFS_FROM/.git/lfs/objects"
-        mkdir -p "$root/.git/lfs/objects"
-        for f in "${missing[@]}"; do
-            oid=$(git -C "$root" lfs ls-files -l -I "$f" | awk '{print $1}')
-            src="$from/${oid:0:2}/${oid:2:2}/$oid"
-            if [[ ! -f "$src" ]]; then
-                tree="$MOONSHINE_LFS_FROM/$f"
-                if [[ -f "$tree" && "$(shasum -a 256 "$tree" | awk '{print $1}')" == "$oid" ]]; then
-                    src="$tree"
-                else
-                    echo "$MOONSHINE_LFS_FROM has no object for $f" >&2; exit 1
-                fi
-            fi
-            mkdir -p "$root/.git/lfs/objects/${oid:0:2}/${oid:2:2}"
-            cp "$src" "$root/.git/lfs/objects/${oid:0:2}/${oid:2:2}/$oid"
-        done
-        git -C "$root" lfs checkout "${missing[@]}"
-    elif ! git -C "$root" lfs pull --include "$(IFS=,; echo "${missing[*]}")"; then
-        echo "git lfs pull failed. If GitHub says the repository exceeded its LFS budget," >&2
-        echo "set MOONSHINE_LFS_FROM to a moonshine checkout that has the objects and run again." >&2
-        exit 1
-    fi
+
+root="third_party/moonshine-voice"
+stamp="$root/.release"
+if (( ! force )) && [[ -f "$stamp" && "$(cat "$stamp")" == "$MOONSHINE_VERSION $platform" ]] \
+        && [[ -f "$root/include/moonshine-cpp.h" ]]; then
+    echo "Moonshine Voice $MOONSHINE_VERSION ($platform) is already in $root"
+    exit 0
 fi
 
-if (( build )); then
-    echo "=== building libmoonshine ==="
-    cmake -S "$root/core" -B "$root/core/build" -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$root/core/build" --target moonshine -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
-    ls -la "$root"/core/build/libmoonshine.*
+archive="moonshine-voice-$platform.tar.gz"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+echo "=== fetching $archive ($MOONSHINE_VERSION) ==="
+curl -fL --retry 3 --progress-bar -o "$tmp/$archive" "$MOONSHINE_RELEASE_URL/$archive"
+have="$(sha256 "$tmp/$archive")"
+if [[ "$have" != "$want" ]]; then
+    echo "$archive: sha256 $have, want $want" >&2
+    exit 1
 fi
+
+# Replace whatever was there, so a library from an earlier pin cannot be linked beside this
+# one's headers.
+rm -rf "$root"
+mkdir -p "$root"
+tar xzf "$tmp/$archive" -C "$root" --strip-components=1
+echo "$MOONSHINE_VERSION $platform" > "$stamp"
+ls -la "$root/lib"
 echo "app/CMakeLists.txt finds it at MOONSHINE_ROOT=$PWD/$root"

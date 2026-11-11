@@ -3,52 +3,47 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
+#include <list>
 #include <mutex>
 #include <set>
-#include <thread>
 
-// The header is written for C and has no linkage guard of its own.
-extern "C" {
-#include "ptts.h"
-}
+#include "moonshine-c-api.h"
+#include "moonshine-cpp.h"
 
 namespace moonshine {
 
 namespace {
 
-// Phonon's output rate, fixed by the Mimi codec it decodes with.
+// Phonon's output rate, fixed by the Mimi codec it decodes with. The chunks say it too, and
+// that is what is passed on; this is for the line that never gets a chunk.
 constexpr int kSampleRate = 24000;
 
-// The runtime's worker pool is sized from this variable, read once, before the first
-// ptts_new; its own default is one thread per logical CPU, which is the worst setting
-// measured. On the Windows laptop (32 threads, 28 Oct 2026), a 15.6 s line: 1 thread 2.8 s,
-// 2 2.2 s, 4 1.8 s, 8 1.8 s, 16 2.0 s, 32 3.9 s. Eight is the knee, and leaves the rest of the
-// machine to the game and the language model. A value set by hand is kept.
-void size_thread_pool() {
-    if (const char* set = std::getenv("RAYON_NUM_THREADS"); set && *set) return;
-    unsigned all = std::thread::hardware_concurrency();
-    if (all == 0) all = 8;
-    const std::string threads = std::to_string(std::min(all, 8u));
-#ifdef _WIN32
-    _putenv_s("RAYON_NUM_THREADS", threads.c_str());
-#else
-    setenv("RAYON_NUM_THREADS", threads.c_str(), 1);
-#endif
+// How many voices stay resident, each about 350 MB (see phonon.h). Two is a conversation:
+// Henry and whoever he is talking to.
+constexpr std::size_t kDefaultResident = 2;
+
+std::size_t resident_limit() {
+    if (const char* env = std::getenv("MOONSHINE_PHONON_VOICES"); env && *env) {
+        const long asked = std::strtol(env, nullptr, 10);
+        if (asked >= 1) return static_cast<std::size_t>(asked);
+        std::cerr << "voice: MOONSHINE_PHONON_VOICES=" << env << " is not a count of one or more; using "
+                  << kDefaultResident << "\n";
+    }
+    return kDefaultResident;
 }
 
-std::string last_error(const PttsHandle* handle) {
-    const char* why = ptts_last_error(handle);
-    return why ? std::string(why) : std::string("no reason given");
+std::string error_text(std::int32_t code) {
+    const char* why = moonshine_error_to_string(code);
+    return why && *why ? std::string(why) : "error " + std::to_string(code);
 }
 
-// The names in a ptts_voices block: NUL-separated, ending in a second NUL.
-std::vector<std::string> names_in(const char* block) {
-    std::vector<std::string> names;
-    if (!block) return names;
-    for (const char* at = block; *at; at += std::strlen(at) + 1) names.emplace_back(at);
-    return names;
+// A folder that holds a model the library can run: the graphs it cannot start without.
+bool bundle_at(const std::filesystem::path& dir) {
+    std::error_code error;
+    return std::filesystem::is_regular_file(dir / "backbone.ort", error) &&
+           std::filesystem::is_regular_file(dir / "model.json", error) &&
+           std::filesystem::is_regular_file(dir / "tokenizer.bin", error);
 }
 
 }  // namespace
@@ -56,82 +51,124 @@ std::vector<std::string> names_in(const char* block) {
 struct PhononEngine::Impl {
     std::filesystem::path model_dir;
     std::filesystem::path voices_dir;
-    PttsHandle* handle = nullptr;
+    // The library's asset root: the folder with phonon/ in it.
+    std::filesystem::path root;
     std::string failure;
     std::vector<std::string> voices;
-    std::string current_voice;
-    // Voices asked for that the checkpoint does not have, each said once.
+    // The voice a line gets when it asks for one the model folder lacks.
+    std::string stand_in;
+    // Voices asked for that the model folder does not have, each said once.
     std::set<std::string> unknown;
-    // One line at a time: the runtime wants its calls from one thread at a time.
+    // One line at a time. The library serialises its own calls, but a line is a run of them
+    // and a second line's chunks must not come out of the first's.
     std::mutex speaking;
 
-    // What on_audio and cancelled see from inside the C callback.
-    struct Sink {
-        const OnAudio* on_audio;
-        const Cancelled* cancelled;
-        std::vector<std::int16_t> chunk;
-        std::size_t delivered = 0;
+    struct Resident {
+        std::string voice;
+        std::unique_ptr<::moonshine::TextToSpeech> tts;
     };
+    // Most recently spoken first. Under `speaking`.
+    std::list<Resident> resident;
+    std::size_t limit = kDefaultResident;
 
-    static bool deliver(const float* pcm, std::size_t count, void* user) {
-        Sink& sink = *static_cast<Sink*>(user);
-        if (sink.cancelled && *sink.cancelled && (*sink.cancelled)()) return false;
-        sink.chunk.resize(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            const float clamped = std::clamp(pcm[i], -1.0f, 1.0f);
-            sink.chunk[i] = static_cast<std::int16_t>(std::lrint(clamped * 32767.0f));
+    // The synthesizer for a voice, made if it is not already held and the least recently
+    // used let go if that is more than `limit`. Null, with the reason on stderr, when the
+    // library would not make it. Under `speaking`.
+    ::moonshine::TextToSpeech* open(const std::string& voice) {
+        for (auto it = resident.begin(); it != resident.end(); ++it) {
+            if (it->voice != voice) continue;
+            if (it != resident.begin()) resident.splice(resident.begin(), resident, it);
+            return resident.front().tts.get();
         }
-        sink.delivered += count;
-        return (*sink.on_audio)(sink.chunk.data(), count, kSampleRate);
+        // Made after letting one go, not before: two of them at once is the memory this is
+        // keeping down.
+        while (resident.size() >= limit) resident.pop_back();
+        // The voice by its file rather than by the library's catalogue (phonon/voices.json),
+        // so that any .safetensors in the folder is a voice, one Gradium Studio made as well
+        // as the catalogue's.
+        const std::filesystem::path file = model_dir / "voices" / (voice + ".safetensors");
+        try {
+            auto tts = std::make_unique<::moonshine::TextToSpeech>(
+                "en_us", ::moonshine::Options{{"g2p_root", root.string()},
+                                              {"voice", "phonon"},
+                                              {"phonon_voice_file", file.string()}});
+            resident.push_front({voice, std::move(tts)});
+            return resident.front().tts.get();
+        } catch (const std::exception& why) {
+            std::cerr << "voice: phonon could not make the voice " << voice << " from " << file.string() << ": "
+                      << why.what() << "\n";
+            return nullptr;
+        }
     }
 
-    // Switch voices when the line's differs from the last; the runtime keeps the choice.
-    bool choose(std::string_view voice) {
-        std::string wanted(voice);
-        if (std::find(voices.begin(), voices.end(), wanted) == voices.end()) {
-            if (unknown.insert(wanted).second) {
-                std::cerr << "voice: phonon has no voice named " << wanted << " (" << model_dir.string()
-                          << "/voices/" << wanted << ".safetensors); speaking it in the default voice\n";
-            }
-            wanted = "default";
-            if (std::find(voices.begin(), voices.end(), wanted) == voices.end()) return false;
+    // The voice to speak a line in: the one asked for, or the stand-in, which is said once.
+    std::string choose(std::string_view asked) {
+        std::string wanted(asked);
+        if (std::find(voices.begin(), voices.end(), wanted) != voices.end()) return wanted;
+        if (unknown.insert(wanted).second) {
+            std::cerr << "voice: phonon has no voice named " << wanted << " (" << model_dir.string() << "/voices/"
+                      << wanted << ".safetensors); speaking it in " << stand_in << "\n";
         }
-        if (wanted == current_voice) return true;
-        if (!ptts_set_voice(handle, wanted.c_str())) {
-            std::cerr << "voice: phonon could not switch to " << wanted << ": " << last_error(handle) << "\n";
-            return false;
-        }
-        current_voice = wanted;
-        return true;
+        return stand_in;
     }
 };
 
 PhononEngine::PhononEngine(std::filesystem::path model_dir, std::filesystem::path voices_dir)
     : impl_(std::make_unique<Impl>()) {
-    impl_->model_dir = std::move(model_dir);
     impl_->voices_dir = std::move(voices_dir);
-    if (impl_->model_dir.empty()) {
-        impl_->failure = "no phonon checkpoint (models/phonon-31m-en, or PHONON_MODEL_DIR)";
+    impl_->limit = resident_limit();
+    if (model_dir.empty()) {
+        impl_->failure = "no phonon model (models/phonon, or PHONON_MODEL_DIR; scripts/fetch_models.sh --only phonon)";
         std::cerr << "voice: " << impl_->failure << "\n";
         return;
     }
-    size_thread_pool();
-    const std::string dir = impl_->model_dir.string();
-    impl_->handle = ptts_new(dir.c_str(), PTTS_UNIT_CPU, "en");
-    if (!impl_->handle) {
-        impl_->failure = "phonon did not load " + dir + ": " + last_error(nullptr);
+    // A trailing separator would leave the folder's name empty.
+    model_dir = model_dir.lexically_normal();
+    if (model_dir.filename().empty()) model_dir = model_dir.parent_path();
+    impl_->model_dir = model_dir;
+    // The library reads <root>/phonon/<file>, so the folder's name is not ours to choose.
+    if (model_dir.filename() != "phonon") {
+        impl_->failure = "the phonon model folder must be named phonon (Moonshine Voice reads <root>/phonon/...), "
+                         "and " + model_dir.string() + " is not";
         std::cerr << "voice: " << impl_->failure << "\n";
         return;
     }
-    impl_->voices = names_in(ptts_voices(impl_->handle));
+    if (!bundle_at(model_dir)) {
+        impl_->failure = model_dir.string() + " has no backbone.ort, model.json and tokenizer.bin "
+                         "(scripts/fetch_models.sh --only phonon)";
+        std::cerr << "voice: " << impl_->failure << "\n";
+        return;
+    }
+    impl_->root = model_dir.parent_path();
+
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(model_dir / "voices", error)) {
+        if (entry.path().extension() == ".safetensors") impl_->voices.push_back(entry.path().stem().string());
+    }
+    std::sort(impl_->voices.begin(), impl_->voices.end());
     if (impl_->voices.empty()) {
-        std::cerr << "voice: phonon checkpoint " << dir << " has no voices; every line will be in no particular voice\n";
+        impl_->failure = model_dir.string() + "/voices holds no .safetensors voice";
+        std::cerr << "voice: " << impl_->failure << "\n";
+        return;
+    }
+    // Plain voices first; any will do if neither is there.
+    impl_->stand_in = impl_->voices.front();
+    for (const char* plain : {"toby", "maeve"}) {
+        if (std::find(impl_->voices.begin(), impl_->voices.end(), plain) != impl_->voices.end()) {
+            impl_->stand_in = plain;
+            break;
+        }
+    }
+    // Made now, so that a model that will not load is known at start-up and not on the first
+    // line, and so that ready() is the truth.
+    if (!impl_->open(impl_->stand_in)) {
+        impl_->failure = "Moonshine Voice did not load the phonon model in " + model_dir.string();
+        return;
     }
 }
 
-PhononEngine::~PhononEngine() {
-    if (impl_ && impl_->handle) ptts_free(impl_->handle);
-}
+PhononEngine::~PhononEngine() = default;
 
 std::filesystem::path PhononEngine::find_model() {
     if (const char* env = std::getenv("PHONON_MODEL_DIR"); env && *env) {
@@ -140,20 +177,34 @@ std::filesystem::path PhononEngine::find_model() {
     std::error_code error;
     std::filesystem::path dir = std::filesystem::current_path(error);
     for (int i = 0; i < 4 && !dir.empty(); ++i) {
-        const std::filesystem::path candidate = dir / "models" / "phonon-31m-en";
-        if (std::filesystem::is_regular_file(candidate / "config.json", error) &&
-            (std::filesystem::is_regular_file(candidate / "model.q8.gguf", error) ||
-             std::filesystem::is_regular_file(candidate / "model.safetensors", error))) {
-            return candidate;
-        }
+        const std::filesystem::path candidate = dir / "models" / "phonon";
+        if (bundle_at(candidate)) return candidate;
         const std::filesystem::path parent = dir.parent_path();
         if (parent == dir) break;
         dir = parent;
     }
+    // Where Moonshine Voice's own downloaders put it (the same tree Kokoro's assets are
+    // found in, voice.cpp's find_tts_root).
+    std::vector<std::filesystem::path> caches;
+    if (const char* home = std::getenv("HOME")) {
+        const std::filesystem::path base(home);
+        caches.push_back(base / "Library/Caches/moonshine_voice/download.moonshine.ai/tts/phonon");
+        caches.push_back(base / ".cache/moonshine_voice/download.moonshine.ai/tts/phonon");
+    }
+    if (const char* local = std::getenv("LOCALAPPDATA")) {
+        caches.push_back(std::filesystem::path(local) / "moonshine_voice" / "download.moonshine.ai" / "tts" /
+                         "phonon");
+    }
+    for (const std::filesystem::path& candidate : caches) {
+        if (bundle_at(candidate)) return candidate;
+    }
     return {};
 }
 
-bool PhononEngine::ready() { return impl_->handle != nullptr; }
+bool PhononEngine::ready() {
+    std::lock_guard<std::mutex> held(impl_->speaking);
+    return !impl_->resident.empty();
+}
 
 const std::string& PhononEngine::failure() const { return impl_->failure; }
 
@@ -173,17 +224,66 @@ PhononEngine::Audio PhononEngine::speak(std::string_view voice, std::string_view
 
 std::size_t PhononEngine::speak(std::string_view voice, std::string_view text, const OnAudio& on_audio,
                                 const Cancelled& cancelled) {
-    if (!impl_->handle) return 0;
+    if (!impl_->failure.empty()) return 0;
     std::lock_guard<std::mutex> held(impl_->speaking);
-    if (!impl_->voices.empty() && !impl_->choose(voice)) return 0;
-    Impl::Sink sink{&on_audio, &cancelled, {}, 0};
+    const std::string chosen = impl_->choose(voice);
+    ::moonshine::TextToSpeech* tts = impl_->open(chosen);
+    if (!tts) return 0;
+    const std::int32_t handle = tts->getHandle();
     const std::string line(text);
-    PttsResult result{};
-    if (!ptts_speak(impl_->handle, line.c_str(), &Impl::deliver, &sink, &result)) {
-        std::cerr << "voice: phonon failed on \"" << line << "\": " << last_error(impl_->handle) << "\n";
-        return sink.delivered;
+
+    // The line goes in whole, and the end of input says so, which is what lets the library
+    // cut it into sentences and speak the last without waiting for more text.
+    if (const std::int32_t pushed = moonshine_tts_push_text(handle, line.c_str());
+        pushed != MOONSHINE_ERROR_NONE) {
+        std::cerr << "voice: phonon failed on \"" << line << "\": " << error_text(pushed) << "\n";
+        moonshine_tts_cancel(handle);
+        return 0;
     }
-    return sink.delivered;
+    moonshine_tts_end_input(handle);
+
+    std::size_t delivered = 0;
+    std::vector<std::int16_t> chunk;
+    // Set when this call abandons the line: the library then holds a cancelled report for
+    // the next pull (a line stopped on purpose is told from one that ran out of text), and
+    // that pull has to be made here, or it ends the next line before it begins.
+    bool stopped = false;
+    while (true) {
+        if (cancelled && cancelled()) {
+            stopped = true;
+            break;
+        }
+        const tts_chunk_t* made = nullptr;
+        const std::int32_t status = moonshine_tts_next_chunk(handle, 0, &made);
+        if (status == MOONSHINE_TTS_END_OF_STREAM) break;
+        // A report left from a line cut earlier, by another call; not this line's.
+        if (status == MOONSHINE_TTS_CANCELLED) continue;
+        if (status == MOONSHINE_TTS_NEED_TEXT) break;
+        if (status != MOONSHINE_ERROR_NONE || !made) {
+            std::cerr << "voice: phonon failed on \"" << line << "\": " << error_text(status) << "\n";
+            stopped = true;
+            break;
+        }
+        const std::size_t count = static_cast<std::size_t>(made->audio_data_count);
+        if (count == 0) continue;
+        chunk.resize(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            const float clamped = std::clamp(made->audio_data[i], -1.0f, 1.0f);
+            chunk[i] = static_cast<std::int16_t>(std::lrint(clamped * 32767.0f));
+        }
+        delivered += count;
+        const int rate = made->sample_rate > 0 ? made->sample_rate : kSampleRate;
+        if (!on_audio(chunk.data(), count, rate)) {
+            stopped = true;
+            break;
+        }
+    }
+    if (stopped) {
+        moonshine_tts_cancel(handle);
+        const tts_chunk_t* none = nullptr;
+        (void)moonshine_tts_next_chunk(handle, 0, &none);
+    }
+    return delivered;
 }
 
 std::vector<std::string> PhononEngine::voices() const { return impl_->voices; }

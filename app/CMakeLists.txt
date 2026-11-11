@@ -189,88 +189,12 @@ endif()
 add_executable(moonshine_app src/main.cpp src/voice.cpp src/listen.cpp)
 target_link_libraries(moonshine_app PRIVATE moonshine_core)
 
-# The souls' voices are spoken in-process by Phonon, Gradium's 31M text-to-speech model,
-# through the C interface of its Rust runtime, pinned as the submodule vendor/xn-ptts and
-# built here by cargo (rustup.rs puts it on the PATH; nothing else is needed). The runtime
-# is one shared library the exe needs beside it, as OpenBLAS was for the engine below; the
-# model is 68 MB under models/phonon-31m-en (scripts/models.tsv), with the voices in it.
-# Optional in the same way as llama.cpp -- without it the app still talks, it just does not
-# speak -- and only the app links it; the tests compile voice.cpp without any engine.
-#
-# Off on macOS: that build of the runtime drives Core ML only and loads an exported bundle,
-# not the checkpoint folder this ships. The app speaks there through Kokoro when built with
-# Moonshine Voice, or not at all.
-option(MOONSHINE_PHONON "speak in the Phonon voices through the vendored xn-ptts runtime" ON)
-set(XN_PTTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/xn-ptts)
-if(MOONSHINE_PHONON AND APPLE)
-    message(STATUS "Phonon is off on macOS (its runtime there is Core ML only)")
-    set(MOONSHINE_PHONON OFF)
-endif()
-if(MOONSHINE_PHONON AND NOT EXISTS ${XN_PTTS_DIR}/ptts-ffi/Cargo.toml)
-    message(WARNING "vendor/xn-ptts is empty; run git submodule update --init. "
-                    "Building without the Phonon voice.")
-    set(MOONSHINE_PHONON OFF)
-endif()
-if(MOONSHINE_PHONON)
-    find_program(CARGO cargo HINTS $ENV{USERPROFILE}/.cargo/bin $ENV{HOME}/.cargo/bin)
-    if(NOT CARGO)
-        message(WARNING "no cargo on the PATH (install Rust from https://rustup.rs). "
-                        "Building without the Phonon voice.")
-        set(MOONSHINE_PHONON OFF)
-    endif()
-endif()
-if(MOONSHINE_PHONON)
-    # The submodule's own .cargo/config.toml asks for the CPU of the build machine; this
-    # ships to other machines, so the baseline is set here instead, the one the runtime's
-    # own releases use. RUSTFLAGS in the environment replaces that file's setting.
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
-        set(MOONSHINE_PHONON_TARGET_CPU "x86-64-v3" CACHE STRING "rustc target-cpu for the Phonon runtime")
-    else()
-        set(MOONSHINE_PHONON_TARGET_CPU "generic" CACHE STRING "rustc target-cpu for the Phonon runtime")
-    endif()
-    set(PTTS_TARGET_DIR ${CMAKE_BINARY_DIR}/xn-ptts)
-    if(WIN32)
-        set(PTTS_SHARED ${PTTS_TARGET_DIR}/release/ptts_ffi.dll)
-        set(PTTS_IMPLIB ${PTTS_TARGET_DIR}/release/ptts_ffi.dll.lib)
-    else()
-        set(PTTS_SHARED ${PTTS_TARGET_DIR}/release/libptts_ffi.so)
-        set(PTTS_IMPLIB ${PTTS_SHARED})
-    endif()
-    # cargo keeps its own account of what is up to date, so it runs on every build and is
-    # a no-op in under a second when nothing changed. Always release: the debug build of
-    # the runtime is too slow to speak with.
-    add_custom_target(ptts_ffi_build
-        COMMAND ${CMAKE_COMMAND} -E env
-                "RUSTFLAGS=-C target-cpu=${MOONSHINE_PHONON_TARGET_CPU}"
-                "CARGO_TARGET_DIR=${PTTS_TARGET_DIR}"
-                ${CARGO} build --release --quiet -p ptts-ffi
-        WORKING_DIRECTORY ${XN_PTTS_DIR}
-        BYPRODUCTS ${PTTS_SHARED} ${PTTS_IMPLIB}
-        COMMENT "cargo: the Phonon runtime (ptts-ffi, release, target-cpu=${MOONSHINE_PHONON_TARGET_CPU})"
-        VERBATIM)
-    add_library(ptts_ffi SHARED IMPORTED)
-    set_target_properties(ptts_ffi PROPERTIES
-        IMPORTED_LOCATION ${PTTS_SHARED}
-        IMPORTED_IMPLIB ${PTTS_IMPLIB}
-        INTERFACE_INCLUDE_DIRECTORIES ${XN_PTTS_DIR}/ptts-ffi/include)
-    add_dependencies(moonshine_app ptts_ffi_build)
-    target_sources(moonshine_app PRIVATE src/phonon.cpp)
-    target_link_libraries(moonshine_app PRIVATE ptts_ffi)
-    target_compile_definitions(moonshine_app PRIVATE MOONSHINE_HAS_PHONON=1)
-    if(WIN32)
-        target_link_libraries(moonshine_app PRIVATE winmm)
-        add_custom_command(TARGET moonshine_app POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    ${PTTS_SHARED} $<TARGET_FILE_DIR:moonshine_app>
-            VERBATIM)
-    endif()
-endif()
-
 # The voices as they were spoken before Phonon (28 Oct 2026): cloned recordings through the
 # Qwen3-TTS C engine, vendored under vendor/qwen3-tts and built as a static library, the
 # model loaded once at startup and each line a generate call. Kept buildable and off: its
-# model is 2.5 GB where Phonon's is 68, it holds 3.6 GB resident where Phonon holds 300 MB,
-# and it speaks at real time where Phonon speaks at a tenth of it. Only the app links it;
+# model is 2.5 GB where Phonon's is 165 MB, it holds 3.6 GB resident where one Phonon voice
+# holds about 350 MB, and it speaks at real time where Phonon speaks at a tenth of it or
+# better (measured on an M-series Mac, 10 Nov 2026: 0.055). Only the app links it;
 # the tests compile voice.cpp without the engine. Kokoro stays the fallback where that
 # library was found. Turned on beside Phonon, MOONSHINE_TTS_BACKEND=cpu picks it at runtime.
 option(MOONSHINE_CLONE "speak in the cloned voices with the in-process Qwen3-TTS engine" OFF)
@@ -317,85 +241,114 @@ if(MOONSHINE_GPU_CLONE AND MOONSHINE_LLAMA AND TARGET mtmd)
     endif()
 endif()
 
-# Moonshine Voice, through its C++ binding: Kokoro for the replies (MOONSHINE_TTS) and the
-# transcriber for the player's own line while the talk button is held (MOONSHINE_STT; src/listen.cpp).
+# Moonshine Voice, the prebuilt release library (scripts/fetch_moonshine.sh, .ps1 on Windows,
+# unpack it into third_party/moonshine-voice; nothing here compiles it). Three things in this
+# app are done through it, each its own option because a machine can want one without the
+# others:
+#   MOONSHINE_PHONON  the souls' voices, spoken in-process by Phonon, Gradium's 31M
+#                     text-to-speech model, which the library carries (src/phonon.cpp; it
+#                     drives the library's C streaming API, one synthesizer per voice). The
+#                     model is under models/phonon, fetched by scripts/fetch_models.* --only phonon
+#   MOONSHINE_TTS     Kokoro, through the C++ binding, as the fallback for a line Phonon does
+#                     not speak (src/voice.cpp)
+#   MOONSHINE_STT     the transcriber, for the player's own line while the talk button is
+#                     held (src/listen.cpp)
 # Optional in the same way as llama.cpp: a checkout without the library still builds and
-# still talks, it just does not speak, or hear. The binding is a header in the moonshine
-# tree; the library is whatever that tree last built. scripts/fetch_moonshine.sh (.ps1 on
-# Windows) clones the tree at its pin into third_party/moonshine and builds the library,
-# which is where this looks by default; MOONSHINE_ROOT names another checkout. ONNX Runtime
-# is loaded beside it by rpath, because the library asks for it as @rpath/libonnxruntime
-# and does not carry a copy. On Windows the tree builds a DLL with an import library
-# (-DMOONSHINE_BUILD_SHARED=YES, into core/build/Release/), and there is no rpath, so the
-# two DLLs are copied beside the exe as OpenBLAS is above. The two options are separate
-# because a machine can want one without the other: the Windows release speaks the clones
-# through the Qwen3-TTS engine and never needed Kokoro, but hears through this library.
+# still talks, it just does not speak, or hear. MOONSHINE_ROOT names another unpacked archive
+# (or a tree built from source with the same include/ and lib/ layout).
+#
+# What the archive holds depends on the platform:
+#   macOS    lib/libmoonshine.a, static, with ONNX Runtime merged in; nothing to ship beside it
+#   Linux    lib/libmoonshine.so and lib/libonnxruntime.so.1, found at run time by rpath
+#            (the library is itself built with an $ORIGIN rpath to the second)
+#   Windows  lib/moonshine.lib, static, which needs bin-tokenizer.lib, moonshine-utils.lib and
+#            ort-utils.lib beside it at link time, and ONNX Runtime as onnxruntime.lib with
+#            onnxruntime.dll, which is copied beside the exe (there is no rpath on Windows)
+option(MOONSHINE_PHONON "speak in the Phonon voices through the Moonshine Voice library" ON)
 option(MOONSHINE_TTS "speak replies with Kokoro through Moonshine Voice" ON)
 option(MOONSHINE_STT "hear the player through Moonshine Voice while the talk button is held" ON)
-set(MOONSHINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/moonshine" CACHE PATH
-    "moonshine checkout, for the Voice library and headers (scripts/fetch_moonshine.*)")
-if(MOONSHINE_TTS OR MOONSHINE_STT)
-    set(_moonshine_lib "")
-    set(_moonshine_dll "")
-    foreach(_name libmoonshine.dylib libmoonshine.so)
-        if(EXISTS "${MOONSHINE_ROOT}/core/build/${_name}")
-            set(_moonshine_lib "${MOONSHINE_ROOT}/core/build/${_name}")
-            break()
+set(MOONSHINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/moonshine-voice" CACHE PATH
+    "unpacked Moonshine Voice release (include/, lib/); scripts/fetch_moonshine.*")
+if(MOONSHINE_PHONON OR MOONSHINE_TTS OR MOONSHINE_STT)
+    # A build directory from before the release archive has MOONSHINE_ROOT cached as the
+    # source checkout (third_party/moonshine, with core/ in it), which a changed default does
+    # not replace. Taken as the old default and moved to the new one; a root that was named by
+    # hand and is a checkout stays as it is, and is warned about below.
+    set(_moonshine_default "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/moonshine-voice")
+    get_filename_component(_moonshine_old "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/moonshine" ABSOLUTE)
+    get_filename_component(_moonshine_now "${MOONSHINE_ROOT}" ABSOLUTE)
+    if(_moonshine_now STREQUAL _moonshine_old AND EXISTS "${_moonshine_default}/include/moonshine-cpp.h")
+        message(STATUS "MOONSHINE_ROOT was the old source checkout; using the release in ${_moonshine_default}")
+        set(MOONSHINE_ROOT "${_moonshine_default}" CACHE PATH "" FORCE)
+    endif()
+    set(_moonshine_libs "")
+    set(_moonshine_dlls "")
+    set(_moonshine_libdir "${MOONSHINE_ROOT}/lib")
+    if(WIN32)
+        set(_moonshine_wanted moonshine.lib bin-tokenizer.lib moonshine-utils.lib ort-utils.lib onnxruntime.lib)
+    elseif(APPLE)
+        set(_moonshine_wanted libmoonshine.a)
+    else()
+        set(_moonshine_wanted libmoonshine.so)
+    endif()
+    set(_moonshine_found TRUE)
+    foreach(_name IN LISTS _moonshine_wanted)
+        if(EXISTS "${_moonshine_libdir}/${_name}")
+            list(APPEND _moonshine_libs "${_moonshine_libdir}/${_name}")
+        else()
+            set(_moonshine_found FALSE)
         endif()
     endforeach()
-    if(WIN32 AND NOT _moonshine_lib)
-        foreach(_dir "${MOONSHINE_ROOT}/core/build/Release" "${MOONSHINE_ROOT}/core/build")
-            if(EXISTS "${_dir}/moonshine.dll" AND EXISTS "${_dir}/moonshine.lib")
-                set(_moonshine_lib "${_dir}/moonshine.lib")
-                set(_moonshine_dll "${_dir}/moonshine.dll")
-                break()
-            endif()
-        endforeach()
-    endif()
-    if(APPLE)
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-            set(_moonshine_ort "${MOONSHINE_ROOT}/core/third-party/onnxruntime/lib/macos/arm64")
+    if(WIN32)
+        if(EXISTS "${_moonshine_libdir}/onnxruntime.dll")
+            list(APPEND _moonshine_dlls "${_moonshine_libdir}/onnxruntime.dll")
         else()
-            set(_moonshine_ort "${MOONSHINE_ROOT}/core/third-party/onnxruntime/lib/macos/x86_64")
-        endif()
-    elseif(WIN32)
-        set(_moonshine_ort "${MOONSHINE_ROOT}/core/third-party/onnxruntime/lib/windows/x86_64")
-    else()
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-            set(_moonshine_ort "${MOONSHINE_ROOT}/core/third-party/onnxruntime/lib/linux/aarch64")
-        else()
-            set(_moonshine_ort "${MOONSHINE_ROOT}/core/third-party/onnxruntime/lib/linux/x86_64")
+            set(_moonshine_found FALSE)
         endif()
     endif()
-    if(_moonshine_lib AND EXISTS "${MOONSHINE_ROOT}/core/moonshine-cpp.h" AND
-       EXISTS "${_moonshine_ort}")
+    if(NOT EXISTS "${MOONSHINE_ROOT}/include/moonshine-cpp.h")
+        set(_moonshine_found FALSE)
+    endif()
+
+    if(_moonshine_found)
+        if(MOONSHINE_PHONON)
+            target_sources(moonshine_app PRIVATE src/phonon.cpp)
+            target_compile_definitions(moonshine_app PRIVATE MOONSHINE_HAS_PHONON=1)
+        endif()
         if(MOONSHINE_TTS)
             target_compile_definitions(moonshine_app PRIVATE MOONSHINE_HAS_TTS=1)
         endif()
         if(MOONSHINE_STT)
             target_compile_definitions(moonshine_app PRIVATE MOONSHINE_HAS_STT=1)
         endif()
-        target_include_directories(moonshine_app PRIVATE "${MOONSHINE_ROOT}/core")
-        target_link_libraries(moonshine_app PRIVATE "${_moonshine_lib}")
-        set_target_properties(moonshine_app PROPERTIES
-            BUILD_RPATH "${_moonshine_ort};${MOONSHINE_ROOT}/core/build"
-            INSTALL_RPATH "${_moonshine_ort};${MOONSHINE_ROOT}/core/build")
+        target_include_directories(moonshine_app PRIVATE "${MOONSHINE_ROOT}/include")
+        target_link_libraries(moonshine_app PRIVATE ${_moonshine_libs})
         if(APPLE)
-            target_link_libraries(moonshine_app PRIVATE "-framework AudioToolbox")
+            # The static library wants Core Foundation (the C++ example in the release says
+            # the same), and was built for a newer macOS than the default deployment target,
+            # which the linker says once for every object in it; the library is upstream's
+            # and the warning is not about this app's code.
+            target_link_libraries(moonshine_app PRIVATE
+                "-framework AudioToolbox" "-framework CoreFoundation" "-framework Foundation")
+            target_link_options(moonshine_app PRIVATE -Wl,-w)
         elseif(WIN32)
             target_link_libraries(moonshine_app PRIVATE winmm)
-            foreach(_dll "${_moonshine_dll}" "${_moonshine_ort}/onnxruntime.dll")
+            foreach(_dll IN LISTS _moonshine_dlls)
                 add_custom_command(TARGET moonshine_app POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
                             "${_dll}" $<TARGET_FILE_DIR:moonshine_app>
                     VERBATIM)
             endforeach()
+        else()
+            set_target_properties(moonshine_app PROPERTIES
+                BUILD_RPATH "${_moonshine_libdir}"
+                INSTALL_RPATH "${_moonshine_libdir}")
         endif()
     else()
         message(WARNING "Moonshine Voice was not found under ${MOONSHINE_ROOT}; "
-                        "building without Kokoro or the ear. Run scripts/fetch_moonshine.sh "
-                        "(.ps1 on Windows), set MOONSHINE_ROOT, or "
-                        "-DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF.")
+                        "building without the Phonon voices, Kokoro or the ear. Run "
+                        "scripts/fetch_moonshine.sh (.ps1 on Windows), set MOONSHINE_ROOT, or "
+                        "-DMOONSHINE_PHONON=OFF -DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF.")
     endif()
 endif()
 

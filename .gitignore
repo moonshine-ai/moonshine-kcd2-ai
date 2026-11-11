@@ -23,6 +23,8 @@ __pycache__/
 /models/
 
 # Moonshine Voice's prebuilt library (scripts/fetch_moonshine.*).
+/third_party/moonshine-voice/
+# The old source checkout, from before the app moved to the release binaries.
 /third_party/moonshine/
 
 # The installer's staging tree and output (installer/Stage.ps1).

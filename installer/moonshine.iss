@@ -284,8 +284,12 @@ begin
   Result := GameDir('') <> '';
 end;
 
-// The 2015-2022 x64 runtime, 14.30 or later (what the build links against). The
-// Installed value and the version are read from the registry the redistributable writes.
+// The 2015-2022 x64 runtime, 14.44 or later. The prebuilt Moonshine Voice library is built
+// with a recent toolset (newer than 14.41) against the dynamic runtime, and its STL calls (the vectorised
+// search, find_end, remove and find_first_of helpers) are not in an older msvcp140.dll,
+// so an older one would link and then fail to start. vc_redist.x64.exe from aka.ms is
+// current, and a no-op on a machine that already has it. The Installed value and the
+// version are read from the registry the redistributable writes.
 function NeedsRedist: Boolean;
 var
   Installed, Major, Minor: Cardinal;
@@ -294,7 +298,7 @@ begin
   if RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) and (Installed = 1) then
     if RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Major', Major) and
        RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Minor', Minor) then
-      Result := not ((Major > 14) or ((Major = 14) and (Minor >= 30)));
+      Result := not ((Major > 14) or ((Major = 14) and (Minor >= 44)));
   if not Result then Log('VC++ runtime already present, not running vc_redist');
 end;
 

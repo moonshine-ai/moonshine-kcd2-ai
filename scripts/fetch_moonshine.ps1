@@ -1,81 +1,57 @@
-# Moonshine Voice, for the ear: clone the moonshine tree at its pin into third_party\moonshine
-# and build moonshine.dll, which the app links (app\CMakeLists.txt, MOONSHINE_ROOT) and the
-# installer ships beside the exe with onnxruntime.dll. The Windows half of
-# scripts/fetch_moonshine.sh; the pin is the same.
+# Moonshine Voice, the prebuilt library: download the Windows release archive into
+# third_party\moonshine-voice (include\ and lib\) and check it against its pinned sha256.
+# Nothing is compiled, so no Visual Studio prompt is needed. The app links it
+# (app\CMakeLists.txt, MOONSHINE_ROOT) for the ear and for the voices: Phonon is in the
+# library. The Windows half of scripts/fetch_moonshine.sh; the pin is the same.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\fetch_moonshine.ps1 [-NoBuild]
+#   powershell -ExecutionPolicy Bypass -File scripts\fetch_moonshine.ps1 [-Force]
 #
-# Wants git (with git-lfs), cmake and the Visual Studio build tools on the PATH; run it from
-# a developer prompt, or let scripts\build_windows.bat run it. The tree keeps two generated
-# source files in Git LFS (its Windows ONNX Runtime is plain git); when GitHub's LFS quota
-# for the repository is spent, MOONSHINE_LFS_FROM names another moonshine checkout whose
-# object store has them, as in the .sh.
-param([switch]$NoBuild)
+# What the archive holds: lib\moonshine.lib (static; everything but ONNX Runtime) with
+# bin-tokenizer.lib, moonshine-utils.lib and ort-utils.lib beside it, which it needs at link
+# time, and onnxruntime.lib with onnxruntime.dll, the one DLL the exe needs beside it
+# (app\CMakeLists.txt copies it there). Wants tar on the PATH, which Windows 10 and later have.
+param([switch]$Force)
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
-$repo = if ($env:MOONSHINE_REPO) { $env:MOONSHINE_REPO } else { 'https://github.com/moonshine-ai/moonshine' }
-# The same pin as scripts/fetch_moonshine.sh, with the reason for it noted there.
-$pin = if ($env:MOONSHINE_PIN) { $env:MOONSHINE_PIN } else { 'c13be733f6e5b41bfe64147bd6202c7fcc6ab2ec' }
-$root = 'third_party\moonshine'
-
-$env:GIT_LFS_SKIP_SMUDGE = '1'
-if (-not (Test-Path (Join-Path $root '.git'))) {
-    Write-Output "=== cloning moonshine into $root ==="
-    & git clone --filter=blob:none $repo $root
-    if ($LASTEXITCODE -ne 0) { throw 'git clone failed' }
-}
-$have = (& git -C $root rev-parse HEAD).Trim()
-if ($have -ne $pin) {
-    Write-Output "=== checking out $pin ==="
-    & git -C $root fetch --quiet origin $pin
-    & git -C $root checkout --quiet $pin
-    if ($LASTEXITCODE -ne 0) { throw "checkout of $pin failed" }
-}
-& git -C $root log --oneline -1
-
-# The LFS objects a Windows build compiles: the two generated sources. A pointer file is a
-# few lines; a real one is megabytes.
-$needed = @(& git -C $root lfs ls-files -n) | Where-Object { $_ -match '^core/(cpp-annote|moonshine-tts/src)/' }
-$missing = @($needed | Where-Object { $p = Join-Path $root $_; -not (Test-Path -LiteralPath $p) -or (Get-Item -LiteralPath $p).Length -lt 1024 })
-if ($missing.Count -gt 0) {
-    Write-Output "=== pulling $($missing.Count) LFS objects ==="
-    if ($env:MOONSHINE_LFS_FROM) {
-        # From that checkout's object store, or, when git lfs prune has emptied it, from its
-        # working tree where the file is the same object (the sha256 is the oid).
-        $from = Join-Path $env:MOONSHINE_LFS_FROM '.git\lfs\objects'
-        foreach ($f in $missing) {
-            $oid = ((& git -C $root lfs ls-files -l -I $f) -split '\s+')[0]
-            $src = Join-Path $from (Join-Path $oid.Substring(0, 2) (Join-Path $oid.Substring(2, 2) $oid))
-            if (-not (Test-Path -LiteralPath $src)) {
-                $tree = Join-Path $env:MOONSHINE_LFS_FROM ($f -replace '/', '\')
-                if ((Test-Path -LiteralPath $tree) -and (Get-FileHash -Algorithm SHA256 -LiteralPath $tree).Hash.ToLower() -eq $oid) {
-                    $src = $tree
-                } else {
-                    throw "$($env:MOONSHINE_LFS_FROM) has no object for $f"
-                }
-            }
-            $dst = Join-Path $root (Join-Path '.git\lfs\objects' (Join-Path $oid.Substring(0, 2) $oid.Substring(2, 2)))
-            New-Item -ItemType Directory -Force -Path $dst | Out-Null
-            Copy-Item -LiteralPath $src -Destination (Join-Path $dst $oid) -Force
-        }
-        & git -C $root lfs checkout @missing
-        if ($LASTEXITCODE -ne 0) { throw 'git lfs checkout failed' }
-    } else {
-        & git -C $root lfs pull --include ($missing -join ',')
-        if ($LASTEXITCODE -ne 0) {
-            throw 'git lfs pull failed. If GitHub says the repository exceeded its LFS budget, set MOONSHINE_LFS_FROM to a moonshine checkout that has the objects and run again.'
-        }
-    }
+$version = if ($env:MOONSHINE_VERSION) { $env:MOONSHINE_VERSION } else { 'v0.1.6' }
+$base = if ($env:MOONSHINE_RELEASE_URL) { $env:MOONSHINE_RELEASE_URL } else { "https://github.com/moonshine-ai/moonshine/releases/download/$version" }
+$archive = 'moonshine-voice-windows-x86_64.tar.gz'
+# v0.1.6's. A pin that is moved without its hash is not the pin it was.
+$want = '9e33fa88c1dd627314072ffe005af94888515c534cc599617462bc72ed3770f3'
+if ($env:MOONSHINE_SHA256) {
+    $want = $env:MOONSHINE_SHA256
+} elseif ($version -ne 'v0.1.6') {
+    throw "MOONSHINE_VERSION=$version needs MOONSHINE_SHA256 for its $archive."
 }
 
-if (-not $NoBuild) {
-    Write-Output '=== building moonshine.dll ==='
-    $core = Join-Path $root 'core'
-    & cmake -S $core -B (Join-Path $core 'build') -DMOONSHINE_BUILD_SHARED=YES
-    if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
-    & cmake --build (Join-Path $core 'build') --config Release --target moonshine
-    if ($LASTEXITCODE -ne 0) { throw 'cmake build failed' }
-    Get-ChildItem (Join-Path $core 'build\Release') -Filter 'moonshine.*' | ForEach-Object { Write-Output ("  " + $_.Name) }
+$root = 'third_party\moonshine-voice'
+$stamp = Join-Path $root '.release'
+if (-not $Force -and (Test-Path $stamp) -and ((Get-Content $stamp -Raw).Trim() -eq "$version windows-x86_64") -and (Test-Path (Join-Path $root 'include\moonshine-cpp.h'))) {
+    Write-Output "Moonshine Voice $version (windows-x86_64) is already in $root"
+    exit 0
 }
+
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("moonshine-voice-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+try {
+    Write-Output "=== fetching $archive ($version) ==="
+    $file = Join-Path $tmp $archive
+    # The progress bar makes Invoke-WebRequest several times slower on a large file.
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri "$base/$archive" -OutFile $file -UseBasicParsing
+    $have = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLower()
+    if ($have -ne $want) { throw "$archive`: sha256 $have, want $want" }
+
+    # Replace whatever was there, so a library from an earlier pin cannot be linked beside
+    # this one's headers.
+    if (Test-Path $root) { Remove-Item -Recurse -Force $root }
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    & tar -xzf $file -C $root --strip-components=1
+    if ($LASTEXITCODE -ne 0) { throw 'tar failed to unpack the archive' }
+    Set-Content -Path $stamp -Value "$version windows-x86_64"
+} finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+}
+Get-ChildItem (Join-Path $root 'lib') | ForEach-Object { Write-Output ("  " + $_.Name) }
 Write-Output "app\CMakeLists.txt finds it at MOONSHINE_ROOT=$((Get-Location).Path)\$root"

@@ -1,19 +1,14 @@
 # Moonshine AI for Kingdom Come: Deliverance II
 
 This mod gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
-name, history, friends, family, and a *Talk* option. Talk to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC; nothing you say leaves it.
+name, history, friends, family, and a *Talk* option. Speak to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC; nothing you say leaves it.
 
 Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted
-to explore more of the world's stories. It uses AI heavily, but it's intended as a tribute
-to the amazing work by the whole Warhorse team, not a template for replacing human
-creativity. The code is open source under an MIT license, available at
+to explore more stories from the amazing world the Warhorse team built. It uses AI heavily, but my goal is to explore how to use it thoughtfully, not replace human creativity. The code is open source under an MIT license, available at
 https://github.com/moonshine-ai/moonshine-kcd.
 
-This is an early build: it will do weird things, and I very much appreciate all the bug
-reports you can share. The AI-generated speech also sounds rough, especially for a game
-that's known for its voice acting. I am in the process of hiring professional actors for
-the dialog that's known ahead of time, and licensing their voices for better clones for
-freeform speech.
+This is an early build: it will do weird things, and I very much appreciate [all the bug
+reports you can share](https://github.com/moonshine-ai/moonshine-kcd2-ai/issues). The AI-generated speech also sounds rough, especially for a game that's known for its voice acting. I am hiring professional actors for the dialog that's known ahead of time, and licensing their voices for better clones for freeform speech.
 
 ## Player Guide
 
@@ -24,6 +19,8 @@ Start a conversation, you'll see a custom greeting and a new set of dialog optio
 Your partner will answer in their own voice, based on what they know, and how they feel about you. These conversations are remembered over time, and people are likely to be more patient and open with questions as they get to know you better. None of this leaves your machine, it's all running completely locally.
 
 Some of these newly-named people need your help. You'll see them marked on a map, and they may even call you over as you pass. There are over fifty new stories to play through, and I'm hoping the community will add more over time.
+
+If you'd like to know more about the lives of these characters, you can browse the [Liber Vultuum](https://liber.moonshine.ai/).
 
 ## Installing
 
@@ -62,7 +59,7 @@ game closed.
 
 ### Step 1: Download the installer
 
-Download [download.moonshine.ai/kcd2/0.9.102/Moonshine-0.9.102-setup.exe](https://download.moonshine.ai/kcd2/0.9.102/Moonshine-0.9.102-setup.exe); it is around
+Download [download.moonshine.ai/kcd2/0.9.102.27/Moonshine-0.9.102.27-setup.exe](https://download.moonshine.ai/kcd2/0.9.102.27/Moonshine-0.9.102.27-setup.exe); it is around
 40 MB. It is the only file you need: the models and the rest come down while it runs.
 
 **You should see** `Moonshine-<version>-setup.exe` in your Downloads folder.
@@ -259,7 +256,7 @@ Two pieces, built here:
   no injector; uninstalling is deleting one folder.
 - **The app** (`app/`): `moonshine_app`, a C++ program that runs beside the game, follows
   its log, and talks to the mod through files. It runs the model (llama.cpp), the voices
-  (Phonon, through its Rust runtime), the ear (Moonshine Voice), and the knowledge base
+  (Phonon, through the Moonshine framework), the ear (Moonshine Voice), and the knowledge base
   each soul answers from.
 
 And the installer (`installer/`) that packs the app, the models and the data for players.
@@ -281,14 +278,15 @@ integrates; it does not generate.
 ### What you need
 
 - CMake 3.20+, a C++20 compiler (Apple clang, MSVC 2022, or GCC 12+), git, Python 3.10+.
-- Rust (`cargo`, from https://rustup.rs) on Windows and Linux, for the voice: the Phonon
-  runtime is built from the `app/vendor/xn-ptts` submodule at configure time. Without it
-  the app builds and talks but does not speak.
+- Nothing to compile for Moonshine: the ear and the voice (Phonon) come from the
+  [Moonshine Voice release](https://github.com/moonshine-ai/moonshine/releases) (v0.1.6),
+  prebuilt for macOS (Apple silicon), Linux (x86-64, arm64) and Windows (x86-64). There is
+  no Intel-Mac build of it.
 - About 7 GB of disk for the drop and the models.
 - Optional: `lua` and `luajit` for the mod's Lua checks (`brew install lua luajit`).
 
-Clone with the submodules (`app/vendor/llama.cpp` and `app/vendor/xn-ptts` are pinned to
-upstream commits; the patches in `app/vendor/patches/` are applied at configure time):
+Clone with the submodules (`app/vendor/llama.cpp` is pinned to an
+upstream commit; the patches in `app/vendor/patches/` are applied at configure time):
 
 ```sh
 git clone --recurse-submodules <this repository>
@@ -299,8 +297,8 @@ cd moonshine-kcd2-ai
 
 ```sh
 scripts/fetch_drop.sh --from <where drops are kept>     # data/kcd2/npcs.sqlite, npcs-vectors.sqlite, voices
-scripts/fetch_models.sh                                 # models/, about 2.9 GB
-scripts/fetch_moonshine.sh                              # third_party/moonshine, built
+scripts/fetch_models.sh                                 # models/, about 3.1 GB
+scripts/fetch_moonshine.sh                              # third_party/moonshine-voice, the release binaries
 ```
 
 `fetch_drop` takes a directory, an `s3://` prefix on any S3-compatible store (R2, S3, B2,
@@ -310,9 +308,17 @@ prefix holding `<drop name>/`; `MOONSHINE_DROP_BASE` sets the default. It fetche
 files whose hash differs, verifies every one against the manifest, and assembles the
 database. `fetch_models` reads `scripts/models.tsv`, which pins each weight file to a
 Hugging Face revision (or Moonshine's CDN) and a sha256. EmbeddingGemma comes under the
-Gemma Terms of Use; the script says so before fetching it. `fetch_moonshine` clones
-Moonshine Voice at its pin and builds the library the app's ear links; without it the app
-builds and talks but does not hear. On Windows the three scripts have `.ps1` twins.
+Gemma Terms of Use; the script says so before fetching it. `fetch_moonshine` downloads
+the pinned Moonshine Voice release (v0.1.6, `MOONSHINE_VERSION` to change it), checks its
+sha256 and unpacks the headers and prebuilt libraries the app's ear and voice link;
+without it the app builds and talks but neither hears nor speaks. The voices are in
+`fetch_models` too: `models/phonon`, Moonshine's Phonon files from its download server (the
+engine needs the folder to be named `phonon`; if the Moonshine downloader has already put
+it in the `moonshine_voice` cache, the app finds it there). `fetch_phonon` is the from-source
+alternative, for a Phonon the server does not have: it runs Moonshine's exporter, pinned to a
+commit, on Gradium's Apache-2.0 weights (it needs Python 3.10 to 3.12 and about 3 GB for a
+throwaway torch environment), but what it writes will not match the pins in `models.tsv`.
+On Windows the scripts have `.ps1` twins.
 
 ### The app
 
@@ -324,9 +330,12 @@ app/build/moonshine_app --soul kkut_additive_man_47 --json   # one soul's sheet
 ```
 
 `-DMOONSHINE_LLAMA=OFF` builds without llama.cpp (the app then needs a running Ollama,
-`--ollama`); `-DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF` build without Moonshine Voice;
-`-DMOONSHINE_PHONON=OFF` builds without the voice (it is off on macOS regardless, where
-the runtime is Core ML only). `-DMOONSHINE_CLONE=ON` builds the earlier Qwen3-TTS engine
+`--ollama`); `-DMOONSHINE_TTS=OFF -DMOONSHINE_STT=OFF` build without Kokoro and without the ear
+(`MOONSHINE_TTS` is Kokoro, which asks for its assets at start-up, so the Windows build
+turns it off and speaks through Phonon alone); `-DMOONSHINE_PHONON=OFF` builds without
+the voice. The framework keeps one synthesizer, about 345 MB, per voice, so the app holds
+the two most recently used and reloads another in about 0.1 s; `MOONSHINE_PHONON_VOICES`
+sets the number. `-DMOONSHINE_CLONE=ON` builds the earlier Qwen3-TTS engine
 back in, beside Phonon, for comparison; it is kept in the tree and off. On
 Windows, `scripts\build_windows.bat` finds Visual Studio, configures with Ninja, builds
 and runs the tests; `scripts\build_windows.bat release` is the CPU-only build the
@@ -468,13 +477,13 @@ Three details are easy to get wrong and hard to debug:
 ## Layout
 
 ```
-app/            the companion app: src/, tests/, vendor/ (llama.cpp and xn-ptts submodules, qwen3-tts, opus, headers)
+app/            the companion app: src/, tests/, vendor/ (llama.cpp submodule, qwen3-tts, opus, headers)
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
 installer/      Stage.ps1, publish.py, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
 scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
 tools/          assemble_db.py, fetch_drop.py, s3_sign.py, kitten_textures.py (the kitten coats under mod/assets)
 data/           schema.sql (the shipped database's schema), DROP (the pin), kcd2/voices/ (catalogues)
-third_party/    sqlite3 (shared by app and mod); moonshine/ when fetched
+third_party/    sqlite3 (shared by app and mod); moonshine-voice/ when fetched
 setting.txt     the world setting every conversation's prompt opens with
 VERSION         the version the next release will follow on from (scripts/release.sh bumps it)
 ```

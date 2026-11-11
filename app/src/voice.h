@@ -53,7 +53,7 @@ struct ImportedVoice {
 bool tts_built();
 
 // Whether the souls' voice engine is in this build, and where its model is as the
-// Speaker would find it (models/phonon-31m-en beside the working directory, or
+// Speaker would find it (models/phonon beside the working directory, or
 // PHONON_MODEL_DIR; the Qwen3-TTS engine's folder in a build that still carries that
 // engine), or empty. For the start-up check, which says so before the game.
 bool clones_built();
@@ -75,7 +75,7 @@ std::string plain_voice_id(std::string_view asked);
 std::string actor_abbr(int voice_id);
 
 // The voices are Phonon's British English catalogue (gradium/phonon-voices, Apache 2.0),
-// twelve of them, each a speaker embedding under models/phonon-31m-en/voices/ and named
+// twelve of them, each a speaker embedding under models/phonon/voices/ and named
 // after its file. The game's own actors are not imitated: their voices are theirs.
 //
 // Henry is not a soul in the database, so his lines name kHenryVoice themselves; it is

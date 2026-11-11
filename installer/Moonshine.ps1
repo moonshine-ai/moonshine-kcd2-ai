@@ -85,8 +85,8 @@ if ($stt.Count -gt 0) { $common += @('--stt-model', (Format-Arg ('models\stt\' +
 if ($cfg['root']) { $common += @('--root', (Format-Arg $cfg['root'])) }
 if ($cfg['args']) { $common += $cfg['args'] }
 # The voice is Phonon, on the CPU, and the one engine in this build; the game has the GPU
-# to itself. Its thread count is the app's business (src/phonon.cpp sets RAYON_NUM_THREADS
-# to eight before the runtime loads, unless the environment already says).
+# to itself. It runs inside the Moonshine framework (src/phonon.cpp), which sizes its own
+# threads; MOONSHINE_PHONON_VOICES says how many voices stay loaded (default 2).
 
 # --- stop ----------------------------------------------------------------------------------
 # A window running the loop below would start the app again two seconds after -Stop killed
