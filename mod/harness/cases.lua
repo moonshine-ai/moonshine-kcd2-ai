@@ -4051,8 +4051,8 @@ end)
 case("Marker: a followed holder's marker goes on him at his homecoming hour and off at the night's end, by one token each way, and comes off for a night he has caught Henry following him", function(E, M, check)
     local id, q = byExposure(M)
     if id == nil or q.followHours == nil then check(true, "no followed lines in this data"); return end
-    check(q.markHours ~= nil and q.markHours[1] == 21 and q.markHours[2] == q.hours[2],
-          "the marker's hours run from his homecoming (routine_home_at 21:00) to the night window's end")
+    check(q.markHours ~= nil and q.markHours[1] == 21 - M.followMarkLeadHours and q.markHours[2] == q.hours[2],
+          "the marker's hours run from an hour before his homecoming (routine_home_at 21:00; bugs.txt 11 Nov 2026) to the night window's end")
     check(q.markShown == "6d6f6f6e-7368-4d00-8000-" .. id and q.markHidden == "6d6f6f6e-7368-6d00-8000-" .. id,
           "the two tokens are the quest's own class under the M and m prefixes")
     local giver = E.soul(q.giver)
@@ -4072,8 +4072,14 @@ case("Marker: a followed holder's marker goes on him at his homecoming hour and 
     local on, off = "BRIDGE quest " .. id .. " marker on " .. q.target, "BRIDGE quest " .. id .. " marker off " .. q.target
     check(not E.find(on, mark) and not E.find(off, mark) and M.state.quests[id].marked == nil,
           "nothing by day at the accept: the objective's Started line carries no marker of its own")
-    -- His homecoming hour: on, once.
-    E.hour = 21.2
+    -- Towards his homecoming hour (the lead, so the marker is on him before he leaves
+    -- the church and before the carrying sets Henry at the gate): on, once.
+    E.hour = 12
+    E.advance(2100)
+    E.hour = 21 - M.followMarkLeadHours - 0.3
+    E.advance(2100)
+    check(not E.find(on, mark), "not yet, before the lead")
+    E.hour = 21 - M.followMarkLeadHours + 0.2
     E.advance(2100)
     check(E.count(on, mark) == 1 and M.state.quests[id].marked == true, "on at his homecoming, in the store")
     check(M.Count(player, q.markShown) == 1 and M.Count(player, q.markHidden) == 0, "the shown token in Henry's pocket")

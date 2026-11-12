@@ -439,6 +439,11 @@ constexpr int kGiverSwitchesPerTick = 4;
 // for the probes.
 constexpr const char* kGraphCommand = "mn_graph";
 constexpr double kFollowHoursBefore = 3.0;
+// How long before the holder's homecoming hour his night marker goes on him (WatchMarker,
+// markHours). The game jitters his leaving by up to the hour, and the giver's carrying
+// sets Henry down at the gate half an hour before it, so a marker that waited for the hour
+// itself came on a minute or two into the walk (bugs.txt 11 Nov 2026, Words Must Not Fail).
+constexpr double kFollowMarkLeadHours = 1.0;
 constexpr double kFollowHoursAfter = 1.5;
 constexpr double kFollowSeeMetres = 12.0;
 constexpr double kFollowHearMetres = 4.0;

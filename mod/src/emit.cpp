@@ -7763,10 +7763,12 @@ std::string emit_conversation_lua(const std::string& modid,
                 s += ", followedLine = \"" + lua_escape(q.holder_followed) + "\", followedReply = \"" +
                      lua_escape(q.holder_followed_reply) + "\", holderName = \"" + lua_escape(q.target_name) +
                      "\", holderVoice = \"" + (q.target_gender == "female" ? "female" : "male") + "\"";
-                // The night's marker (WatchMarker): on him from his homecoming (routine_home_at,
-                // else the street watch's start) to the night window's end, off otherwise and
-                // for a `followed` night; the two tokens for the graph's markShown/markHidden.
-                const double home = q.home_at >= 0 ? q.home_at : from;
+                // The night's marker (WatchMarker): on him from kFollowMarkLeadHours before his
+                // homecoming (routine_home_at, else the street watch's start) to the night
+                // window's end, off otherwise and for a `followed` night; the two tokens for the
+                // graph's markShown/markHidden.
+                double home = q.home_at >= 0 ? q.home_at - kFollowMarkLeadHours : from;
+                if (home < 0) home += 24;
                 s += ", markHours = { " + health_text(home) + ", " + std::to_string(q.hour_to) + " }, markShown = \"" +
                      lua_escape(mark_shown_class(q)) + "\", markHidden = \"" + lua_escape(mark_hidden_class(q)) + "\"";
             }
@@ -13210,6 +13212,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".followSeeMetres = " + health_text(kFollowSeeMetres) + "\n";
     s += g + ".followHearMetres = " + health_text(kFollowHearMetres) + "\n";
     s += g + ".followHoursBefore = " + health_text(kFollowHoursBefore) + "\n";
+    s += g + ".followMarkLeadHours = " + health_text(kFollowMarkLeadHours) + "\n";
     s += g + ".followCosine = " + health_text(std::cos(kFollowConeDegrees / 2.0 * 3.14159265358979 / 180.0)) + "\n";
     s += g + ".followEyeMetres = " + health_text(kFollowEyeMetres) + "\n";
     s += g + ".followWarnMetres = " + health_text(kFollowWarnMetres) + "\n";
