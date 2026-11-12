@@ -1007,6 +1007,29 @@ TEST_CASE("a retrieve's giver who may be lied to gets the hand-in as a row, with
     CHECK(out.rows[1].check_factor == doctest::Approx(1.25));
     CHECK(out.rows[1].fail_reply == quest.lie_have_caught);
 
+    // The thing got by a hold over the holder (the mod's exposed ending): Henry's hand-in
+    // row says what the hold bought before the thing changes hands, and the giver's thanks
+    // answer it (bugs.txt 11 Nov 2026, the free mass before the prayer is handed over).
+    Quest held = quest;
+    held.give_exposed = "Julian will mend your fence for nothing, too. Here. Your axe.";
+    held.thanks_exposed = "Mend my fence? What did you find on him? No, don't tell me.";
+    for (const char* how : {"exposed", "exposed_paid"}) {
+        QuestFacts exposed = carrying;
+        exposed.how = how;
+        QuestPlan got = plan_quest(held, exposed, {});
+        REQUIRE(got.rows.size() == 2);
+        CHECK(got.rows[0].text == held.give_exposed);
+        CHECK(got.rows[0].reply == held.thanks_exposed);
+    }
+    QuestFacts plainway = carrying;
+    plainway.how = "persuaded";
+    CHECK(plan_quest(held, plainway, {}).rows[0].text == quest.give);
+    Quest unwritten = held;
+    unwritten.give_exposed.clear();
+    QuestFacts exposed = carrying;
+    exposed.how = "exposed";
+    CHECK(plan_quest(unwritten, exposed, {}).rows[0].text == quest.give);
+
     // Unasked and carrying: nobody to lie to about an errand nobody gave; settled on sight.
     QuestFacts unasked;
     unasked.have = 1;
@@ -1946,6 +1969,18 @@ TEST_CASE("the quest of the moment is the one the conversation turns on") {
     CHECK(pick_quest(bartel, {at("done"), saw_open}) == 1);
     // The saw in the player's hands beats everything.
     CHECK(pick_quest(bartel, {at("done"), at("accepted", 1)}) == 1);
+    // But not a scene the story has not reached: the thing in hand with the link before
+    // still out is not this errand's doing (the dictated letter, written and not yet
+    // carried, is the very thing the next scene wants back; bugs.txt 11 Nov 2026).
+    QuestFacts saw_early = at("none", 1);
+    saw_early.locked = true;
+    CHECK(pick_quest(bartel, {at("accepted"), saw_early}) == 0);
+    // And a locked retrieve's giver with the thing in Henry's hands plans nothing of it:
+    // no accept, no complete, and the one-thing-at-a-time paragraph.
+    QuestPlan early = plan_quest(bartel[1], saw_early, {});
+    CHECK(early.opening_commands.empty());
+    CHECK(early.rows.empty());
+    CHECK(early.block.find("one thing at a time") != std::string::npos);
 
     // Ludwig: holds Alan's axe, wants his knife. His own favour first while it is there to
     // ask or out on the errand; the axe he holds once his knife is home.

@@ -983,7 +983,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'greet_owed', 'greet_settle_unasked', 'greet_offer', 'thanks_onward', "
                 "'offer_2', 'agreed', 'more', 'more_reply', 'opener', "
                 "'onward_soul', 'onward_name', 'greet_onward', 'keepsake_name', 'thanks_keepsake', 'thanks_exposed', "
-                "'item_kind', 'give', 'lie_have', 'lie_have_reply', 'lie_have_caught', 'more_2', 'more_2_reply', "
+                "'item_kind', 'give', 'give_exposed', 'lie_have', 'lie_have_reply', 'lie_have_caught', 'more_2', 'more_2_reply', "
                 "'told_truth', 'told_pinned', 'told_covered', 'told_fibbed', 'told_evaded', 'told_caught', "
                 "'told_reply_truth', 'told_reply_pinned', 'told_reply_covered', 'told_reply_fibbed', 'told_reply_evaded', "
                 "'told_reply_caught', "
@@ -1071,6 +1071,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "opener") quest.opener = text_at(row, 1);
                 else if (field == "item_kind") quest.item_kind = text_at(row, 1);
                 else if (field == "give") quest.give = text_at(row, 1);
+                else if (field == "give_exposed") quest.give_exposed = text_at(row, 1);
                 else if (field == "lie_have") quest.lie_have = text_at(row, 1);
                 else if (field == "lie_have_reply") quest.lie_have_reply = text_at(row, 1);
                 else if (field == "lie_have_caught") quest.lie_have_caught = text_at(row, 1);

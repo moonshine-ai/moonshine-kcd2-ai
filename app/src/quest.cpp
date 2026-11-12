@@ -1432,6 +1432,17 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
 
     if (quest.role == QuestRole::Giver) {
         const std::string& holder = quest.target_name;
+        if (facts.locked) {
+            // Not this one yet: the link before it is still out, and the giver asks one
+            // thing at a time. Before the carrying branches below, since the thing may be in
+            // Henry's hands already without this errand being the reason (the letter the
+            // scene before dictated, written and not yet carried: bugs.txt 11 Nov 2026), and
+            // a scene not reached is never paid off on sight.
+            plan.block = "You also want " + item + " back from " + holder +
+                         ", but one thing at a time; you will not ask it of anyone until "
+                         "the first errand is done, and you do not bring it up.";
+            return plan;
+        }
         // A chain's second link: the same person did the first, and both of you know it. A
         // story's later scene is a link too, but its scene before may be anybody's and any
         // kind, and the circle's own words carry what came before; so only a chain's.
@@ -1484,8 +1495,9 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
                 plan.block += " Whatever hold they found over " + holder + " has bought you more than the "
                               "thing itself, as your written thanks say; you do not ask what the hold was.";
             }
+            const std::string& give = quest.give_for(facts.how);
             plan.rows.push_back({"give",
-                                 quest.give.empty() ? "Here is your " + quest.item_name + "." : quest.give,
+                                 give.empty() ? "Here is your " + quest.item_name + "." : give,
                                  thanks.empty() ? "You have it! Thank you. Here is what I promised: " + pay + "."
                                                 : thanks,
                                  std::string(kQuestComplete)});
@@ -1635,14 +1647,6 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
             }
             return plan;
         }
-        if (facts.locked) {
-            // Not this one yet: the link before it is still out, and the giver asks one
-            // thing at a time.
-            plan.block = "You also want " + item + " back from " + holder +
-                         ", but one thing at a time; you will not ask it of anyone until "
-                         "the first errand is done, and you do not bring it up.";
-            return plan;
-        }
         plan.block = "Nobody has yet agreed to get " + item + " back from " + holder + "; " +
                      (money ? "you would give " + pay + " to whoever does."
                             : quest.reward_text.empty()
@@ -1732,8 +1736,13 @@ std::size_t pick_quest(const std::vector<Quest>& quests, const std::vector<Quest
         return quests.size();
     };
     const auto giver = [](const Quest& q) { return q.role == QuestRole::Giver; };
+    // Not a scene the story has not reached (locked): Proof Against Her wants back the very
+    // letter Words Must Not Fail dictates, so the moment it is written Henry "brings" it to
+    // Christine, and this picked the retrieve over the delivery still out and paid it off
+    // on sight -- the second scene taken up and done before the first was carried (bugs.txt
+    // 11 Nov 2026).
     std::size_t at = find([&](const Quest& q, const QuestFacts& f) {
-        return giver(q) && !f.done && !f.voided && (q.is_find() ? f.accepted : true) && q.brought(f.have);
+        return giver(q) && !f.done && !f.voided && !f.locked && (q.is_find() ? f.accepted : true) && q.brought(f.have);
     });
     if (at < quests.size()) return at;
     at = find([&](const Quest& q, const QuestFacts& f) { return giver(q) && f.accepted && !f.done; });

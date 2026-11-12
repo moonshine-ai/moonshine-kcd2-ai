@@ -235,10 +235,19 @@ struct Quest {
     // holder's silence was bought with more than the thing (Proof Against Her: the mass for
     // Christine's brother, notes.md 25 Oct 2026), and her thanks say so. `thanks` otherwise.
     std::string thanks_exposed;
+    // Henry's hand-in row when the thing came that way (`give_exposed`, optional): what the
+    // hold bought beside the thing, said before it changes hands (bugs.txt 11 Nov 2026: the
+    // free mass mentioned before the prayer is handed over). `give` otherwise.
+    std::string give_exposed;
     // The hand-in's thanks for the way the thing came: see thanks_exposed.
     const std::string& thanks_for(std::string_view how) const {
         if (!thanks_exposed.empty() && (how == "exposed" || how == "exposed_paid")) return thanks_exposed;
         return thanks;
+    }
+    // Henry's hand-in row for the way the thing came: see give_exposed.
+    const std::string& give_for(std::string_view how) const {
+        if (!give_exposed.empty() && (how == "exposed" || how == "exposed_paid")) return give_exposed;
+        return give;
     }
     // The giver's offer to carry Henry to where the errand is done and to its hour
     // (npc_quest_lines `fast_travel`, Henry's row; `fast_travel_reply`, the giver's answer;
