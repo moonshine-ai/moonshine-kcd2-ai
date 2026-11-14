@@ -3,7 +3,9 @@
 [This mod](https://download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe) gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
 name, history, [friends](https://liber.moonshine.ai) , family, and a *Talk* option. Speak to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC; nothing you say leaves it.
 
-![Screenshot showing a conversation dialog with Henry in the background](images/screenshot-0.png)
+[![Intro: a conversation in Kingdom Come: Deliverance II](images/kcd2-intro.gif)](https://www.youtube.com/watch?v=ytNBseHc7dk)
+
+[youtube.com/watch?v=ytNBseHc7dk](https://www.youtube.com/watch?v=ytNBseHc7dk)
 
 Originally I wrote this for myself as "fan fiction" after I'd completed the game and wanted
 to experience more stories in the amazing world the Warhorse team built. It uses AI heavily, but I hope also thoughtfully. You'll have to judge if it's a successful experiment, but I'm trying to explore how local, decentralized AI can augment, not replace, human creativity. The code is open source under an MIT license, available at
