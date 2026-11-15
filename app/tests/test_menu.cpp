@@ -1116,8 +1116,8 @@ TEST_CASE("a seek's clue topic picked owes the mod @quest <id> clue, and its row
 
 TEST_CASE("at a beggar, the row that gives is laid for what Henry carries, and each gift owes the mod @alms") {
     // notes.md (6 Oct 2026): beggars always accept food, clothing and groschen. The begin
-    // line says what he could spare (alms=mf: a purse and food, no spare garment); the row
-    // is on the opening list, answered with a row per kind, and each kind is given once.
+    // line says what he could spare (alms=mf: a purse and food, no garment); the row is on
+    // the opening list, answered with a row per kind, and each kind is given once.
     WrittenFixture f(first_meeting());
     LogTailer tailer(f.game.log());
     f.game.launch();
@@ -1138,7 +1138,7 @@ TEST_CASE("at a beggar, the row that gives is laid for what Henry carries, and e
     REQUIRE(f.game.menu().size() >= 2);
     CHECK(f.game.menu()[0] == "Here's three groschen. Get yourself a hot meal.");
     CHECK(f.game.menu()[1] == "Here, something to eat.");
-    for (const std::string& row : f.game.menu()) CHECK(row.find("keep the cold off") == std::string::npos);
+    for (const std::string& row : f.game.menu()) CHECK(row.find("some clothes") == std::string::npos);
     const std::size_t given = f.offered.size() - f.game.menu().size();
     CHECK(f.offered[given].intent == "alms:money");
     CHECK(f.offered[given + 1].intent == "alms:food");
@@ -1161,6 +1161,43 @@ TEST_CASE("at a beggar, the row that gives is laid for what Henry carries, and e
     int money_rows = 0;
     for (const MenuOption& row : f.offered) money_rows += row.intent == "alms:money";
     CHECK(money_rows == 1);
+}
+
+TEST_CASE("at a beggar, the clothes row owes @alms clothes and closes the conversation for the game's item selection") {
+    // bugs.txt (15 Nov 2026): which garment goes is the player's pick, in the game's own
+    // item selection, and that cannot open over a dialogue -- so the mod is owed @alms
+    // clothes, the beggar's answer is the last word (@end), and no list follows it. The
+    // thanks for what is picked are the mod's to bark (emit.hpp, kAlmsClothesThanks).
+    WrittenFixture f(first_meeting());
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.llm.replies = {""};
+    f.game.begin_with(kBartel, " alms=mc");
+    f.drain(tailer);
+    f.play_all(tailer);
+    REQUIRE(f.game.menu().size() == 4);
+    f.game.picked(4, "alms", std::string(kAlmsRow));
+    f.drain(tailer);
+    f.play_all(tailer);
+    REQUIRE(f.game.menu().size() >= 2);
+    CHECK(f.game.menu()[1] == "I've some clothes you could have. Let me see what I can spare.");
+    const std::size_t given = f.offered.size() - f.game.menu().size();
+    CHECK(f.offered[given + 1].intent == "alms:clothes");
+
+    f.game.picked(2, "alms:clothes", "I've some clothes you could have. Let me see what I can spare.");
+    f.drain(tailer);
+    CHECK(f.said("picked as alms:clothes, answered with the thanks for clothes as written"));
+    f.play_all(tailer);
+    bool owed = false, ended = false;
+    for (const std::string& directive : f.game.directives()) {
+        owed = owed || directive == "@alms clothes";
+        ended = ended || directive == "@end";
+    }
+    CHECK(owed);
+    CHECK(ended);
+    CHECK(f.session.history().back().content == "Clothes? God bless you, sir. Show me, then.");
+    CHECK(f.said("the errand is taken, so the conversation closes and no rows are offered"));
+    CHECK_FALSE(f.game.has_turn(f.session.played() + 1));
 }
 
 TEST_CASE("about is the self-account on a first meeting, and the line for being asked again after") {

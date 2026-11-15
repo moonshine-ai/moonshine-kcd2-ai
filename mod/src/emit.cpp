@@ -7298,10 +7298,14 @@ std::string emit_conversation_lua(const std::string& modid,
     }
     s += "}\n";
     // The beggars among them (npc.occupation), who take alms off the app's rows: the begin
-    // line carries alms=<letters> for these and nobody else (AlmsLine).
+    // line carries alms=<letters> for these and nobody else (AlmsLine). The value is the
+    // voice their thanks for a garment are spoken in, outside the conversation (AlmsDress).
     s += g + ".beggars = {\n";
     for (const Persona& p : personas) {
-        if (p.beggar) s += "[\"" + lua_escape(p.soul_name) + "\"]=true,\n";
+        if (p.beggar) {
+            s += "[\"" + lua_escape(p.soul_name) + "\"]=\"" + (p.gender == "female" ? "female" : "male") +
+                 "\",\n";
+        }
     }
     s += "}\n";
     s += g + ".npcName = \"\"\n";
@@ -12383,12 +12387,14 @@ std::string emit_conversation_lua(const std::string& modid,
     // once; without it nothing is offered and nothing moves.
     //
     // AlmsHave reads Henry's pocket once at the begin line and says what he could give, as
-    // letters: m for a purse of three groschen or more, f for any food, c for a spare
-    // garment. The game has no bind that says what is worn, so a garment is spare only
-    // when Henry carries two of a group (two tunics, two pairs of shoes) and the cheaper
-    // of the pair goes -- a rule that never undresses him, at the price of saying nothing
-    // when his one spare shirt is of a group he also wears. The app reads the letters off
-    // the begin line (alms=mfc) and offers a row for each.
+    // letters: m for a purse of three groschen or more, f for any food, c for any garment
+    // of the tables'. The game has no bind that says what is worn (ItemManager.GetItem is
+    // amount, class, entity, health, id and no more; scripts/autopilot/alms_pick_probe.lua,
+    // 15 Nov 2026), so which garment goes is not the mod's to pick: the player picks it in
+    // the game's own item selection (AlmsPickOpen) once the conversation has closed. Until
+    // 15 Nov 2026 the c stood for a spare -- two garments of one group, the cheaper going --
+    // and with no doubled group in his pocket the row never appeared (bugs.txt). The app
+    // reads the letters off the begin line (alms=mfc) and offers a row for each.
     s += g + ".almsLoaded = false\n";
     s += "function " + g + ".AlmsTable()\n";
     s += "\tif not " + g + ".almsLoaded then\n";
@@ -12424,7 +12430,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "\n";
     // The spare garment, if any: the cheapest row of a group Henry carries two of (two
-    // rows, or one row of two).
+    // rows, or one row of two). No longer what decides the row (AlmsHave) or what goes
+    // (AlmsPickOpen); the guess for a game without the item selection bind.
     s += "function " + g + ".AlmsSpare(clothes)\n";
     s += "\tlocal seen = {}\n";
     s += "\tfor _, c in ipairs(clothes) do\n";
@@ -12446,7 +12453,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // inventory:GetMoney() reads in groschen, with a decimal (6380.7 on the Windows laptop's save).
     s += "\tif ok and type(money) == \"number\" and money >= " + g + ".almsGroschen then out = out .. \"m\" end\n";
     s += "\tif #food > 0 then out = out .. \"f\" end\n";
-    s += "\tif " + g + ".AlmsSpare(clothes) ~= nil then out = out .. \"c\" end\n";
+    s += "\tif #clothes > 0 then out = out .. \"c\" end\n";
     s += "\treturn out\n";
     s += "end\n";
     s += "\n";
@@ -12461,10 +12468,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // @alms <money|food|clothes>: the app's row was picked, so the thing goes. Money by the
     // same transaction the holder's fee uses (deci-groschen, player to soul); food the
-    // cheapest he carries, one of it; a garment the spare, moved and then put on him with
-    // actor:EquipInventoryItem, the bind the game's own dressing uses (scripts/autopilot/
-    // alms_probe.lua, 6 Oct 2026: moves and the equip call return without raising on a
-    // sitting beggar). The log line is what the harness and the eye read.
+    // cheapest he carries, one of it. A garment is the player's to choose: the app closes
+    // the conversation on the row, and once it is gone the game's own item selection opens
+    // on Henry's clothes (AlmsPickArm); what he picks is moved and put on the beggar
+    // (AlmsDress). The log line is what the harness and the eye read.
     s += "function " + g + ".AlmsGive(kind)\n";
     s += "\tlocal npc, p = " + g + ".npc, " + g + ".Player()\n";
     s += "\tif npc == nil or p == nil then return end\n";
@@ -12475,17 +12482,103 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"BRIDGE alms money \" .. " + g + ".almsGroschen .. \" groschen to \" .. name .. (ok and \"\" or (\" raised \" .. tostring(err))))\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tlocal food, clothes = " + g + ".AlmsRows(p)\n";
+    s += "\tif kind == \"clothes\" then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE alms clothes picker armed for \" .. name)\n";
+    s += "\t\t" + g + ".AlmsPickArm(npc, 0)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal food = " + g + ".AlmsRows(p)\n";
     s += "\tif food == nil then " + g + ".Log(\"BRIDGE alms \" .. kind .. \" nothing to give: no table\"); return end\n";
     s += "\tlocal pick = nil\n";
     s += "\tif kind == \"food\" then pick = food[1] end\n";
-    s += "\tif kind == \"clothes\" then pick = " + g + ".AlmsSpare(clothes) end\n";
     s += "\tif pick == nil then " + g + ".Log(\"BRIDGE alms \" .. kind .. \" nothing to give\"); return end\n";
     s += "\tlocal moved = " + g + ".MoveOne(p, npc, pick.class)\n";
+    s += "\t" + g + ".Log(\"BRIDGE alms \" .. kind .. \" \" .. pick.class .. \" moved \" .. moved .. \" to \" .. name)\n";
+    s += "end\n";
+    s += "\n";
+    // The game's item selection over Henry's clothes. actor:OpenItemSelectionFilter(id,
+    // filter) is the bind the trigger scripts use for "use an item here" (TriggerBase.lua:
+    // "food.meat.raw"), and it opens its own list -- "Select the item you want to use" --
+    // outside any dialogue, over the player's pocket, with the entity it was given the id
+    // of getting OnInventoryItemUsed(wuid) on a pick and OnInventoryClosed() when the list
+    // goes (after the pick, or on Esc with none). Hung on the player's own table, which
+    // defines neither, both arrive (alms_pick_probe.lua, 15 Nov 2026, three passes). The
+    // filter is category.type.subtype, alternatives with |, and for armour the type is the
+    // armor_type's name (Libs/Tables/item/armor_type.xml, as the forge wardrobe's filters
+    // spell it: armor.Hood.*, armor.TunicShort.*); the third token is not read. These are
+    // the clothing types, men's -- caps, coifs, hoods, shirts, coats, gloves, hose, shoes,
+    // boots, aprons -- and none of the padded, mail or plate a beggar would be robbed for,
+    // and no accessory (rings, belts) that would not dress him.
+    s += g + ".almsFilter = \"armor.Cap.*|armor.CoifCap.*|armor.Hood.*|armor.LeatherCap.*|armor.TunicShort.*|armor.TunicLong.*|armor.Caftan.*|armor.Pourpoint.*|armor.Coat.*|armor.Waffenrock.*|armor.Habit.*|armor.Gloves.*|armor.HoseJoined.*|armor.HoseLoose.*|armor.HoseSeparate.*|armor.Shoes.*|armor.BootsAnkle.*|armor.BootsKnee.*|armor.LeatherApron.*\"\n";
+    // Waits for the conversation to be gone (the beggar's "show me, then" is still being
+    // said) a second at a time, as FastTravelArm does, and opens the list; gives up after
+    // two minutes.
+    s += "function " + g + ".AlmsPickArm(npc, tries)\n";
+    s += "\tif not " + g + ".InDialog() and not " + g + ".active then\n";
+    s += "\t\t" + g + ".AlmsPickOpen(npc)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif tries >= 120 then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE alms clothes picker given up, the conversation never ended\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tpcall(function() Script.SetTimer(1000, function() " + g + ".AlmsPickArm(npc, tries + 1) end) end)\n";
+    s += "end\n";
+    // The two callbacks go on the player's table for this one opening and come off it as
+    // the list closes; whatever was there before (nothing, in this game) is put back.
+    s += "function " + g + ".AlmsPickOpen(npc)\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tif p == nil or npc == nil then return end\n";
+    s += "\tlocal name = EntityUtils.GetName(npc)\n";
+    // Without the bind (none of the shipped games lacks it), the old guess: the cheaper of
+    // a doubled group goes, or nothing.
+    s += "\tif p.actor == nil or p.actor.OpenItemSelectionFilter == nil then\n";
+    s += "\t\tlocal _, clothes = " + g + ".AlmsRows(p)\n";
+    s += "\t\tlocal spare = clothes ~= nil and " + g + ".AlmsSpare(clothes) or nil\n";
+    s += "\t\tif spare == nil then " + g + ".Log(\"BRIDGE alms clothes no picker on this game, nothing spare for \" .. name); return end\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE alms clothes no picker on this game, the spare goes\")\n";
+    s += "\t\t" + g + ".AlmsDress(npc, spare.class)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal wasUsed, wasClosed = rawget(p, \"OnInventoryItemUsed\"), rawget(p, \"OnInventoryClosed\")\n";
+    s += "\tlocal picked = false\n";
+    s += "\tp.OnInventoryItemUsed = function(self, wuid)\n";
+    s += "\t\tif picked then return end\n";
+    s += "\t\tpicked = true\n";
+    s += "\t\tlocal it = nil\n";
+    s += "\t\tpcall(function() it = ItemManager.GetItem(wuid) end)\n";
+    s += "\t\tlocal class = type(it) == \"table\" and it.class or nil\n";
+    s += "\t\tif class == nil then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE alms clothes picked a row the game cannot read: \" .. tostring(wuid))\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
+    s += "\t\t" + g + ".AlmsDress(npc, class)\n";
+    s += "\tend\n";
+    s += "\tp.OnInventoryClosed = function(self)\n";
+    s += "\t\tp.OnInventoryItemUsed, p.OnInventoryClosed = wasUsed, wasClosed\n";
+    s += "\t\tif not picked then " + g + ".Log(\"BRIDGE alms clothes nothing picked for \" .. name) end\n";
+    s += "\tend\n";
+    s += "\tlocal ok, err = pcall(function() return p.actor:OpenItemSelectionFilter(p.id, " + g + ".almsFilter) end)\n";
+    s += "\tif not ok then\n";
+    s += "\t\tp.OnInventoryItemUsed, p.OnInventoryClosed = wasUsed, wasClosed\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE alms clothes picker raised \" .. tostring(err))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE alms clothes picker open for \" .. name)\n";
+    s += "end\n";
+    // The picked garment goes over, one of it, and is put on him with
+    // actor:EquipInventoryItem, the bind the game's own dressing uses (scripts/autopilot/
+    // alms_probe.lua, 6 Oct 2026: moves and the equip call return without raising on a
+    // sitting beggar). His thanks are a bark in his voice, the conversation being over: the
+    // same line the app would have said in it, with his name over it on the HUD.
+    s += "function " + g + ".AlmsDress(npc, class)\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tlocal name = EntityUtils.GetName(npc)\n";
+    s += "\tlocal moved = " + g + ".MoveOne(p, npc, class)\n";
     s += "\tlocal worn = \"\"\n";
-    s += "\tif moved > 0 and kind == \"clothes\" and npc.actor ~= nil and npc.actor.EquipInventoryItem ~= nil then\n";
+    s += "\tif moved > 0 and npc.actor ~= nil and npc.actor.EquipInventoryItem ~= nil then\n";
     s += "\t\tlocal wuid = nil\n";
-    s += "\t\tlocal rows = " + g + ".Rows(npc, pick.class)\n";
+    s += "\t\tlocal rows = " + g + ".Rows(npc, class)\n";
     s += "\t\tif rows ~= nil and rows[1] ~= nil then wuid = rows[1].id end\n";
     s += "\t\tif wuid ~= nil then\n";
     s += "\t\t\tlocal ok, err = pcall(function() npc.actor:EquipInventoryItem(wuid) end)\n";
@@ -12494,7 +12587,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tworn = \", no row to wear\"\n";
     s += "\t\tend\n";
     s += "\tend\n";
-    s += "\t" + g + ".Log(\"BRIDGE alms \" .. kind .. \" \" .. pick.class .. \" moved \" .. moved .. \" to \" .. name .. worn)\n";
+    s += "\t" + g + ".Log(\"BRIDGE alms clothes \" .. class .. \" moved \" .. moved .. \" to \" .. name .. worn)\n";
+    s += "\tif moved > 0 then\n";
+    s += "\t\tlocal thanks = \"" + lua_escape(kAlmsClothesThanks) + "\"\n";
+    s += "\t\t" + g + ".Voice(" + g + ".beggars[name] or \"male\", thanks, name)\n";
+    s += "\t\t" + g + ".HailShow(thanks, " + g + ".soulNames[name] or \"\", 0)\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
     // The holder agreed, or was talked into it: the thing goes from their pockets to

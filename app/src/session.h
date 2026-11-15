@@ -340,6 +340,9 @@ private:
         // Raw directives the mod is owed with the words (@alms <kind>), ahead of the reply.
         std::vector<std::string> directives;
         bool ask_round = false;
+        // The reply is the conversation's last word (the clothes for a beggar: the game's
+        // item selection the mod opens after it cannot open over a dialogue).
+        bool closes = false;
     };
     std::optional<WrittenAnswer> written_answer(std::string_view intent) const;
     // Henry's rows for what he could give a beggar, by kind, in the begin line's letter

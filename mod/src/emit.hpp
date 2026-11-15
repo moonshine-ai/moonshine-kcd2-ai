@@ -450,6 +450,10 @@ constexpr double kFollowHearMetres = 4.0;
 constexpr double kFollowConeDegrees = 120.0;
 constexpr double kFollowEyeMetres = 1.6;
 constexpr double kFollowWarnMetres = 25.0;
+// A beggar's thanks for a garment, barked in his stand-in voice once the game's item
+// selection has given it to him (AlmsDress): the conversation closed on the row that
+// offered it, so the app is not there to say the line, and the Lua says it instead.
+constexpr const char* kAlmsClothesThanks = "Oh... bless you, sir. Let me put it on, before someone takes it off me.";
 // Henry's `follow_over` goes up this long after the holder's Talk closes on the `followed`
 // row: he has turned away, and the subtitle of his last line is gone.
 constexpr int kFollowOverMs = 2500;

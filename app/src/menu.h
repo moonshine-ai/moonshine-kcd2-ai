@@ -42,7 +42,8 @@ inline constexpr std::string_view kIntents[] = {
 // Henry's row at a beggar, while he carries something the mod says he could spare
 // (approach.h, alms); picked, it is answered with the rows for what he has -- `alms:money`,
 // `alms:food`, `alms:clothes` (scripted.h) -- and each of those owes the mod `@alms <kind>`,
-// which moves the thing and, for a garment, puts it on him.
+// which moves the thing. The clothes row closes the conversation: the mod then opens the
+// game's item selection over Henry's clothes, and puts what the player picks on him.
 inline constexpr std::string_view kAlmsRow = "I've something for you.";
 // `pry` is Henry's row at a letter's writer asking what it says (scripted.h, pry_row),
 // answered as written either way and weighed by the app against the two Speech stats.

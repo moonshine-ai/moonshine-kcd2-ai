@@ -68,9 +68,10 @@ struct Approach {
     // old to ask -- and an unread answer withholds nothing.
     int can_pray = -1;
     // What Henry could give a beggar (`alms=<letters>` on a beggar's begin line, read by
-    // the mod off his pocket): m for a purse of three groschen, f for food, c for a spare
-    // garment. Empty on everyone else, and on a beggar he has nothing for; the menu lays
-    // a row for each letter (menu.h, kAlmsRow).
+    // the mod off his pocket): m for a purse of three groschen, f for food, c for any
+    // garment (which one goes is the player's pick, in the game's own item selection the
+    // mod opens after the conversation). Empty on everyone else, and on a beggar he has
+    // nothing for; the menu lays a row for each letter (menu.h, kAlmsRow).
     std::string alms;
 
     // The anim_activity category the soul's animation resolved to: "working", "eating",

@@ -2983,13 +2983,17 @@ case("Alms: the begin line of a beggar says what Henry could give, and nobody el
     check(M.AlmsLine(npc, player) == " alms=m", "a purse alone: " .. M.AlmsLine(npc, player))
     player.inventory:CreateItem(food, 1, 2)
     check(M.AlmsLine(npc, player) == " alms=mf", "with bread: " .. M.AlmsLine(npc, player))
-    -- One garment of a group is what he wears, for all the Lua can tell; two is a spare.
+    -- Any garment of the tables' is c: which one goes is the player's pick in the game's
+    -- item selection (bugs.txt 15 Nov 2026; before, two of a group were wanted, and a
+    -- pocket with one tunic in it never saw the row).
     local tunics = anyGroup(M, "TunicShort")
     check(#tunics >= 2, "two tunic classes in the tables")
     player.inventory:CreateItem(tunics[1], 1, 1)
-    check(M.AlmsLine(npc, player) == " alms=mf", "one tunic is worn, not spare: " .. M.AlmsLine(npc, player))
-    player.inventory:CreateItem(tunics[2], 1, 1)
-    check(M.AlmsLine(npc, player) == " alms=mfc", "two tunics, one spare: " .. M.AlmsLine(npc, player))
+    check(M.AlmsLine(npc, player) == " alms=mfc", "one tunic is a garment to offer: " .. M.AlmsLine(npc, player))
+    -- A hood is a garment too (the tables' <Hood> rows, added 15 Nov 2026).
+    local hoods = anyGroup(M, "Hood")
+    check(#hoods >= 1, "hood classes in the tables")
+    check(MoonshineAlms.clothes[hoods[1]][1] > 0, "a hood has a price")
     -- Not a beggar: nothing, whatever the pocket.
     local other = E.soul("kkut_additive_man_10")
     check(M.beggars["kkut_additive_man_10"] == nil, "man 10 is not a beggar")
@@ -3003,7 +3007,7 @@ case("Alms: the begin line of a beggar says what Henry could give, and nobody el
     check(begin ~= nil and begin:find(" alms=mfc", 1, true) ~= nil, "the begin line carries alms=mfc: " .. tostring(begin))
 end)
 
-case("Alms: @alms moves the groschen, the cheapest food, and the spare garment -- then he wears it", function(E, M, check)
+case("Alms: @alms moves the groschen and the cheapest food", function(E, M, check)
     local beggar = aBeggar(M)
     local npc = E.soul(beggar)
     M.npc = npc
@@ -3025,24 +3029,60 @@ case("Alms: @alms moves the groschen, the cheapest food, and the spare garment -
     check(npc.inventory:GetCountOfClass(cheap) == 1 and npc.inventory:GetCountOfClass(dear) == 0, "the cheap one went")
     check(player.inventory:GetCountOfClass(cheap) == 1, "one of two stays with Henry")
     check(E.find("BRIDGE alms food " .. cheap .. " moved 1 to " .. beggar), "logged")
-    -- Clothes: with a single tunic nothing goes; with two, the cheaper, and he puts it on.
-    local tunics = anyGroup(M, "TunicShort")
-    table.sort(tunics, function(a, b) return MoonshineAlms.clothes[a][1] < MoonshineAlms.clothes[b][1] end)
-    local cheapT, dearT = tunics[1], tunics[#tunics]
-    player.inventory:CreateItem(dearT, 1, 1)
-    M.Directives("@alms clothes")
-    check(E.find("BRIDGE alms clothes nothing to give"), "one tunic is not spare")
-    check(npc.worn == nil, "nothing worn yet")
-    player.inventory:CreateItem(cheapT, 1, 1)
-    M.Directives("@alms clothes")
-    check(npc.inventory:GetCountOfClass(cheapT) == 1, "the cheaper tunic went")
-    check(player.inventory:GetCountOfClass(dearT) == 1, "Henry keeps the dearer")
-    check(npc.worn ~= nil and npc.worn[1] == cheapT, "and he wears it")
-    check(E.find("BRIDGE alms clothes " .. cheapT .. " moved 1 to " .. beggar .. ", worn"), "logged")
     -- Nothing left to give is said, not raised.
     player.inventory.rows = {}
     M.Directives("@alms food")
     check(E.find("BRIDGE alms food nothing to give"), "an empty pocket is said")
+end)
+
+-- bugs.txt (15 Nov 2026): the garment is the player's pick. @alms clothes arms the game's
+-- item selection, which opens over Henry's clothes once the conversation is gone, and the
+-- picked garment goes to the beggar, who puts it on and says his thanks in his own voice.
+case("Alms: @alms clothes opens the game's item selection after the talk, and the pick is worn", function(E, M, check)
+    local beggar = aBeggar(M)
+    local npc = E.soul(beggar)
+    local tunics = anyGroup(M, "TunicShort")
+    table.sort(tunics, function(a, b) return MoonshineAlms.clothes[a][1] < MoonshineAlms.clothes[b][1] end)
+    local cheapT, dearT = tunics[1], tunics[#tunics]
+    player.inventory:CreateItem(dearT, 1, 1)
+    player.inventory:CreateItem(cheapT, 1, 1)
+    -- Picked in the conversation: nothing opens while it is up.
+    check(E.begin(npc), "the conversation opens")
+    local mark = #E.lines
+    M.Directives("@alms clothes")
+    check(E.find("BRIDGE alms clothes picker armed for " .. beggar, mark), "armed on the row")
+    E.advance(2500)
+    check(E.picker == nil, "no list over the dialogue")
+    check(npc.inventory:GetCountOfClass(cheapT) == 0 and npc.inventory:GetCountOfClass(dearT) == 0, "nothing moved yet")
+    -- The talk ends; a second later the list is up, on the clothing types only.
+    M.Leave("the case")
+    E.closeDialog("the case")
+    E.advance(1100)
+    check(E.picker ~= nil, "the item selection opened once the talk was gone")
+    check(E.picker.entity == player, "over the player, whose table gets the callbacks")
+    check(E.picker.filter:find("armor.TunicShort.*", 1, true) ~= nil, "tunics admitted: " .. E.picker.filter)
+    check(E.picker.filter:find("armor.Hood.*", 1, true) ~= nil, "hoods admitted")
+    check(E.picker.filter:find("Plate", 1, true) == nil and E.picker.filter:find("Mail", 1, true) == nil, "no armour")
+    check(E.find("BRIDGE alms clothes picker open for " .. beggar, mark), "logged")
+    -- The player picks the dearer one, for once: it goes, is worn, and he says thanks.
+    E.pickItem(dearT)
+    check(npc.inventory:GetCountOfClass(dearT) == 1, "the picked tunic went")
+    check(player.inventory:GetCountOfClass(cheapT) == 1 and player.inventory:GetCountOfClass(dearT) == 0, "Henry keeps the other")
+    check(npc.worn ~= nil and npc.worn[1] == dearT, "and he wears it")
+    check(E.find("BRIDGE alms clothes " .. dearT .. " moved 1 to " .. beggar .. ", worn", mark), "logged")
+    check(E.find("BRIDGE voice " .. M.beggars[beggar] .. " soul=" .. beggar .. " Oh... bless you, sir.", mark),
+          "his thanks, in his voice, for the app to speak")
+    check(player.OnInventoryItemUsed == nil and player.OnInventoryClosed == nil, "the callbacks came off his table")
+    -- Walked out of: nothing moves, and that is said.
+    mark = #E.lines
+    M.npc = npc
+    M.Directives("@alms clothes")
+    E.advance(100)
+    check(E.picker ~= nil, "opened again, no talk being up")
+    E.closePicker()
+    check(E.find("BRIDGE alms clothes nothing picked for " .. beggar, mark), "the walk-out is said")
+    check(npc.inventory:GetCountOfClass(cheapT) == 0, "and nothing moved")
+    check(player.OnInventoryItemUsed == nil, "callbacks off again")
 end)
 
 case("Errand: a soul whose errand is a scene of a story is gated by the link", function(E, M, check)

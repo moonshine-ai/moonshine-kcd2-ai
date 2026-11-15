@@ -326,6 +326,19 @@ local function actorComponent(e)
         e.presets[#e.presets + 1] = guid
         return true
     end
+    -- The game's item selection (TriggerBase.lua's "use an item here"): opens a list of the
+    -- player's rows the filter admits, and the entity whose id was given gets
+    -- OnInventoryItemUsed(wuid) on a pick and OnInventoryClosed() as the list goes (after
+    -- the pick, or on Esc with none). Here the list is remembered on Engine.picker, and a
+    -- case picks with Engine.pickItem(class) or walks out with Engine.closePicker().
+    function actor:OpenItemSelectionFilter(id, filter)
+        if type(filter) ~= "string" or filter == "" then error("OpenItemSelectionFilter: bad filter") end
+        local to
+        for _, other in pairs(Engine.entities) do if other.id == id then to = other end end
+        if to == nil then error("OpenItemSelectionFilter: no entity " .. tostring(id)) end
+        Engine.picker = { entity = to, filter = filter, over = e }
+        return true
+    end
     return actor
 end
 
@@ -443,6 +456,27 @@ function Engine.closeDialog(why)
     Engine.dialog.open = false
     Engine.dialog.menu = false
     Engine.log("[harness] dialogue closed, " .. tostring(why) .. ", after " .. Engine.dialog.beats .. " beats")
+end
+
+-- The item selection (actorComponent, OpenItemSelectionFilter): the player picks a row of
+-- the class, which must be in the pocket the list was opened over, and the list closes;
+-- or walks out, and only the closing is reported.
+Engine.picker = nil
+function Engine.pickItem(class)
+    local pk = Engine.picker
+    if pk == nil then error("pickItem: no item selection is open") end
+    local row
+    for _, r in ipairs(pk.over.inventory.rows) do if r.class == class then row = r end end
+    if row == nil then error("pickItem: no " .. tostring(class) .. " in the pocket") end
+    Engine.picker = nil
+    if pk.entity.OnInventoryItemUsed ~= nil then pk.entity:OnInventoryItemUsed(row) end
+    if pk.entity.OnInventoryClosed ~= nil then pk.entity:OnInventoryClosed() end
+end
+function Engine.closePicker()
+    local pk = Engine.picker
+    if pk == nil then error("closePicker: no item selection is open") end
+    Engine.picker = nil
+    if pk.entity.OnInventoryClosed ~= nil then pk.entity:OnInventoryClosed() end
 end
 
 local function codeName(code)
@@ -964,6 +998,7 @@ function Engine.reset()
     Engine.globals = {}
     Engine.entities = {}
     Engine.inventories = {}
+    Engine.picker = nil
     Engine.ground = {}
     Engine.ports = {}
     Engine.questState = {}

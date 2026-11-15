@@ -1523,7 +1523,7 @@ std::vector<std::pair<std::string, std::string>> Session::alms_rows() const {
     for (const char letter : alms_) {
         if (letter == 'm') rows.emplace_back("money", "Here's three groschen. Get yourself a hot meal.");
         else if (letter == 'f') rows.emplace_back("food", "Here, something to eat.");
-        else if (letter == 'c') rows.emplace_back("clothes", "Take this; it'll keep the cold off better than what you've got.");
+        else if (letter == 'c') rows.emplace_back("clothes", "I've some clothes you could have. Let me see what I can spare.");
     }
     return rows;
 }
@@ -1704,14 +1704,21 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
         }
         out.spent.emplace_back("alms");
     } else if (const std::string_view kind = alms_kind(intent); !kind.empty()) {
-        // The thing given: the mod moves it on @alms (and for a garment dresses him in it),
-        // and the thanks are said as written here. Once a kind a conversation.
+        // The thing given: the mod moves it on @alms, and the thanks are said as written
+        // here. Once a kind a conversation. A garment is the player's to pick, in the
+        // game's own item selection, which the mod opens over Henry's clothes once the
+        // conversation is gone (emit.cpp AlmsPickArm; it cannot open over a dialogue), so
+        // the clothes row closes the conversation on the beggar's answer, and the thanks
+        // for what is picked are the mod's to bark (kAlmsClothesThanks).
         bool offered = false;
         for (const auto& [have, row] : alms_rows()) offered = offered || have == kind;
         if (once(intent) && offered) {
             if (kind == "money") out.reply = "Three groschen! God reward you, sir. That's bread for days.";
             else if (kind == "food") out.reply = "Bless you. I'll not ask what it is; I'll eat it.";
-            else out.reply = "Oh... bless you, sir. Let me put it on, before someone takes it off me.";
+            else {
+                out.reply = "Clothes? God bless you, sir. Show me, then.";
+                out.closes = true;
+            }
             out.what = "the thanks for " + std::string(kind);
             out.directives.push_back("@alms " + std::string(kind));
         }
@@ -1805,6 +1812,7 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
     for (const std::string& directive : found->directives) pending_.push_back(directive);
     for (const std::string& key : found->spent) told_.push_back(key);
     if (found->ask_round) ++ask_rounds_;
+    if (found->closes) closing_ = true;
     // A row whose reply is the last word (DirectorRow::closes; the carrying declined).
     for (const DirectorRow& row : persona_.quest.rows) {
         if (row.intent == intent && row.closes) closing_ = true;
