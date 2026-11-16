@@ -4485,6 +4485,107 @@ case("Carried: the fast_travel directive waits for the Talk to close, then winds
     check(math.abs(pp.x - q.fastTravel.x) < 0.01, "moved once the dismount has played")
 end)
 
+-- The holder set down for the carry (README, "The holder set down at the gate", 15 Nov
+-- 2026): at the carry's hour the man Henry is to follow is wherever his evening has him,
+-- two hundred metres off as often as not, so the quest's `fast_travel_holder_to` is where
+-- the Lua puts him as Henry lands -- in the look hint's reach of the landing, his back to
+-- it -- and Henry's view is turned to him. He is put back for a few seconds if the wound
+-- clock takes him further than his feet could, and never moved when there is nothing to
+-- follow him for.
+case("Carried: the man to follow is set down in sight of the landing as Henry lands, his back to it and Henry's view on him; put back if the wound clock takes him, his own steps left alone; and not moved when he is near already, gone in, dead, or the street is over", function(E, M, check)
+    local id, q = byExposure(M)
+    if id == nil or q.fastTravel == nil or q.fastTravel.holder == nil then check(true, "no holder's spot in this data"); return end
+    local ft, spot = q.fastTravel, q.fastTravel.holder
+    local gap = math.sqrt((spot.x - ft.x) ^ 2 + (spot.y - ft.y) ^ 2)
+    check(gap >= 15 and gap <= M.followLookMetres, "the spot within the look hint's reach of the landing, and out of his sight of it: " .. gap)
+    local giver = E.soul(q.giver)
+    local man = E.soul(q.target)
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.interior = false
+    local function far() man:SetWorldPos({ x = ft.x + 200, y = ft.y, z = ft.z }) end
+    local function at(p, within)
+        local tp = man:GetWorldPos()
+        return math.sqrt((tp.x - p.x) ^ 2 + (tp.y - p.y) ^ 2) <= (within or 0.01)
+    end
+    local function carry()
+        player:SetWorldPos({ x = 100, y = 100, z = 0 })
+        player.view = nil
+        E.hour = 12
+        local mark = E.mark()
+        M.QuestCommand(id, "fast_travel")
+        E.advance(100)
+        return mark
+    end
+    -- Far off: on the spot at once, turned away, and Henry looking at him.
+    far()
+    local mark = carry()
+    check(at(spot), "the holder on the spot as Henry lands")
+    local d = man:GetDirectionVector()
+    check(math.abs(d.x - (spot.x - ft.x) / gap) < 0.01 and math.abs(d.y - (spot.y - ft.y) / gap) < 0.01, "his back to the landing")
+    local yaw = math.atan2(-(spot.x - ft.x), spot.y - ft.y)
+    check(player.view ~= nil and math.abs(player.view.z - yaw) < 0.001 and player.view.x == 0,
+          "Henry's view turned to him, level, by the actor and not the console")
+    check(E.find("BRIDGE quest " .. id .. " carry set " .. q.target .. " down at", mark) and E.find("from 200m off", mark),
+          "said in the log, with how far off he was")
+    -- His own steps from the spot are his.
+    man:SetWorldPos({ x = spot.x + 6, y = spot.y - 6, z = spot.z })
+    E.advance(1100)
+    check(at({ x = spot.x + 6, y = spot.y - 6 }), "a few metres walked from the spot are left him")
+    -- Taken further than his feet could: put back, and said.
+    far()
+    mark = E.mark()
+    E.advance(1100)
+    check(at(spot), "put back when the wound clock has taken him")
+    check(E.find("again after", mark), "and said so")
+    -- Once the seconds are up his evening is his own.
+    E.advance(8000)
+    far()
+    E.advance(3000)
+    check(not at(spot, 50), "left to his evening once the checks are over")
+    -- Outdoors near the landing already: left, and Henry turned to where he stands.
+    man:SetWorldPos({ x = ft.x - 20, y = ft.y + 5, z = ft.z })
+    mark = carry()
+    check(at({ x = ft.x - 20, y = ft.y + 5 }), "a holder near the landing is left where he stands")
+    check(E.find("carry leaves " .. q.target .. ": 20.6m from the landing already", mark), "said why")
+    check(player.view ~= nil and math.abs(player.view.z - math.atan2(20, 5)) < 0.001, "and Henry turned to him there")
+    E.advance(8000)
+    -- In at the witness's: by the watch's own mark, or indoors by the bed.
+    far()
+    M.entered[id] = true
+    mark = carry()
+    check(not at(spot, 50) and player.view == nil, "not fetched out once he has gone in, nor Henry turned")
+    check(E.find("carry leaves " .. q.target .. ": in at the witness's", mark), "said why")
+    M.entered[id] = nil
+    if q.bedPos ~= nil then
+        E.interior = true
+        man:SetWorldPos({ x = q.bedPos.x + 1, y = q.bedPos.y, z = 0 })
+        mark = carry()
+        check(at({ x = q.bedPos.x + 1, y = q.bedPos.y }), "nor out of the house, indoors by the bed")
+        E.interior = false
+    end
+    -- The street over for this quest.
+    far()
+    M.state.quests[id].followed = true
+    mark = carry()
+    check(not at(spot, 50), "not moved once Henry has followed him")
+    check(E.find("carry leaves " .. q.target .. ": the street is over", mark), "said why")
+    M.state.quests[id].followed = nil
+    -- Dead.
+    man.alive = false
+    mark = carry()
+    check(not at(spot, 50) and E.find("carry leaves " .. q.target .. ": dead", mark), "a dead man is left lying")
+    man.alive = true
+    -- A quest with no spot written carries Henry alone.
+    q.fastTravel.holder = nil
+    far()
+    mark = carry()
+    check(not at(spot, 50) and not E.find("carry set", mark) and not E.find("carry leaves", mark), "no spot written, nobody moved")
+    local pp = player:GetWorldPos()
+    check(math.abs(pp.x - ft.x) < 0.01, "and Henry carried all the same")
+    q.fastTravel.holder = spot
+end)
+
 case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first, then the named speaker's", function(E, M, check)
     -- No session: the holder's rows run through the game's dialogue, and each row's
     -- ExitScript voices Henry's line and the holder's together, with the holder's entity

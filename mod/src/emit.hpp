@@ -475,6 +475,14 @@ constexpr double kFollowWarnMetres = 25.0;
 // (kFollowSeeMetres) without losing it.
 constexpr double kFollowLookMetres = 40.0;
 constexpr double kFollowLookLostMetres = 60.0;
+// The holder set down for the carry (npcdb.hpp fast_travel_holder_to; FastTravelHolder). A
+// second at a time for kCarryHolderChecks seconds after it he is looked for again, and put
+// back if he is more than kCarryHolderStrayMetres from the spot: he walks a metre and a
+// half a second, so further than this is the engine re-placing him for the wound clock and
+// not his own feet. A holder already outdoors within kFollowLookMetres of the landing is
+// left where he stands, and Henry turned to him there.
+constexpr double kCarryHolderStrayMetres = 30.0;
+constexpr int kCarryHolderChecks = 5;
 // A beggar's thanks for a garment, barked in his stand-in voice once the game's item
 // selection has given it to him (AlmsDress): the conversation closed on the row that
 // offered it, so the app is not there to say the line, and the Lua says it instead.

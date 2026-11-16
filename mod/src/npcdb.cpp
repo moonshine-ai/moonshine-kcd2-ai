@@ -284,6 +284,9 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
         if (!q.fast_travel_to.empty() != (q.fast_travel_at >= 0)) {
             throw std::runtime_error("quest " + q.id + " has one of fast_travel_to and fast_travel_at; the carrying wants both");
         }
+        if (!q.fast_travel_holder_to.empty() && !q.has_fast_travel()) {
+            throw std::runtime_error("quest " + q.id + " has fast_travel_holder_to and no carrying to set him down for");
+        }
         // An exposure (npcdb.hpp, expose): the witness by soul_name, resolved to a guid --
         // they are never spoken to or marked, so they need not be renamed -- and the
         // household the holder is caught in, which is the witness's, for the welcome that
@@ -715,6 +718,13 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                     throw std::runtime_error("quest " + q.id + " fast_travel_to wants x,y,z, got '" + words + "'");
                 }
                 q.fast_travel_to = words;
+            } else if (field == "fast_travel_holder_to") {
+                // Where the holder is set down as Henry lands, "x,y,z" (npcdb.hpp).
+                double x = 0, y = 0, z = 0;
+                if (std::sscanf(words.c_str(), "%lf,%lf,%lf", &x, &y, &z) != 3) {
+                    throw std::runtime_error("quest " + q.id + " fast_travel_holder_to wants x,y,z, got '" + words + "'");
+                }
+                q.fast_travel_holder_to = words;
             } else if (field == "fast_travel_at") {
                 // The hour the clock is wound on to, "hh:mm" of the day.
                 int hh = -1, mm = 0;

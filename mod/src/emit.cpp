@@ -7933,9 +7933,16 @@ std::string emit_conversation_lua(const std::string& modid,
             double x = 0, y = 0, z = 0;
             std::sscanf(q.fast_travel_to.c_str(), "%lf,%lf,%lf", &x, &y, &z);
             char spot[128];
-            std::snprintf(spot, sizeof spot, ", fastTravel = { x = %.2f, y = %.2f, z = %.2f, at = %.2f }", x, y, z,
+            std::snprintf(spot, sizeof spot, ", fastTravel = { x = %.2f, y = %.2f, z = %.2f, at = %.2f", x, y, z,
                           q.fast_travel_at);
             s += spot;
+            if (!q.fast_travel_holder_to.empty()) {
+                // Where the holder is set down as Henry lands (FastTravelHolder).
+                std::sscanf(q.fast_travel_holder_to.c_str(), "%lf,%lf,%lf", &x, &y, &z);
+                std::snprintf(spot, sizeof spot, ", holder = { x = %.2f, y = %.2f, z = %.2f }", x, y, z);
+                s += spot;
+            }
+            s += " }";
         }
         if (q.has_bedside()) {
             // The bedside (WatchExpose): Henry's waking line, said in his voice over the bed
@@ -9511,6 +9518,86 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tpcall(function() Script.SetTimer(1000, function() " + g + ".FastTravelArm(id, q, tries + 1) end) end)\n";
     s += "end\n";
+    // The holder set down for the carry (npcdb.hpp fast_travel_holder_to; emit.hpp
+    // kCarryHolder*; README, "The holder set down at the gate"): as Henry lands, the man he
+    // is to follow is put on the quest's spot, his back to the landing, and Henry's view
+    // turned to him (actor:PlayerSetViewAngles, as the shipped SpawnPoint.lua turns the
+    // player; no console in it), so he is before Henry's eyes and the look hint (WatchLook)
+    // goes up within the watch's tick. SetWorldPos holds on a soul mid-routine and he goes
+    // on with his evening from where he is put: to one of his waiting spots by the gate, or
+    // home (carry_holder_probe, three evenings). Not when the street is over for this quest
+    // (done, handed, seen, followed), when he is dead or not loaded, when he is in at the
+    // witness's, or when he is outdoors within followLookMetres of the landing already --
+    // then Henry is turned to him where he stands. For kCarryHolderChecks seconds after, a
+    // second at a time, he is put back if something has taken him further than his feet
+    // could (kCarryHolderStrayMetres): the clock has just been wound nine hours.
+    s += g + ".carryHolderStrayMetres = " + health_text(kCarryHolderStrayMetres) + "\n";
+    s += g + ".carryHolderChecks = " + std::to_string(kCarryHolderChecks) + "\n";
+    s += "function " + g + ".FaceFrom(me, from, p)\n";
+    s += "\tlocal dx, dy = p.x - from.x, p.y - from.y\n";
+    s += "\tif dx * dx + dy * dy < 0.01 then return end\n";
+    // About z: zero is north (+y), positive to the west.
+    s += "\tlocal yaw = math.atan2(-dx, dy)\n";
+    s += "\tpcall(function() me.actor:PlayerSetViewAngles({ x = 0, y = 0, z = yaw }) end)\n";
+    s += "end\n";
+    s += "function " + g + ".FastTravelHolder(id, q, me, to, tries)\n";
+    s += "\tlocal ft = q.fastTravel\n";
+    s += "\tif ft == nil or ft.holder == nil or q.target == nil then return end\n";
+    s += "\ttries = tries or 0\n";
+    s += "\tlocal spot = ft.holder\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\tif e == nil or e.GetWorldPos == nil then\n";
+    s += "\t\tif tries == 0 then " + g + ".Log(\"BRIDGE quest \" .. id .. \" carry leaves \" .. q.target .. \": not loaded\") end\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal tp = e:GetWorldPos()\n";
+    s += "\tlocal function flat(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end\n";
+    s += "\tlocal function again()\n";
+    s += "\t\tif tries >= " + g + ".carryHolderChecks then return end\n";
+    s += "\t\tpcall(function() Script.SetTimer(1000, function() " + g + ".FastTravelHolder(id, q, me, to, tries + 1) end) end)\n";
+    s += "\tend\n";
+    s += "\tif tries == 0 then\n";
+    s += "\t\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\t\tlocal why, near = nil, false\n";
+    s += "\t\tlocal dead = false\n";
+    s += "\t\tpcall(function() dead = e.actor:IsDead() == true end)\n";
+    s += "\t\tlocal inside = " + g + ".Indoors(tp)\n";
+    s += "\t\tlocal home = nil\n";
+    s += "\t\tif q.bedPos ~= nil then\n";
+    s += "\t\t\thome = " + g + ".HomeGap(q, tp, nil)\n";
+    s += "\t\telseif q.seenWith ~= nil then\n";
+    s += "\t\t\tpcall(function() home = " + g + ".HomeGap(q, tp, System.GetEntityByName(q.seenWith):GetWorldPos()) end)\n";
+    s += "\t\tend\n";
+    s += "\t\tif dead then\n";
+    s += "\t\t\twhy = \"dead\"\n";
+    s += "\t\telseif f.done or f.handed or f.seen or f.followed then\n";
+    s += "\t\t\twhy = \"the street is over\"\n";
+    s += "\t\telseif " + g + ".entered[id] or (inside == true and home ~= nil and home <= " + g + ".enterWithMetres) then\n";
+    s += "\t\t\twhy = \"in at the witness's\"\n";
+    s += "\t\telseif inside ~= true and flat(tp, to) <= " + g + ".followLookMetres then\n";
+    s += "\t\t\twhy, near = string.format(\"%.1fm from the landing already\", flat(tp, to)), true\n";
+    s += "\t\tend\n";
+    s += "\t\tif why ~= nil then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" carry leaves \" .. q.target .. \": \" .. why)\n";
+    s += "\t\t\tif near then " + g + ".FaceFrom(me, to, tp) end\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
+    s += "\telseif flat(tp, spot) <= " + g + ".carryHolderStrayMetres then\n";
+    s += "\t\treturn again()\n";
+    s += "\tend\n";
+    // His back to the landing: a man walking off, not one waiting for Henry.
+    s += "\tlocal dx, dy = spot.x - to.x, spot.y - to.y\n";
+    s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
+    s += "\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
+    s += "\t" + g + ".FaceFrom(me, to, spot)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s carry set %s down at %.1f %.1f %.1f, %.1fm from the landing, from %.0fm off%s%s\",\n";
+    s += "\t\tid, q.target, spot.x, spot.y, spot.z, flat(spot, to), flat(tp, to),\n";
+    s += "\t\ttries > 0 and string.format(\", again after %ds: he had been taken %.0fm from it\", tries, flat(tp, spot)) or \"\",\n";
+    s += "\t\tok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "\tagain()\n";
+    s += "end\n";
     s += "function " + g + ".FastTravelGo(id, q)\n";
     s += "\tlocal me = " + g + ".Player()\n";
     s += "\tlocal ft = q.fastTravel\n";
@@ -9532,6 +9619,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // The street watch is told (WatchFollow's grace): the holder is re-placed by the clock's
     // winding and stands wherever the engine put him, often beside the gate.
     s += "\t\t" + g + ".followGraceAt = " + g + ".Now()\n";
+    // The man to follow, set down in sight of the landing (FastTravelHolder, above).
+    s += "\t\tlocal okHolder, errHolder = pcall(" + g + ".FastTravelHolder, id, q, me, to)\n";
+    s += "\t\tif not okHolder then " + g + ".Log(\"BRIDGE quest \" .. id .. \" carry's holder raised \" .. tostring(errHolder)) end\n";
     s += "\t\tpcall(function() Script.SetTimer(1000, function()\n";
     s += "\t\t\tlocal pp = me:GetWorldPos()\n";
     s += "\t\t\tlocal read = nil\n";

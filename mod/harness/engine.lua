@@ -301,6 +301,9 @@ local function actorComponent(e)
     function actor:IsUnconscious() return e.down == true end
     function actor:CanInteractWith() return true end
     function actor:GetCurrentAnimationState() return e.anim end
+    -- The player's view turned (SpawnPoint.lua's way; the mod's FaceFrom): the angles kept
+    -- for a case to read, e.view.z the yaw about z, zero north and positive to the west.
+    function actor:PlayerSetViewAngles(a) e.view = { x = a.x, y = a.y, z = a.z } end
     -- The game's bind puts an inventory row on the body; here it is remembered, so a
     -- case can ask what a beggar wears (host "worn").
     function actor:EquipInventoryItem(wuid)

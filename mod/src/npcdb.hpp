@@ -184,6 +184,14 @@ struct Quest {
     std::string fast_travel_to;
     double fast_travel_at = -1.0;  // hours of the day, decimal; -1 for none written
     bool has_fast_travel() const { return !fast_travel_to.empty() && fast_travel_at >= 0; }
+    // The holder set down for the carry (`fast_travel_holder_to`, "x,y,z", a spot measured
+    // on his own road home in sight of the landing; README, "The holder set down at the
+    // gate", 15 Nov 2026): at 20:30 he is wherever his evening has him, two hundred metres
+    // off as often as not, and Henry lands with nobody to follow and no way to tell which
+    // of the street's dark figures is his. FastTravelHolder puts him on the spot as Henry
+    // lands and turns Henry's view to him, so the look hint (WatchLook) is up within the
+    // watch's tick; from there he goes on with his evening by himself. Optional.
+    std::string fast_travel_holder_to;
     // The holder turning on Henry in the street (notes.md 23 Oct 2026, n8): on his way to
     // the witness in the evening, the game's own perception of Henry (the graph's
     // PerceptionTrigger on him, reported to the Lua through a console line) is the
