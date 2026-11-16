@@ -503,6 +503,11 @@ constexpr int kHailMetres = 15;
 constexpr int kHailBubbleMetres = 25;
 constexpr int kHailAgainSeconds = 90;
 constexpr int kHailSeconds = 5;
+// With the shout goes the game's own "hold to look" hint (emit_leg, hailLook): "Look at
+// <giver>" at the lower right, Left Alt or LB held turning Henry's view to him. It is up
+// this many seconds, or until Henry has looked or taken the errand: long enough to find
+// the key after the shout has ended, short enough not to sit in the prompt slot.
+constexpr int kHailLookSeconds = 8;
 // A giver's household, for a quest with `welcome` (npcdb.hpp, kHouseholdMetres), carries
 // the game's `crime_trespass_expected` context from accept on, so Henry at their hearth is
 // a guest, not a trespasser: the preset the shipped expectedeffect module sets, and the

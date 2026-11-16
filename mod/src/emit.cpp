@@ -873,6 +873,10 @@ std::string hail_class(const Quest& quest) {
 
 std::string hail_name(const Quest& quest) { return "hail_" + quest_node(quest.id); }
 
+// The look hint's words, as the game writes its own ("Look at Victoria", "Look at
+// Christopher" in text_ui_misc.xml).
+std::string hail_look_text(const Quest& quest) { return "Look at " + quest.giver_name; }
+
 std::string follow_class(const Quest& quest) {
     // The followed token: the same shape under 46 (the letter F). Made by the Lua when it
     // judges a sighting the graph reported to be the holder catching Henry behind him on
@@ -1598,6 +1602,7 @@ struct LegOut {
     std::string assets_a;     // target, onward, keepsake
     std::string assets_b;     // brawlers
     std::string objectives;
+    std::string elements;     // the quest's <Elements>: the hail's look prompt
     std::string definitions;  // the holder's and the onward's files
     std::vector<std::string> in_ports, out_ports;
     std::vector<std::string> done_edges;  // Output edges, "<from> <to>"
@@ -2414,6 +2419,44 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Constant Name=\"OverrideContextSuppress\" Value=\"true\" />\r\n";
             s += t(5) + "<Edge From=\"hailed.OnAcquire\" To=\"Exec\" />\r\n";
             s += t(4) + "</Function>\r\n";
+            // Who is calling: the game's "hold to look" hint on the giver for a few seconds
+            // from the shout, the pair the shipped scenes use (viktorka's focus_camera_a_bark,
+            // the night battle's mrtvy_krystof; proven from a mod graph on a soul, behaviors.md
+            // section 10.4, run 23). The hold trigger puts its StartActionPrompt at the lower
+            // right while its state is on -- "Look at <giver>", Left Alt or LB -- and its
+            // IsPressed runs a FocusCamera on him, which steers Henry's own view and leaves
+            // it there. The limits are the game's module's (0.5,0.5: him in the middle of
+            // the screen; the node's default stops well short). Off again when the timer
+            // runs out, when the camera has him (OnEnter, the shipped "has looked") and when
+            // the errand is taken.
+            s += t(4) + "<State Name=\"hailLook\" TypeT=\"bool\">\r\n";
+            s += t(5) + "<Edge From=\"hailed.OnAcquire\" To=\"SetTrue\" />\r\n";
+            s += t(5) + "<Edge From=\"hailLookOver.OnFinished\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"hailLookCam.OnEnter\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetFalse\" />\r\n";
+            s += t(4) + "</State>\r\n";
+            s += t(4) + "<Timer Name=\"hailLookOver\">\r\n";
+            s += t(5) + "<Constant Name=\"Duration\" Value=\"" + std::to_string(kHailLookSeconds) + "s\" />\r\n";
+            s += t(5) + "<Constant Name=\"TimeType\" Value=\"GameTime\" />\r\n";
+            s += t(5) + "<Edge From=\"hailed.OnAcquire\" To=\"SetRunning\" />\r\n";
+            s += t(4) + "</Timer>\r\n";
+            s += t(4) + "<InfiniteHoldInteractionTrigger Name=\"hailLookHold\">\r\n";
+            s += t(5) + "<Constant Name=\"StartActionPrompt\" Value=\"" + xml_escape(quest_key(modid, quest.id, "look")) +
+                 "\" />\r\n";
+            s += t(5) + "<Edge From=\"hailLook.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</InfiniteHoldInteractionTrigger>\r\n";
+            s += t(4) + "<FocusCamera Name=\"hailLookCam\">\r\n";
+            s += t(5) + "<Asset Name=\"Target\" Alias=\"giver\" />\r\n";
+            s += t(5) + "<Constant Name=\"HorizontalLimits\" Value=\"0.5,0.5\" />\r\n";
+            s += t(5) + "<Constant Name=\"VerticalLimits\" Value=\"0.5,0.5\" />\r\n";
+            s += t(5) + "<Edge From=\"hailLookHold.IsPressed\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</FocusCamera>\r\n";
+            // The prompt's words, declared as the shipped quests declare theirs (the
+            // quest's <Elements>, after its <Text>).
+            out.elements += t(4) + "<ActionPromptElement>\r\n";
+            out.elements += t(5) + "<Text StringName=\"" + xml_escape(quest_key(modid, quest.id, "look")) + "\" Text=\"" +
+                            xml_escape(hail_look_text(quest)) + "\" />\r\n";
+            out.elements += t(4) + "</ActionPromptElement>\r\n";
         }
         if (named) {
             s += t(4) + "<State Name=\"naming\" TypeT=\"bool\">\r\n";
@@ -3419,6 +3462,11 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     // does, but it is the StringName that the game reads.
     s += t(3) + "<Text StringName=\"" + key("title") + "\" Text=\"" + xml_escape(head.name) +
          "\" />\r\n";
+    // The action prompts the graph names (the hail's "Look at <giver>"), where the shipped
+    // quests keep theirs: between the Text and the QuestName (morovyOblek.xml).
+    std::string elements;
+    for (const LegOut& leg : legs) elements += leg.elements;
+    if (!elements.empty()) s += t(3) + "<Elements>\r\n" + elements + t(3) + "</Elements>\r\n";
     s += t(3) + "<QuestName StringName=\"" + key("name") + "\" Text=\"" + xml_escape(head.name) +
          "\" />\r\n";
     s += t(3) + "<QuestDescription StringName=\"" + key("description") + "\" Text=\"" +
@@ -3517,6 +3565,8 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
     // The hail's words, for the bark's subtitle (emit_hail_dialogue).
     if (!quest.hail.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "hail"), quest.hail);
+        // And the look hint that goes up with it (emit_leg, hailLook).
+        rows.emplace_back(quest_key(modid, quest.id, "look"), hail_look_text(quest));
     }
     if (quest.is_ambush() && !quest.log_ambushed.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_ambushed"), quest.log_ambushed);
