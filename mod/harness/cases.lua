@@ -3165,9 +3165,9 @@ end)
 
 -- The giver's hail (notes.md 13 Oct 2026): Benesh calls Henry over while In the Stocks is
 -- unasked, once per approach, voiced, and put in his mouth as the game's bark by the
--- hail's token (notes.md 14 Oct 2026), the words on the HUD's narrative subtitle (the
--- conversation caption does not draw outside a dialogue); not in a conversation, and not
--- once the errand is taken up.
+-- hail's token (notes.md 14 Oct 2026), the words left to the bark's bubble over his head
+-- (15 Nov 2026: nothing of the mod's own draws them); not in a conversation, and not once
+-- the errand is taken up.
 case("Hail: a giver with a hail shouts it once when Henry comes near, and again only after he has been away", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.hail ~= nil and q.hailName ~= nil and q.hailVoice == "male", "In the Stocks has a hail, a name and a man's voice")
@@ -3187,34 +3187,33 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(M.voicedSoul == q.giver, "the shout's mouth is the giver's")
     check(E.find("BRIDGE quest token made", mark), "the hail's token made for the graph's bark, which turns him to Henry")
     check(M.Count(player, q.hailToken) == 1, "one of the hail's class in Henry's pocket")
-    -- The words come hailWordsMs after the token, past the bark's opening, which wipes the
-    -- narrative line; one put, since the widget keeps a line about hailSeconds on its own.
-    local function narrative(from)
+    -- The words are the engine's: the bark's bubble over his head, for the line's
+    -- ReferenceLength. The mod puts nothing on the HUD for a hail, neither the narrative
+    -- subtitle (which carried the words until 15 Nov 2026, low on the right of the screen)
+    -- nor the conversation caption.
+    local function drawn(from)
         local puts, hides, captioned = 0, 0, false
         for i = from + 1, #E.hud.calls do
             local name = E.hud.calls[i]
-            if name == "SetNarrativeSubtitles" and E.hud.args[i][1] == q.hailName .. ": " .. q.hail then puts = puts + 1 end
+            if name == "SetNarrativeSubtitles" then puts = puts + 1 end
             if name == "HideNarrativeSubtitles" then hides = hides + 1 end
             if name == "SetSubtitles" then captioned = true end
         end
         return puts, hides, captioned
     end
     local hudMark = #E.hud.calls
-    local puts, hides, captioned = narrative(0)
-    check(puts == 0, "the words not yet up with the token")
-    E.advance(M.hailWordsMs + 100)
-    puts, hides, captioned = narrative(0)
-    local n = #M.hudIds
-    check(puts == n and hides == 0, "one put (to each HUD instance) of the words after his name on the narrative subtitle, hailWordsMs on: the bark does not caption a line without a voice clip")
+    E.advance(800)
+    local puts, hides, captioned = drawn(hudMark)
+    check(puts == 0, "no narrative subtitle put for the hail: its words are the bark's bubble")
     check(not captioned, "the conversation caption left alone, it does not draw outside a dialogue")
-    -- Standing there, he is not hailed again; the token is gone a moment later and the
-    -- narrative subtitle hidden, with a fade, hailSeconds after the put, and not put again.
+    -- Standing there, he is not hailed again; the token is gone a moment later, and
+    -- nothing was put up that would want taking down.
     mark = E.mark()
     E.advance(M.hailSeconds * 1000 + 500)
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not hailed again on the spot")
     check(M.Count(player, q.hailToken) == 0, "the token gone again")
-    puts, hides = narrative(hudMark)
-    check(puts == n and hides == n, "the one put, then the one hide after hailSeconds")
+    puts, hides = drawn(hudMark)
+    check(puts == 0 and hides == 0, "and nothing put or hidden on the narrative subtitle in the seconds after")
     -- Off and back inside hailAgain: nothing; off and back after it: hailed again.
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(2100)
@@ -3242,18 +3241,12 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not hailed once accepted")
 end)
 
--- The shout's line taken down though a conversation opened on it (bugs.txt 28 Oct 2026:
+-- A narrative line taken down though a conversation opened on it (bugs.txt 28 Oct 2026:
 -- Christine's greeting stayed on the screen for minutes after the talk it opened): the
--- hide runs with a dialogue up, and Leave takes down a line the timer has not.
-case("Hail hide: the narrative line comes down after hailSeconds though a conversation has opened meanwhile, and a conversation's end takes down one still up", function(E, M, check)
-    local id, q = byName(M, "In the Stocks")
-    if q == nil or q.hail == nil then check(true, "no hail in this data"); return end
-    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
-    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
-    M.WatchArm("world")
-    local mark = E.mark()
-    E.advance(2100)
-    check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed")
+-- hide runs with a dialogue up, and Leave takes down a line the timer has not. The hail's
+-- own words are the bark's bubble now (15 Nov 2026), so the line here is one of those the
+-- narrative subtitle still carries, put the way they are (HailShow, no delay).
+case("Hail hide: a narrative line comes down after hailSeconds though a conversation has opened meanwhile, and a conversation's end takes down one still up", function(E, M, check)
     local function hides(from)
         local n = 0
         for i = from + 1, #E.hud.calls do
@@ -3262,8 +3255,12 @@ case("Hail hide: the narrative line comes down after hailSeconds though a conver
         return n
     end
     local hudMark = #E.hud.calls
-    E.advance(M.hailWordsMs + 100)
-    check(M.hailUp == true, "the line up")
+    M.HailShow("Best not be seen here.", "Henry", 0)
+    local put = false
+    for i = hudMark + 1, #E.hud.calls do
+        if E.hud.calls[i] == "SetNarrativeSubtitles" and E.hud.args[i][1] == "Henry: Best not be seen here." then put = true end
+    end
+    check(put and M.hailUp == true, "the line up, the words after the name")
     -- Henry presses Talk on him with the line up: a conversation is open when the hide
     -- comes due, and it hides all the same.
     M.active = true

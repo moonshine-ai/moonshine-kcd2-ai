@@ -210,6 +210,10 @@ constexpr const char* kSearchMarkName = "moonshine_sucked_egg";
 // can name it. The watch decides when (WatchHail) and tells the graph by a token of the
 // hail's class (hail_class) in Henry's pocket for a moment, the pray's channel; the graph's
 // ItemDescriptorTrigger on it, live while the quest is unasked, requests the monologue.
+// The request carries no ForceSubtitles, as the shipped barks' do not (a market seller's
+// shout, a guard's remark): that flag is the behaviour trees' `subtitlesDown`, the line at
+// the bottom of the screen in place of the bubble over the speaker's head (bark probe,
+// 15 Nov 2026).
 std::string hail_class(const Quest& quest);
 std::string hail_name(const Quest& quest);
 std::string hail_node(const std::string& quest_id);
@@ -489,13 +493,16 @@ constexpr int kTravelMoodMetres = 40;
 // A giver with a hail written (npc_quest_lines `hail`) shouts it when Henry is this near
 // with the errand unasked: shouting distance, far enough that he is calling Henry over
 // rather than greeting him. Not again until Henry has been twice that far off and this
-// many seconds have passed; the narrative subtitle holds the line this long (about what the
-// widget gives a line on its own). The words go up this many milliseconds after the bark
-// that turns him to Henry is started, since its opening wipes them (emit.cpp, WatchHail).
+// many seconds have passed. The words are the bark's own bubble over his head, which the
+// engine draws out to the dialogue's ChatBubblesDistance (its default,
+// wh_dlg_ChatBubblesDistance, is 12 m: short of the hail), so the hail's dialogue carries
+// kHailBubbleMetres, past kHailMetres with room for a step back while he speaks.
+// kHailSeconds is how long the narrative subtitle holds a line of the mod's other voices
+// (HailShow: Henry's asides, a holder's thanks), about what the widget gives one on its own.
 constexpr int kHailMetres = 15;
+constexpr int kHailBubbleMetres = 25;
 constexpr int kHailAgainSeconds = 90;
 constexpr int kHailSeconds = 5;
-constexpr int kHailWordsMs = 700;
 // A giver's household, for a quest with `welcome` (npcdb.hpp, kHouseholdMetres), carries
 // the game's `crime_trespass_expected` context from accept on, so Henry at their hearth is
 // a guest, not a trespasser: the preset the shipped expectedeffect module sets, and the

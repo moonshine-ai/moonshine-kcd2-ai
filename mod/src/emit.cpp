@@ -2380,9 +2380,13 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         // (WatchHail) by a token of the hail's class, the pray's channel, and the trigger on
         // it -- live while the quest is unasked, the hail's whole season -- requests the
         // one-line monologue q_<id>_hail.xml on him, the game's bark with our words: the
-        // subtitle over his head, the shape ambient-design/plan.md section 1.1 proved.
+        // bubble over his head, the shape ambient-design/plan.md section 1.1 proved.
         // OverrideContextSuppress, since a routine's gossip context suppresses barks
-        // otherwise; CanBeDelayed, so a soul mid-sentence finishes first.
+        // otherwise; CanBeDelayed, so a soul mid-sentence finishes first. No ForceSubtitles:
+        // it is the trees' `subtitlesDown`, which moves the words from the bubble to the
+        // bottom of the screen, and until 15 Nov 2026 the hail asked for it (bark probe on
+        // wl1, Benesh at 4 m: with it the engine's subtitle low in the middle, without it
+        // HUD bubble1 up over his head for the line's whole ReferenceLength, no clip needed).
         if (!quest.hail.empty()) {
             // The dialogue is a node of the graph, as the shipped shouts have it (the
             // DialogWrapper of mlynaruvUcen's pacholek_krici_u_mlyna lists the Dialog's
@@ -2407,7 +2411,6 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Asset Name=\"Souls\" Alias=\"giver\" />\r\n";
             s += t(5) + "<Constant Name=\"DecisionAlias\" Value=\"" + xml_escape(hail_alias(modid, quest.id)) + "\" />\r\n";
             s += t(5) + "<Constant Name=\"CanBeDelayed\" Value=\"true\" />\r\n";
-            s += t(5) + "<Constant Name=\"ForceSubtitles\" Value=\"true\" />\r\n";
             s += t(5) + "<Constant Name=\"OverrideContextSuppress\" Value=\"true\" />\r\n";
             s += t(5) + "<Edge From=\"hailed.OnAcquire\" To=\"Exec\" />\r\n";
             s += t(4) + "</Function>\r\n";
@@ -4804,8 +4807,11 @@ std::string emit_hail_dialogue(const std::string& modid, const Quest& quest) {
     // KOSTKAR_ZENA by the giver's gender -- so no role of the mod's own has to reach him.
     // The text row is the hail's own (quest_localization, `hail`), so the words on the
     // screen are the words the watch voices. No audio file is shipped under its name: the
-    // app's voice says the line (WatchHail), and the engine shows the subtitle for the
-    // words' length.
+    // app's voice says the line (WatchHail), and the engine holds the bubble over his head
+    // for the ReferenceLength below. ChatBubblesDistance is how far off the bubble is
+    // drawn (36 shipped dialogues set it, 5 to 150); without it the engine's 12 m stands,
+    // and a hail made at kHailMetres drew nothing (bark probe, 15 Nov 2026: Benesh at 14 m,
+    // no bubble without the attribute, one with it).
     if (quest.hail.empty()) {
         throw std::runtime_error("quest " + quest.id + " has no hail");
     }
@@ -4816,7 +4822,8 @@ std::string emit_hail_dialogue(const std::string& modid, const Quest& quest) {
     s += t(2) + "<Dialog Name=\"" + node + "\">\r\n";
     s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (hail)") + "\" />\r\n";
     s += t(3) + "<Dialogue Type=\"ingame monolog\" TechnicalStatus=\"Enabled\" Hearing=\"35\" Initiator=\"NonPlayer\" "
-                "ClashPriority=\"Crime\" GesturesNotNeeded=\"true\">\r\n";
+                "ClashPriority=\"Crime\" GesturesNotNeeded=\"true\" ChatBubblesDistance=\"" +
+         std::to_string(kHailBubbleMetres) + "\">\r\n";
     s += t(4) + "<Decision Name=\"dec1\" Priority=\"General\" Included=\"true\" Autoselect=\"true\" Alias=\"" +
          xml_escape(hail_alias(modid, quest.id)) + "\">\r\n";
     s += t(5) + "<Sequences>\r\n";
@@ -12782,17 +12789,15 @@ std::string emit_conversation_lua(const std::string& modid,
     // `BRIDGE voice` line, as it does any line, a token of the hail's class goes in Henry's
     // pocket for a moment, which the graph's trigger turns into a RequestMonologue of
     // q_<id>_hail.xml on him: the game's own bark channel, which turns him to Henry and
-    // holds him as speaking for the line's ReferenceLength. It does not caption the line:
-    // a bark's words are drawn for as long as its voice clip plays, and a line the mod
-    // writes has no clip the game will find (hail_probe2/3, 14 Oct 2026, twelve runs: the
-    // monologue ran each time, IsInDialog rising within a frame of the token, and no words
-    // came, with or without a silent ogg under every folder the shipped voice paks use and
-    // with a shipped line's StringName in place of ours), so the narrative subtitle keeps
-    // the words (HailShow), put up hailWordsMs after the token rather than with it: the
-    // monologue's opening wipes whatever the narrative line held (hail_run28, 14 Oct 2026:
-    // one put, the words up until the token landed and gone in the same burst), while a
-    // put made once it is open draws and stays until it closes (runs 18, 20, 21: the words
-    // in every shot while IsInDialog held, none after). Then not again until Henry has
+    // holds him as speaking for the line's ReferenceLength, with the words in the bark's
+    // bubble over his head for as long: no clip is needed for them, and nothing else of the
+    // mod's draws them. (Until 15 Nov 2026 the request forced the subtitle down and the
+    // narrative subtitle carried the words as well, on the reading of hail_probe2/3, 14 Oct
+    // 2026, that a line without a voice clip is not captioned; the bark probe of 15 Nov,
+    // which polled the HUD's bubble clips instead of trusting the screenshots' timing, has
+    // bubble1 up from the token to the end of IsInDialog, with a clip and without.) A
+    // player with the game's bark subtitles off (wh_ui_BubblesEnabled) sees no words, as
+    // with any bark, and hears the voice. Then not again until Henry has
     // gone off (twice hailMetres) and hailAgain seconds have passed, so a player who
     // stands about is hailed once, not every two seconds. Stopping what he is doing is not
     // here: the game's behaviour tree owns the body, and the probes
@@ -12801,7 +12806,6 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".hailMetres = " + std::to_string(kHailMetres) + "\n";
     s += g + ".hailAgain = " + std::to_string(kHailAgainSeconds) + "\n";
     s += g + ".hailSeconds = " + std::to_string(kHailSeconds) + "\n";
-    s += g + ".hailWordsMs = " + std::to_string(kHailWordsMs) + "\n";
     s += g + ".hailed = {}\n";
     s += g + ".hailGen = 0\n";
     s += "function " + g + ".WatchHail(id, q, pp)\n";
@@ -12832,10 +12836,11 @@ std::string emit_conversation_lua(const std::string& modid,
     // it the mouth was armed and found no entity (14 Oct 2026).
     s += "\t" + g + ".Voice(q.hailVoice or \"male\", q.hail, q.giver)\n";
     s += "\tif q.hailToken ~= nil then " + g + ".Token(q, q.hailToken) end\n";
-    s += "\t" + g + ".HailShow(q.hail, q.hailName or \"\", q.hailToken ~= nil and " + g + ".hailWordsMs or 0)\n";
     s += "end\n";
     s += "\n";
-    // The hail's words on the screen: the HUD's narrative subtitle (SetNarrativeSubtitles,
+    // A line of the mod's own on the screen outside a conversation (Henry's asides, a
+    // holder's thanks, a beggar's; not the giver's hail, whose words are its bark's bubble
+    // since 15 Nov 2026): the HUD's narrative subtitle (SetNarrativeSubtitles,
     // the big period-font line the game uses for a narrator outside a conversation), as
     // "<name>: <words>", layout 0 (a block low on the right; layout 2 is one wide line
     // that runs off the screen, 1 and 3 draw nothing). The conversation caption
@@ -12850,9 +12855,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // run: a single put, gone between 4.5 and 5.5 s; the same words put back every 400 ms
     // for eight seconds, taken down or not first, gone at the same moment; the mod's
     // earlier loop, gone a little sooner), so hailSeconds is what the widget gives and the
-    // hide is for tidiness. The delay is for the bark: its opening wipes the line (WatchHail
-    // above). A UI without the function (an older HUD) is left alone: the pcall fails
-    // quietly and the voice is all there is.
+    // hide is for tidiness. The delay is for a caller with a bark of the game's opening at
+    // the same moment, which wipes the line (hail_run28, 14 Oct 2026); none passes one now.
+    // A UI without the function (an older HUD) is left alone: the pcall fails quietly and
+    // the voice is all there is.
     //
     // The hide is owed whether or not a conversation is open by then: until 28 Oct 2026 it
     // stood down when one was (`active`, so as to leave the HUD to the dialogue), and
