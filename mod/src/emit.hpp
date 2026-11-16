@@ -235,6 +235,20 @@ std::string mark_shown_name(const Quest& quest);
 std::string mark_hidden_class(const Quest& quest);
 std::string mark_hidden_name(const Quest& quest);
 
+// A street night's look hint (has_follow; chat 15 Nov 2026: "the same hint is shown when the
+// priest comes into view, and remains as long as we're actively following him"). The game's
+// hold-to-look prompt, as the hail has it (kHailLookSeconds below), on the holder: "Look at
+// <holder>" at the lower right, Left Alt or LB held keeping Henry's view on him as he
+// walks. The Lua says when (WatchLook) by two more tokens of the marker's shape: on when
+// the holder on his walk home is first before Henry's eyes within kFollowLookMetres (InView,
+// the warning's test), and off when the following is over -- he has turned on Henry, gone
+// in, the hours are out, the errand has moved on, or Henry has let him get
+// kFollowLookLostMetres ahead. Unlike the hail's, it stays up after Henry has looked.
+std::string look_on_class(const Quest& quest);
+std::string look_on_name(const Quest& quest);
+std::string look_off_class(const Quest& quest);
+std::string look_off_name(const Quest& quest);
+
 // The giver's marker gate (bugs.txt 7 Nov 2026): while the errand is still to be taken,
 // the QuestGiver marker on him is off the map when he stands where Henry would be
 // trespassing to reach him, by the game's own rule (AI/crime/determineTrespassReaction.xml:
@@ -454,6 +468,13 @@ constexpr double kFollowHearMetres = 4.0;
 constexpr double kFollowConeDegrees = 120.0;
 constexpr double kFollowEyeMetres = 1.6;
 constexpr double kFollowWarnMetres = 25.0;
+// The look hint on the walking holder (look_on_class, above): up once he is before Henry's
+// eyes this near -- further than the warning, since at night the hint is what finds him --
+// and down again when Henry has fallen this far behind. The gap between the two keeps a
+// man at the edge from flickering the prompt, and is room to hang back out of his sight
+// (kFollowSeeMetres) without losing it.
+constexpr double kFollowLookMetres = 40.0;
+constexpr double kFollowLookLostMetres = 60.0;
 // A beggar's thanks for a garment, barked in his stand-in voice once the game's item
 // selection has given it to him (AlmsDress): the conversation closed on the row that
 // offered it, so the app is not there to say the line, and the Lua says it instead.

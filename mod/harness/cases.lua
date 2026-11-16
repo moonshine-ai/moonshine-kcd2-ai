@@ -4156,6 +4156,112 @@ case("Marker: a followed holder's marker goes on him at his homecoming hour and 
     check(E.count(on, mark) == 3 and M.state.quests[id].marked == true, "on again the evening after")
 end)
 
+-- The street night's look hint (chat 15 Nov 2026): the game's hold-to-look prompt on the
+-- holder from the moment he is before Henry's eyes on his walk home, for as long as Henry
+-- is following him; each change one token for the graph's lookOn or lookOff trigger, the
+-- store remembering which the graph has.
+case("Look: a followed holder's look hint goes up when he is first before Henry's eyes on his walk and stays while Henry follows, round a corner too; down when Henry falls behind, when the man has turned on him, at the witness's side and out of the walk's hours, by one token each way", function(E, M, check)
+    local id, q = byExposure(M)
+    if id == nil or q.followHours == nil then check(true, "no followed lines in this data"); return end
+    check(q.lookOn == "6d6f6f6e-7368-5600-8000-" .. id and q.lookOff == "6d6f6f6e-7368-7600-8000-" .. id,
+          "the two tokens are the quest's own class under the V and v prefixes")
+    check(M.followLookMetres == 40 and M.followLookLostMetres == 60, "forty metres to come up, sixty to be lost")
+    local giver = E.soul(q.giver)
+    -- The holder in the street facing +y and standing (a man standing sees nobody, so no
+    -- night is lost here), the witness a hundred metres off, Henry behind him.
+    local priest = E.soul(q.target, { pos = { x = 400, y = 300, z = 10 } })
+    E.soul(q.seenWith, { pos = { x = 300, y = 301, z = 10 } })
+    local function henry(behind) player:SetWorldPos({ x = 400, y = 300 - behind, z = 10 }) end
+    M.npc = giver
+    M.QuestCommand(q.letterOf, "accept")
+    M.QuestCommand(q.letterOf, "wrote_200")
+    E.delivered(q.letterOf, "cursed")
+    M.QuestCommand(q.letterOf, "complete")
+    M.npc = giver
+    local on, off = "BRIDGE quest " .. id .. " look on " .. q.target, "BRIDGE quest " .. id .. " look off " .. q.target
+    -- By day, thirty metres behind him and in plain view: nothing.
+    E.hour = 12
+    henry(30)
+    local mark = E.mark()
+    M.QuestCommand(id, "accept")
+    E.advance(2100)
+    E.advance(2100)
+    check(not E.find(on, mark) and not E.find(off, mark) and M.state.quests[id].looking == nil, "nothing by day")
+    -- The walk's hour: too far, then near but out of Henry's frame, then a wall between.
+    E.hour = 20
+    henry(M.followLookMetres + 5)
+    E.advance(2100)
+    check(not E.find(on, mark), "not past forty metres")
+    henry(30)
+    E.framed = false
+    E.advance(2100)
+    check(not E.find(on, mark), "not with the man out of Henry's frame")
+    E.framed = true
+    E.walled = true
+    E.advance(2100)
+    check(not E.find(on, mark), "not through a wall")
+    -- Before his eyes: up, once, the token for the graph and the store. (The watch is on
+    -- its quick tick with the man this near, so the token's second and a half may be over
+    -- within the advance: the log's count of tokens made is what is read, and the pocket
+    -- only for its being empty afterwards.)
+    E.walled = false
+    local tokens = E.count("BRIDGE quest token made", mark)
+    E.advance(2100)
+    check(E.count(on, mark) == 1 and E.find(on .. " at 30.0m, in view", mark), "up once he is before Henry's eyes")
+    check(M.state.quests[id].looking == true, "in the store")
+    check(E.count("BRIDGE quest token made", mark) == tokens + 1, "one token for the graph")
+    E.advance(2100)
+    check(M.Count(player, q.lookOn) == 0 and M.Count(player, q.lookOff) == 0, "and gone a moment later")
+    -- Followed on: round a corner, Henry looking elsewhere, fifty metres back -- it stays.
+    E.walled = true
+    E.framed = false
+    henry(50)
+    E.advance(2100)
+    E.advance(2100)
+    check(E.count(on, mark) == 1 and not E.find(off, mark), "it stays while Henry follows, in view or not")
+    -- Lost: past sixty metres it comes down, once.
+    henry(M.followLookLostMetres + 5)
+    E.advance(2100)
+    check(E.count(off, mark) == 1 and M.state.quests[id].looking == false, "down when Henry has fallen behind")
+    check(E.count("BRIDGE quest token made", mark) == tokens + 2, "one token for that too")
+    E.advance(2100)
+    check(M.Count(player, q.lookOff) == 0 and E.count(off, mark) == 1 and E.count("BRIDGE quest token made", mark) == tokens + 2,
+          "and gone, no second token")
+    -- Near again but still round the corner: not until he is seen again.
+    henry(30)
+    E.advance(2100)
+    check(E.count(on, mark) == 1, "not back until he is before Henry's eyes again")
+    E.walled = false
+    E.framed = true
+    E.advance(2100)
+    check(E.count(on, mark) == 2, "up again once he is")
+    -- He turns on Henry: the night is his, and the hint comes down.
+    M.StateQuest(id, "followed")
+    E.advance(2100)
+    check(E.count(off, mark) == 2 and M.state.quests[id].looking == false, "down when he has turned on Henry")
+    E.advance(2100)
+    check(E.count(on, mark) == 2, "and not back while the night is his")
+    M.StateQuest(id, "unfollowed")
+    E.advance(2100)
+    check(E.count(on, mark) == 3, "another night, up again")
+    -- Out of the walk's hours: down.
+    E.hour = 12
+    E.advance(2100)
+    check(E.count(off, mark) == 3, "down out of the walk's hours")
+    E.hour = 20
+    E.advance(2100)
+    check(E.count(on, mark) == 4, "up again in them")
+    -- At the witness's side: the door's business, the following done.
+    priest:SetWorldPos({ x = 300, y = 300, z = 10 })
+    player:SetWorldPos({ x = 300, y = 260, z = 10 })
+    E.advance(2100)
+    check(E.count(off, mark) == 4, "down once he is at the witness's side")
+    E.advance(2100)
+    check(E.count(on, mark) == 4 and E.count(off, mark) == 4, "and it stays down there")
+    E.framed = true
+    E.walled = false
+end)
+
 -- The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing space"):
 -- while the errand is still to be taken, the labels under the giver are read each tick,
 -- and when he stands where Henry would trespass by the game's rule (private, no override,

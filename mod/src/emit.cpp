@@ -910,6 +910,30 @@ std::string mark_hidden_class(const Quest& quest) {
 
 std::string mark_hidden_name(const Quest& quest) { return "hidden_" + quest_node(quest.id); }
 
+std::string look_on_class(const Quest& quest) {
+    // The street night's look hint tokens (emit.hpp): the same shape under 56 (the letter V,
+    // the holder in view) for the hint put up and 76 (v) for it taken down. L and l are not
+    // free: the letters' classes begin 4c (letter_class_prefix). Made by the Lua's WatchLook.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-5600-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string look_on_name(const Quest& quest) { return "look_" + quest_node(quest.id); }
+
+std::string look_off_class(const Quest& quest) {
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-7600-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string look_off_name(const Quest& quest) { return "unlook_" + quest_node(quest.id); }
+
+// The hint's words on the holder, as the hail's on the giver (hail_look_text).
+std::string follow_look_text(const Quest& quest) { return "Look at " + quest.target_name; }
+
 std::string giver_closed_class(const Quest& quest) {
     // The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing
     // space"): the same shape under 43 (the letter C) for the giver gone where Henry may
@@ -2345,6 +2369,59 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
             s += t(5) + "<Edge From=\"marking.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            // The street night's look hint (emit.hpp look_on_class; chat 15 Nov 2026): the
+            // hail's pair (hailLookHold, hailLookCam above) on the holder, for as long as
+            // Henry is following him. The Lua's WatchLook makes the on token when the man on
+            // his walk is first before Henry's eyes and the off one when the following is
+            // over, the marker's two-token shape under the marker's own gate; his turning
+            // on Henry, the catching and the handover take it down here as well, in the
+            // same breath and not a tick later. No timer and no OnEnter edge, unlike the
+            // hail's: the prompt stays while he is followed, and the hold keeps the view on
+            // a man who is walking.
+            s += t(4) + "<Function Name=\"lookOnClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(look_on_class(quest)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"lookOn\">\r\n";
+            s += t(5) + "<Edge From=\"lookOnClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"marking.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            s += t(4) + "<Function Name=\"lookOffClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(look_off_class(quest)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"lookOff\">\r\n";
+            s += t(5) + "<Edge From=\"lookOffClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"marking.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            s += t(4) + "<State Name=\"followLook\" TypeT=\"bool\">\r\n";
+            s += t(5) + "<Edge From=\"lookOn.OnAcquire\" To=\"SetTrue\" />\r\n";
+            s += t(5) + "<Edge From=\"lookOff.OnAcquire\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"followed.OnAcquire\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"caught.OnAcquire\" To=\"SetFalse\" />\r\n";
+            s += t(5) + "<Edge From=\"holder.handover\" To=\"SetFalse\" />\r\n";
+            if (quest.has_bedside()) s += t(5) + "<Edge From=\"holder.denounced\" To=\"SetFalse\" />\r\n";
+            if (!quest.log_target_dead.empty()) s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
+            s += t(4) + "</State>\r\n";
+            s += t(4) + "<InfiniteHoldInteractionTrigger Name=\"followLookHold\">\r\n";
+            s += t(5) + "<Constant Name=\"StartActionPrompt\" Value=\"" +
+                 xml_escape(quest_key(modid, quest.id, "look_holder")) + "\" />\r\n";
+            s += t(5) + "<Edge From=\"followLook.State\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</InfiniteHoldInteractionTrigger>\r\n";
+            s += t(4) + "<FocusCamera Name=\"followLookCam\">\r\n";
+            s += t(5) + "<Asset Name=\"Target\" Alias=\"target\" />\r\n";
+            s += t(5) + "<Constant Name=\"HorizontalLimits\" Value=\"0.5,0.5\" />\r\n";
+            s += t(5) + "<Constant Name=\"VerticalLimits\" Value=\"0.5,0.5\" />\r\n";
+            s += t(5) + "<Edge From=\"followLookHold.IsPressed\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</FocusCamera>\r\n";
+            out.elements += t(4) + "<ActionPromptElement>\r\n";
+            out.elements += t(5) + "<Text StringName=\"" + xml_escape(quest_key(modid, quest.id, "look_holder")) +
+                            "\" Text=\"" + xml_escape(follow_look_text(quest)) + "\" />\r\n";
+            out.elements += t(4) + "</ActionPromptElement>\r\n";
         }
         if (written) {
             // Live from the accept until the token arrives, so a second writing (none is
@@ -3567,6 +3644,10 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
         rows.emplace_back(quest_key(modid, quest.id, "hail"), quest.hail);
         // And the look hint that goes up with it (emit_leg, hailLook).
         rows.emplace_back(quest_key(modid, quest.id, "look"), hail_look_text(quest));
+    }
+    // A street night's look hint on the holder (emit_leg, followLook).
+    if (quest.has_follow()) {
+        rows.emplace_back(quest_key(modid, quest.id, "look_holder"), follow_look_text(quest));
     }
     if (quest.is_ambush() && !quest.log_ambushed.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_ambushed"), quest.log_ambushed);
@@ -5248,9 +5329,12 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
              xml_escape(follow_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + name) + "\" />\r\n";
         // And the night's marker on him and off again (emit.hpp, mark_shown_class): two more
         // of the same row, made by the Lua as his hours come and go.
-        for (int i = 0; i < 2; ++i) {
-            const std::string mname = i == 0 ? mark_shown_name(*q) : mark_hidden_name(*q);
-            const std::string mclass = i == 0 ? mark_shown_class(*q) : mark_hidden_class(*q);
+        // And the look hint up and down (emit.hpp, look_on_class): two more again.
+        for (int i = 0; i < 4; ++i) {
+            const std::string mname = i == 0 ? mark_shown_name(*q) : i == 1 ? mark_hidden_name(*q)
+                                    : i == 2 ? look_on_name(*q) : look_off_name(*q);
+            const std::string mclass = i == 0 ? mark_shown_class(*q) : i == 1 ? mark_hidden_class(*q)
+                                     : i == 2 ? look_on_class(*q) : look_off_class(*q);
             s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
                  xml_escape(item_info_key(modid, mname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, mname)) +
                  "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
@@ -5384,6 +5468,10 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         rows.emplace_back(item_info_key(modid, mark_shown_name(q)), q.target_name + " is on his way for the night.");
         rows.emplace_back(item_ui_key(modid, mark_hidden_name(q)), "A night's end");
         rows.emplace_back(item_info_key(modid, mark_hidden_name(q)), q.target_name + "'s night is not to be watched.");
+        rows.emplace_back(item_ui_key(modid, look_on_name(q)), "A man ahead");
+        rows.emplace_back(item_info_key(modid, look_on_name(q)), q.target_name + " is in sight on his way.");
+        rows.emplace_back(item_ui_key(modid, look_off_name(q)), "A man lost");
+        rows.emplace_back(item_info_key(modid, look_off_name(q)), q.target_name + " is not being followed.");
     }
     for (const Quest& q : quests) {
         if (!q.is_seek()) continue;
@@ -6291,6 +6379,9 @@ std::string state_lua(const std::string& g) {
     // The street night's marker on him or off (WatchMarker; bugs.txt 28 Oct 2026).
     s += "\tif command == \"marked\" then facts.marked = true end\n";
     s += "\tif command == \"unmarked\" then facts.marked = false end\n";
+    // The street night's look hint up or down (WatchLook): what the graph's followLook has.
+    s += "\tif command == \"looking\" then facts.looking = true end\n";
+    s += "\tif command == \"unlooking\" then facts.looking = false end\n";
     // The giver's marker gate (WatchGiver): what the map has of the giver's marker before
     // the accept, hidden where he stands in a trespass area. Facts for a quest not yet
     // accepted carry no stage (QuestLine reads none without `accepted`), so the app sees
@@ -7832,6 +7923,9 @@ std::string emit_conversation_lua(const std::string& modid,
                 if (home < 0) home += 24;
                 s += ", markHours = { " + health_text(home) + ", " + std::to_string(q.hour_to) + " }, markShown = \"" +
                      lua_escape(mark_shown_class(q)) + "\", markHidden = \"" + lua_escape(mark_hidden_class(q)) + "\"";
+                // The look hint on him while Henry follows (WatchLook): the two tokens for the
+                // graph's lookOn/lookOff.
+                s += ", lookOn = \"" + lua_escape(look_on_class(q)) + "\", lookOff = \"" + lua_escape(look_off_class(q)) + "\"";
             }
         }
         if (q.has_fast_travel()) {
@@ -13301,6 +13395,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\ttp = e:GetWorldPos()\n";
     s += "\t\twp = w:GetWorldPos()\n";
     s += "\tend)\n";
+    // The look hint first, and with or without the two of them: a holder the level has
+    // let go of is not being followed, and the hint must come down for him too.
+    s += "\tif q.lookOn ~= nil then pcall(" + g + ".WatchLook, id, q, pp, tp, wp) end\n";
     s += "\tif tp == nil or wp == nil then return end\n";
     // The quick tick (emit.hpp kWatchQuickMs): the holder near Henry in the hours of the
     // door aside or the street, when a second's delay shows.
@@ -13595,6 +13692,40 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" marker \" .. (want and \"on\" or \"off\") .. \" \" .. q.target)\n";
     s += "\tpcall(" + g + ".StateQuest, id, want and \"marked\" or \"unmarked\")\n";
     s += "\t" + g + ".Token(q, want and q.markShown or q.markHidden)\n";
+    s += "end\n";
+    // The look hint on him while Henry follows (chat 15 Nov 2026; emit.hpp look_on_class).
+    // Following is the street's own business as WatchFollow has it: the errand on and the
+    // night neither caught, handed nor lost to him, the walk's hours, the holder out of
+    // doors and not yet at the witness's (the door's aside made, or him within
+    // enterWithMetres of her). Within that the hint goes up when he is first before
+    // Henry's eyes inside followLookMetres (InView: his head in the frame, nothing between
+    // them) and then stays, in view or round a corner, until Henry is followLookLostMetres
+    // behind or the following is over. The store's `looking` says what the graph's
+    // followLook has, and one token goes when the two differ, as the marker's do.
+    s += g + ".followLookMetres = " + health_text(kFollowLookMetres) + "\n";
+    s += g + ".followLookLostMetres = " + health_text(kFollowLookLostMetres) + "\n";
+    s += "function " + g + ".WatchLook(id, q, pp, tp, wp)\n";
+    s += "\tif q.lookOn == nil or q.lookOff == nil or q.followHours == nil then return end\n";
+    s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\tlocal has = (f.looking == true)\n";
+    s += "\tlocal want, d, why = false, nil, \"\"\n";
+    s += "\tif tp ~= nil and wp ~= nil and f.accepted and not (f.done or f.handed or f.seen or f.followed)\n";
+    s += "\t\t\tand " + g + ".HourIn(q.followHours) and not " + g + ".entered[id]\n";
+    s += "\t\t\tand " + g + ".Indoors(tp) ~= true and " + g + ".HomeGap(q, tp, wp) > " + g + ".enterWithMetres then\n";
+    s += "\t\td = math.sqrt((pp.x - tp.x) ^ 2 + (pp.y - tp.y) ^ 2)\n";
+    s += "\t\tif has then\n";
+    s += "\t\t\twant = d <= " + g + ".followLookLostMetres\n";
+    s += "\t\telseif d <= " + g + ".followLookMetres then\n";
+    s += "\t\t\tlocal e = nil\n";
+    s += "\t\t\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\t\t\tif e ~= nil then want, why = " + g + ".InView(e, tp, pp) end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif want == has then return end\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" look \" .. (want and \"on\" or \"off\") .. \" \" .. q.target\n";
+    s += "\t\t.. (d ~= nil and string.format(\" at %.1fm\", d) or \"\") .. (want and (\", \" .. tostring(why)) or \"\"))\n";
+    s += "\tpcall(" + g + ".StateQuest, id, want and \"looking\" or \"unlooking\")\n";
+    s += "\t" + g + ".Token(q, want and q.lookOn or q.lookOff)\n";
     s += "end\n";
     // The giver's marker gate (bugs.txt 7 Nov 2026, "Shield off when in trespassing space";
     // emit.hpp giver_closed_class). While the errand is still to be taken, the labels under
