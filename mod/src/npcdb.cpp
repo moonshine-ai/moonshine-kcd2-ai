@@ -53,7 +53,7 @@ std::vector<Persona> read_personas(const std::string& db_path, const Filter& fil
 
     std::string sql =
         "SELECT n.soul_name, g.full_name, g.household_key, n.gender, COALESCE(n.is_named, 0), "
-        "COALESCE(n.occupation, '') "
+        "COALESCE(n.occupation, ''), n.soul_id, COALESCE(n.region, '') "
         "FROM generated_name g JOIN npc n USING (soul_id) ";
 
     // Filters are ANDed, and every value is bound in the order the clauses were
@@ -104,6 +104,8 @@ std::vector<Persona> read_personas(const std::string& db_path, const Filter& fil
         p.gender = text(3);
         p.game_named = sqlite3_column_int(stmt.get(), 4) != 0;
         p.beggar = text(5) == "beggar";
+        p.soul_guid = text(6);
+        p.level = level_for_region(text(7));
         if (!p.soul_name.empty() && !p.full_name.empty()) {
             out.push_back(std::move(p));
         }

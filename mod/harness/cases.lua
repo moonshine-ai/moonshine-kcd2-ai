@@ -17,6 +17,31 @@ local cases = {}
 local order = {}
 local function case(name, fn) cases[name] = fn; order[#order + 1] = name end
 
+-- Henry to himself (chat 16 Nov 2026, "standardize how Henry talks to himself"): SelfTalk
+-- says the line in his voice and makes the token of that line's class for the graph's
+-- bark on him, the game's subtitle over the health bar; nothing of his goes on the
+-- narrative line, where these lines were until then ("Henry: ...", low on the right).
+-- barked: how many times that line's bark was asked for since the mark.
+local function barked(E, id, field, mark)
+    return E.count("BRIDGE quest " .. id .. " Henry to himself (" .. field .. ") for ", mark)
+end
+local function henryNarrated(E)
+    for i = 1, #E.hud.calls do
+        if E.hud.calls[i] == "SetNarrativeSubtitles" and tostring(E.hud.args[i][1]):sub(1, 7) == "Henry: " then return true end
+    end
+    return false
+end
+-- The same for anybody's line (chat 16 Nov 2026, "Please do switch those to head
+-- bubbles"): a holder's row said in the street and a beggar's thanks are barks of the
+-- speaker's own off a token, as a hail is, and the mod puts nothing on the narrative line
+-- at all. narrated: whether anything was put there since the HUD mark.
+local function narrated(E, from)
+    for i = (from or 0) + 1, #E.hud.calls do
+        if E.hud.calls[i] == "SetNarrativeSubtitles" then return true end
+    end
+    return false
+end
+
 local function byName(M, name)
     for id, q in pairs(M.quests) do if q.name == name then return id, q end end
     return nil
@@ -3049,6 +3074,7 @@ case("Alms: @alms clothes opens the game's item selection after the talk, and th
     -- Picked in the conversation: nothing opens while it is up.
     check(E.begin(npc), "the conversation opens")
     local mark = #E.lines
+    local hudMark = #E.hud.calls
     M.Directives("@alms clothes")
     check(E.find("BRIDGE alms clothes picker armed for " .. beggar, mark), "armed on the row")
     E.advance(2500)
@@ -3072,6 +3098,17 @@ case("Alms: @alms clothes opens the game's item selection after the talk, and th
     check(E.find("BRIDGE alms clothes " .. dearT .. " moved 1 to " .. beggar .. ", worn", mark), "logged")
     check(E.find("BRIDGE voice " .. M.beggars[beggar] .. " soul=" .. beggar .. " Oh... bless you, sir.", mark),
           "his thanks, in his voice, for the app to speak")
+    -- The words are the bubble over his head: the token that is this beggar's alone, for
+    -- his Level's bark on him; nothing on the HUD.
+    local thanksToken = M.thanksTokens[beggar]
+    check(thanksToken ~= nil and M.Count(player, thanksToken) == 1, "the thanks' token in Henry's pocket, this beggar's own")
+    for other, class in pairs(M.thanksTokens) do
+        if other ~= beggar then check(M.Count(player, class) == 0, "and nobody else's (" .. other .. ")") end
+    end
+    check(E.find("BRIDGE bubble over " .. beggar .. " (thanks for a garment)", mark), "and logged")
+    check(not narrated(E, hudMark), "nothing put on the narrative line")
+    E.advance(1600)
+    check(M.Count(player, thanksToken) == 0, "the token gone a moment later")
     check(player.OnInventoryItemUsed == nil and player.OnInventoryClosed == nil, "the callbacks came off his table")
     -- Walked out of: nothing moves, and that is said.
     mark = #E.lines
@@ -3209,7 +3246,7 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     -- Standing there, he is not hailed again; the token is gone a moment later, and
     -- nothing was put up that would want taking down.
     mark = E.mark()
-    E.advance(M.hailSeconds * 1000 + 500)
+    E.advance(5500)
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not hailed again on the spot")
     check(M.Count(player, q.hailToken) == 0, "the token gone again")
     puts, hides = drawn(hudMark)
@@ -3241,39 +3278,143 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not hailed once accepted")
 end)
 
--- A narrative line taken down though a conversation opened on it (bugs.txt 28 Oct 2026:
--- Christine's greeting stayed on the screen for minutes after the talk it opened): the
--- hide runs with a dialogue up, and Leave takes down a line the timer has not. The hail's
--- own words are the bark's bubble now (15 Nov 2026), so the line here is one of those the
--- narrative subtitle still carries, put the way they are (HailShow, no delay).
-case("Hail hide: a narrative line comes down after hailSeconds though a conversation has opened meanwhile, and a conversation's end takes down one still up", function(E, M, check)
-    local function hides(from)
-        local n = 0
-        for i = from + 1, #E.hud.calls do
-            if E.hud.calls[i] == "HideNarrativeSubtitles" then n = n + 1 end
+-- The mod's other bubbles (chat 16 Nov 2026: "Please do switch those to head bubbles"): a
+-- holder's row said in the street and a beggar's thanks for a garment were the last two
+-- lines on the HUD's narrative line ("<name>: ..." low on the right) and are barks of the
+-- speaker's own now, asked for by a token as a hail is. Bubble makes the token and draws
+-- nothing; the narrative line's put and hide (HailShow, HailHide) are gone with it, and
+-- with them the line a conversation could open on and leave standing (bugs.txt 28 Oct
+-- 2026, Christine's greeting).
+case("Bubbles: a holder's street row and a beggar's thanks each have a token of their own, Bubble makes it and logs who speaks, and nothing of the mod's goes on the narrative line", function(E, M, check)
+    check(M.HailShow == nil and M.HailHide == nil, "the narrative line's put and hide are gone")
+    -- Every street night has the row's token, the quest's own class under 42 (B).
+    local nights = 0
+    for id, q in pairs(M.quests) do
+        if q.followedLine ~= nil and q.followedLine ~= "" then
+            nights = nights + 1
+            check(q.streetToken == "6d6f6f6e-7368-4200-8000-" .. id, id .. " has the row's token")
+        else
+            check(q.streetToken == nil, id .. " has no row and no token")
         end
-        return n
     end
-    local hudMark = #E.hud.calls
-    M.HailShow("Best not be seen here.", "Henry", 0)
-    local put = false
-    for i = hudMark + 1, #E.hud.calls do
-        if E.hud.calls[i] == "SetNarrativeSubtitles" and E.hud.args[i][1] == "Henry: Best not be seen here." then put = true end
+    check(nights > 0, "a street night to try: " .. nights)
+    -- A beggar's thanks: a token for each beggar and nobody else, no quest's, no two alike
+    -- (his Level names him by it: the dialogue's own word on who spoke last names nobody
+    -- once the talk has closed, which is when a garment is given).
+    local beggars, seen, one, another = 0, {}, nil, nil
+    for name in pairs(M.beggars) do
+        beggars = beggars + 1
+        local class = M.thanksTokens[name]
+        check(type(class) == "string" and class:match("^6d6f6f6e%-7368%-5400%-8000%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil,
+              name .. " has a token of the thanks' shape: " .. tostring(class))
+        check(seen[class] == nil, name .. "'s token is his alone (also " .. tostring(seen[class]) .. "'s)")
+        seen[class] = name
+        if one == nil then one = name elseif another == nil then another = name end
     end
-    check(put and M.hailUp == true, "the line up, the words after the name")
-    -- Henry presses Talk on him with the line up: a conversation is open when the hide
-    -- comes due, and it hides all the same.
+    check(beggars > 1, "beggars to thank Henry: " .. beggars)
+    for name in pairs(M.thanksTokens) do check(M.beggars[name] ~= nil, name .. " with a token is a beggar") end
+    -- Bubble: the token made and gone, who and why in the log, nothing on the HUD.
+    local mark, hudMark = E.mark(), #E.hud.calls
+    check(M.Bubble(M.thanksTokens[one], one, "thanks for a garment") == true, "asked for")
+    check(M.Count(player, M.thanksTokens[one]) == 1 and M.Count(player, M.thanksTokens[another]) == 0, "his token alone")
+    check(E.find("BRIDGE bubble over " .. one .. " (thanks for a garment)", mark), "logged")
+    E.advance(1600)
+    check(M.Count(player, M.thanksTokens[one]) == 0, "gone a moment later")
+    -- No class for the line (a table from an older build): the voice alone, said so.
+    mark = E.mark()
+    check(M.Bubble(nil, "a_holder", "his row said in the street") == false, "no class, nothing asked")
+    check(E.find("BRIDGE bubble over a_holder (his row said in the street): no bark of it, the voice alone", mark), "and said so")
+    check(not E.find("BRIDGE quest token made", mark), "no token made")
+    -- A conversation's end has nothing of the kind to take down.
     M.active = true
-    E.advance(M.hailSeconds * 1000 + 500)
-    check(hides(hudMark) == #M.hudIds and M.hailUp == false, "hidden on time with a conversation open")
-    -- A line still up at a conversation's end goes with it.
-    hudMark = #E.hud.calls
-    M.hailUp = true
     M.Leave("the case")
-    check(M.active == false and hides(hudMark) == #M.hudIds and M.hailUp == false, "Leave takes a line still up down")
-    hudMark = #E.hud.calls
-    M.HailHide()
-    check(hides(hudMark) == 0, "and nothing twice")
+    E.advance(6000)
+    check(#E.hud.calls == hudMark or not narrated(E, hudMark), "nothing put on the narrative line throughout")
+end)
+
+-- Henry to himself (chat 16 Nov 2026: "standardize how Henry talks to himself ... the text
+-- appears just above the health bar, and I'd like to have all the places our mod triggers
+-- Henry to talk to himself to look the same"). Every line of his the quests carry has a
+-- token class of its own (the J family, 4a and the line's slot); SelfTalk voices the words
+-- and makes that token, off which the graph asks the engine for the line as his own bark;
+-- the mod draws nothing itself, on the narrative line or the conversation's caption.
+case("Self talk: each line Henry says to himself has its own token, SelfTalk voices it and makes the token, and nothing is put on the HUD", function(E, M, check)
+    local fields = { "enters", "followWarn", "followedReply", "followOver", "wake", "spotted", "discovered" }
+    local lines, classes = 0, {}
+    local ids = {}
+    for id in pairs(M.quests) do ids[#ids + 1] = id end
+    table.sort(ids)
+    local uncovered, shaped, twice = nil, true, nil
+    for _, id in ipairs(ids) do
+        local q = M.quests[id]
+        for _, f in ipairs(fields) do
+            -- followedReply is every holder's row; it is Henry's own line only on a street night.
+            local his = q[f] ~= nil and q[f] ~= "" and (f ~= "followedReply" or q.followToken ~= nil)
+            local class = q.asides ~= nil and q.asides[f] or nil
+            if his then
+                lines = lines + 1
+                if class == nil then uncovered = uncovered or (id .. " " .. f) end
+            end
+            if class ~= nil then
+                if not class:match("^6d6f6f6e%-7368%-4a%x%x%-8000%-%x+$") then shaped = false end
+                if classes[class] then twice = class end
+                classes[class] = true
+            end
+        end
+    end
+    check(lines > 0, "the data has lines of Henry's to himself: " .. lines)
+    check(uncovered == nil, "every one of them has a token: " .. tostring(uncovered))
+    check(shaped and twice == nil, "each of the J family and nobody else's")
+    -- One of them, said.
+    local id, q, field
+    for _, i in ipairs(ids) do
+        if M.quests[i].asides ~= nil and M.quests[i].asides.followWarn ~= nil then id, q, field = i, M.quests[i], "followWarn"; break end
+    end
+    if id == nil then check(true, "no street night in this data"); return end
+    local mark, hudMark = E.mark(), #E.hud.calls
+    local seconds = M.SelfTalk(id, q, field)
+    check(E.find("BRIDGE voice henry " .. q[field], mark), "the words in Henry's voice")
+    check(M.Count(player, q.asides[field]) == 1, "one of the line's class in his pocket, for the graph's bark")
+    check(seconds == math.max(M.selfMinSeconds, #q[field] / M.speakRate) and math.abs(M.selfUntil - M.Now() - seconds) < 0.01,
+          "the bark's length reckoned as the dialogue's ReferenceLength is: " .. tostring(seconds))
+    check(barked(E, id, field, mark) == 1, "and logged")
+    E.advance(1600)
+    check(M.Count(player, q.asides[field]) == 0, "the token gone a moment later")
+    E.advance(5000)
+    check(#E.hud.calls == hudMark, "nothing of the mod's put on the HUD, then or after")
+    -- A line with no words is nothing; one with no class of its own (a table from an
+    -- older build) is his voice alone.
+    mark = E.mark()
+    check(M.SelfTalk(id, q, "noSuchLine") == 0 and not E.find("BRIDGE voice henry", mark), "no words, nothing said")
+    local kept = q.asides
+    q.asides = nil
+    check(M.SelfTalk(id, q, field) == 0 and E.find("BRIDGE voice henry " .. q[field], mark)
+          and not E.find("BRIDGE quest token made", mark), "no class, his voice alone and no token")
+    q.asides = kept
+    -- A second line asked for while the first is up waits its turn in the engine (the
+    -- request's CanBeDelayed); the reckoning runs the two end to end.
+    E.advance(20000)
+    check(not M.SelfTalking(), "nothing of his up after a while")
+    local t = M.Now()
+    local a = M.SelfTalk(id, q, field)
+    local b = M.SelfTalk(id, q, "followedReply")
+    check(a > 0 and b > 0 and math.abs(M.selfUntil - t - a - b) < 0.01, "two lines a breath apart reckoned end to end")
+    -- The engine has Henry in a dialogue while a bark of his is up (wl1, 16 Nov 2026). To
+    -- the mod that is not a conversation -- outside the app's own, where the engine's
+    -- word stands -- and a caller about to want a real dialogue cuts the line short.
+    E.dialog.open = true
+    check(M.SelfTalking() and M.InDialog() == false, "his own bark is not a conversation")
+    M.active = true
+    check(M.InDialog() == true, "inside the app's conversation the engine's word stands")
+    M.active = false
+    mark = E.mark()
+    check(M.SelfHush("the case") == true and E.dialog.open == false and not M.SelfTalking(),
+          "cut short through InterruptDialogs, and he is no longer reckoned speaking")
+    check(E.find("BRIDGE Henry's own line cut short, the case", mark), "and logged")
+    check(M.SelfHush("again") == false and E.count("cut short", mark) == 1, "nothing to cut when he is not speaking")
+    E.dialog.open = true
+    check(M.InDialog() == true, "a dialogue with no line of his up is a conversation")
+    E.dialog.open = false
 end)
 
 case("Hail hours: a giver with a day written is not hailed outside it (asleep, at her supper), and is within it", function(E, M, check)
@@ -3846,15 +3987,16 @@ case("Enters: Henry remarks once a night, in the evening, when the holder has go
     player:SetWorldPos({ x = 320, y = 300, z = 10 })
     E.advance(2100)
     check(not E.find(said, mark), "not before the evening")
-    -- The evening, Henry in the street: the aside, in his voice and on the narrative line,
-    -- with the bed in the log.
+    -- The evening, Henry in the street: the aside, in his voice and as a bark of his own
+    -- (SelfTalk), with the bed in the log.
     E.hour = 21
     E.advance(2100)
     check(E.find(said, mark), "the holder seen going in")
     check(E.find("3.0m from the bed", mark), "measured to the bed")
     check(E.find("BRIDGE voice henry " .. q.enters, mark), "said in Henry's voice")
+    check(barked(E, id, "enters", mark) == 1 and not henryNarrated(E), "and asked for as his own bark, nothing on the narrative line")
     E.advance(4100)
-    check(E.count(said, mark) == 1, "once")
+    check(E.count(said, mark) == 1 and barked(E, id, "enters", mark) == 1, "once")
     check(not E.find("BRIDGE quest " .. id .. " caught", mark), "and no catching: Henry is not at the bedside")
     check(M.watchQuick == true, "the watch on its quick tick with him near Henry in the evening")
     -- Out to the yard and in again the same evening (the game's pathing leaves and comes
@@ -3881,7 +4023,7 @@ end)
 -- The street (notes.md 23 Oct 2026, n8; 24 Oct 2026): the watch looks for Henry through the
 -- holder's eyes each tick of the walk home -- the hours, the street, his facing, the
 -- distance, the ray between their eyes -- and a sighting is his night.
-case("Followed: the holder catching sight of Henry in the walk's hours in the street is his night: the store, the global, the token, his Talk asked for; not by day, not far, not behind him, not through a wall, not at her side, not standing still nor the tick after the engine set him down, not in the grace after the clock jumped; close counts from any side; over by morning; Henry's own words as the man first comes near and once he has turned on him", function(E, M, check)
+case("Followed: the holder catching sight of Henry in the walk's hours in the street is his night: the store, the global, the two stood face to face, the token for his forced dialogue; not by day, not far, not behind him, not through a wall, not at her side, not standing still nor the tick after the engine set him down, not in the grace after the clock jumped; close counts from any side; over by morning; Henry's own words as the man first comes near and once he has turned on him", function(E, M, check)
     local id, q = byExposure(M)
     if id == nil or q.followHours == nil then check(true, "no followed lines in this data"); return end
     check(q.followedVar ~= nil and q.followToken ~= nil and #q.followHours == 2, "the global, the token and the hours")
@@ -3948,8 +4090,9 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     if q.followWarn ~= nil then
         check(E.find(warned, mark) and E.find("in view", mark) and E.find("BRIDGE voice henry " .. q.followWarn, mark),
               "Henry's warning to himself once the man is before his eyes, in his voice")
+        check(barked(E, id, "followWarn", mark) == 1 and not henryNarrated(E), "as his own bark, nothing on the narrative line")
         walk(2100)
-        check(E.count(warned, mark) == 1, "the warning once")
+        check(E.count(warned, mark) == 1 and barked(E, id, "followWarn", mark) == 1, "the warning once")
     else
         check(not E.find(warned, mark), "no warning written")
     end
@@ -4002,25 +4145,65 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     check(M.state.quests[id].followed == true, "in the store")
     check(E.gvar(q.followedVar) == 1, "the global up for his Talk to open on him")
     check(M.Count(player, q.followToken) == 1, "the token in Henry's pocket for the graph")
-    check(not E.find("asks for the holder's Talk", mark), "the Talk not asked for in the same breath")
-    E.advance(2000)
-    check(E.find("BRIDGE quest " .. id .. " asks for the holder's Talk in the street", mark), "his Talk asked for a moment on")
-    check(E.find("RequestDialog ->", mark), "through RequestDialog on him")
+    -- The two stood for his dialogue before the token went (FollowFace; wl1 16 Nov 2026:
+    -- the engine takes a forced dialogue up only with the two at talking distance and
+    -- facing): the man set down a metre from Henry on the line between them and turned to
+    -- him, Henry's view turned to the man, Henry himself not moved.
+    do
+        local hp, tp, dir = player:GetWorldPos(), priest:GetWorldPos(), priest:GetDirectionVector()
+        check(M.followFaceMetres == 1 and M.followFaceMs == 1000, "a metre off, the turning kept up a second at most")
+        check(hp.x == 400 and hp.y == py + 10, "Henry where he stood")
+        check(math.abs(tp.x - 400) < 0.001 and math.abs(tp.y - (py + 9)) < 0.001, "the man a metre before Henry, on the line between them: "
+              .. tp.x .. " " .. tp.y)
+        check(math.abs(dir.x) < 0.001 and math.abs(dir.y - 1) < 0.001, "the man turned to Henry")
+        check(player.view ~= nil and math.abs(math.abs(player.view.z) - math.pi) < 0.001, "Henry's view turned to the man, south of him")
+        check(E.find("BRIDGE quest " .. id .. " holder set before Henry at 1.0m, from 10.0m", mark), "the setting down in the log")
+        -- His feet turn him back to his road: the turning is kept up, the setting down not repeated.
+        priest:SetDirectionVector({ x = 0, y = -1, z = 0 })
+        E.advance(M.followFaceTickMs + 10)
+        dir = priest:GetDirectionVector()
+        check(math.abs(dir.y - 1) < 0.001, "turned to Henry again a tick on")
+        E.advance(M.followFaceMs)
+        priest:SetDirectionVector({ x = 1, y = 0, z = 0 })
+        E.advance(M.followFaceTickMs * 4)
+        check(priest:GetDirectionVector().x == 1, "and left alone once the second is up")
+        check(E.count("BRIDGE quest " .. id .. " holder set before Henry", mark) == 1, "set down once")
+    end
+    local faced = M.followFaceTickMs + 10 + M.followFaceMs + M.followFaceTickMs * 4
+    -- The token is the asking (the graph's forced dialogue comes up off it, chat 16 Nov
+    -- 2026): the Lua asks the engine for nothing.
+    E.advance(2000 - faced)
+    check(not E.find("asks for the holder's Talk", mark) and not E.find("RequestDialog ->", mark),
+          "no Talk asked for by the Lua")
     check(M.Count(player, q.followToken) == 0, "the token gone again")
     check(not E.find("BRIDGE quest " .. id .. " caught", mark), "and no catching")
     -- Seen again the same night: nothing more.
     walk(2100)
     check(E.count(said, mark) == 1, "once a night")
-    -- The request only queued and no Talk opened (the harness's RequestDialog, like his
-    -- behaviour tree on 28 Oct 2026, opens nothing): the mod says the row itself, his line
-    -- in his voice with his mouth, Henry's answer once it has been read, then the night
-    -- given up; and the global comes down so a later Talk on him is his day's.
+    -- No dialogue came up (the harness has no graph; in the game, a forced dialogue the
+    -- engine never played): the mod says the row itself, his line in his voice with his
+    -- mouth, Henry's answer once it has been read, then the night given up; and the global
+    -- comes down so a later Talk on him is his day's.
     local rowSaid = "BRIDGE quest " .. id .. " holder's Talk never opened, the row said in the street"
-    check(not E.find(rowSaid, mark), "the request given its time first")
+    check(not E.find(rowSaid, mark), "the dialogue given its time first")
+    local streetHud = #E.hud.calls
     E.advance(M.followTalkWaitMs)
-    check(E.find(rowSaid, mark), "the row said by the mod after the request went unanswered")
+    check(E.find(rowSaid, mark), "the row said by the mod when no dialogue came up")
     check(E.find("BRIDGE voice " .. q.holderVoice .. " soul=" .. q.target .. " " .. q.followedLine, mark),
           "his line in his voice, his mouth")
+    -- The words are the bubble over his head: the row's token, for the graph's bark on him.
+    check(q.streetToken == "6d6f6f6e-7368-4200-8000-" .. id, "the row's token is the quest's own class under the bubble prefix")
+    check(E.find("BRIDGE bubble over " .. q.target .. " (his row said in the street)", mark), "the bubble asked for")
+    do
+        local at = nil
+        for i = 1, #E.lines do
+            if E.lines[i]:find("BRIDGE bubble over " .. q.target, 1, true) then at = i end
+        end
+        check(at ~= nil and E.lines[at + 1] ~= nil and E.lines[at + 1]:find("BRIDGE quest token made, have=1", 1, true) ~= nil,
+              "one of the row's class made in Henry's pocket")
+        check(M.Count(player, q.streetToken) == 0, "and gone again by now")
+    end
+    check(not narrated(E, streetHud), "nothing put on the narrative line")
     check(M.state.quests[id].followedSaid == true and E.gvar(q.followedVar) == 0, "the row noted, the global down")
     check(not E.find("BRIDGE voice henry " .. q.followedReply, mark), "Henry's answer not in the same breath")
     local waited = 0
@@ -4030,11 +4213,13 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     end
     check(E.find("BRIDGE voice henry " .. q.followedReply, mark) and waited >= (M.Reading(q.followedLine) - 5) * 1000,
           "Henry's answer once his line has been read")
+    check(barked(E, id, "followedReply", mark) == 1 and not henryNarrated(E), "his answer his own bark, not on the narrative line")
     local over = "BRIDGE quest " .. id .. " follow over"
     check(not E.find(over, mark), "the night not given up in the same breath")
     E.advance(M.followOverMillis + 100)
     if q.followOver ~= nil then
         check(E.find(over, mark) and E.find("BRIDGE voice henry " .. q.followOver, mark), "Henry gives the night up, in his voice")
+        check(barked(E, id, "followOver", mark) == 1 and not henryNarrated(E), "as his own bark, nothing on the narrative line")
     else
         check(not E.find(over, mark), "no word written for the night lost")
     end
@@ -4066,13 +4251,55 @@ case("Followed: the holder catching sight of Henry in the walk's hours in the st
     check(E.count(said, mark) == 1, "not in the grace after the clock jumped")
     check(E.find(held .. ", " .. q.target .. " at 3.0m, close, in the grace", mark), "held for the grace")
     E.advance(M.followGraceSeconds * 1000)
+    -- Henry in the middle of a line of his own as the man turns (his warning is a breath
+    -- before the sighting, as often as not): the engine has him in a dialogue for his own
+    -- bark, and the mod cuts the line short so the forced dialogue's coming up can be read.
+    local hm = E.mark()
+    M.SelfTalk(id, q, "enters")
+    E.dialog.open = true
     walk(2100)
+    check(E.find("BRIDGE Henry's own line cut short, he has turned on Henry", hm) and not M.SelfTalking(),
+          "a line Henry is saying to himself is cut short as the man turns on him")
+    check(E.dialog.open == false, "through InterruptDialogs")
     check(E.count(said, mark) == 2, "the next night is another, the grace over")
     check(E.find("3.0m, close", mark), "close behind him counts")
     if q.followWarn ~= nil then
         check(E.count(warned, mark) == 1 and E.count("BRIDGE voice henry " .. q.followWarn, mark) == 1,
               "the warning marked but not said over a sighting in the same tick")
     end
+    -- This night the graph's forced dialogue comes up off the token (chat 16 Nov 2026): the
+    -- Lua sees a dialogue on the screen and says nothing itself; the dialogue's exit script
+    -- (`open followed`) notes the row, takes the global down and has Henry give the night up
+    -- once the screen is his again.
+    local fm = E.mark()
+    local rowSaid2 = "BRIDGE quest " .. id .. " holder's Talk never opened, the row said in the street"
+    -- Close behind a man walking away: he was three metres up the street from Henry and
+    -- is a metre from him now, turned round to him.
+    do
+        local hp, tp, dir = player:GetWorldPos(), priest:GetWorldPos(), priest:GetDirectionVector()
+        check(math.abs(tp.y - hp.y - 1) < 0.001 and math.abs(tp.x - hp.x) < 0.001, "the man a metre before Henry, from three")
+        check(math.abs(dir.y + 1) < 0.001 and math.abs(dir.x) < 0.001, "turned round to Henry behind him")
+        check(player.view ~= nil and math.abs(player.view.z) < 0.001, "Henry's view to the man, north of him")
+    end
+    E.dialog.open = true
+    -- With the dialogue on the screen the turning stops: the engine has them.
+    priest:SetDirectionVector({ x = 1, y = 0, z = 0 })
+    E.advance(M.followFaceTickMs * 3)
+    check(priest:GetDirectionVector().x == 1, "no turning once the dialogue is up")
+    E.advance(M.followTalkWaitMs + 2000)
+    check(E.count("BRIDGE quest " .. id .. " holder's dialogue is up in the street", fm) == 1, "his dialogue seen up")
+    check(not E.find(rowSaid2, fm) and not E.find("BRIDGE voice " .. q.holderVoice .. " soul=" .. q.target .. " " .. q.followedLine, fm),
+          "the row not said by the mod over his dialogue")
+    check(M.state.quests[id].followedSaid == nil and E.gvar(q.followedVar) == 1, "the global up while it plays")
+    M.QuestStage(id, "open followed")
+    check(M.state.quests[id].followedSaid == true and E.gvar(q.followedVar) == 0, "the row noted as the dialogue closes, the global down")
+    E.dialog.open = false
+    E.advance(M.followOverMillis + 100)
+    if q.followOver ~= nil then
+        check(E.count("BRIDGE quest " .. id .. " follow over", fm) == 1, "Henry gives the night up after it")
+    end
+    E.advance(20000)
+    check(not E.find(rowSaid2, fm), "and the mod does not say the row after it")
     -- Something the graph has no business saying is logged and no more.
     mark = E.mark()
     M.GraphSaid("seen", "nobody", "short")
@@ -4377,8 +4604,22 @@ case("Bedside: the catching says Henry's waking line in his voice and asks for t
     local id, q, wrote, priest, mark = bedsideReady(E, M, check)
     if id == nil then check(true, "no bedside in this data"); return end
     check(E.find("BRIDGE voice henry " .. q.wake, mark), "the waking line said in Henry's voice")
+    check(barked(E, id, "wake", mark) == 1 and not henryNarrated(E), "and asked for as his own bark, nothing on the narrative line")
+    -- The door's line is not said in the same breath (Henry is at the bedside before he
+    -- was ever seen at the door): two barks of his asked for together are said end to end.
+    check(barked(E, id, "enters", mark) == 0 and E.find("BRIDGE quest " .. id .. " enters not said, Henry is at the bedside", mark),
+          "the door's line left unsaid with Henry at the bedside already")
     check(not E.find("asks for the holder's Talk", mark), "the Talk not asked for in the same breath")
-    E.advance(4000)
+    -- Not while his own line is up either: the engine has Henry in a dialogue for the
+    -- length of a bark of his (16 Nov 2026), and here it says so; the mod knows the bark
+    -- for his own, waits the line out, and asks then.
+    local line = math.max(M.selfMinSeconds, #q.wake / M.speakRate)
+    E.dialog.open = true
+    check(M.SelfTalking() and M.InDialog() == false, "his own bark is not a conversation to the mod")
+    E.advance(math.floor(line * 1000) - 2200)
+    check(not E.find("asks for the holder's Talk", mark), "nor while his line is still up, " .. string.format("%.1f", line) .. "s of it")
+    E.dialog.open = false
+    E.advance(2200 + M.selfSlackSeconds * 1000 + 300)
     check(E.find("BRIDGE quest " .. id .. " asks for the holder's Talk at the bedside", mark), "the Talk asked for after the line")
     check(E.find("RequestDialog ->", mark), "through RequestDialog on the holder")
 end)
@@ -4732,6 +4973,7 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     E.advance(2100)
     check(E.find("BRIDGE quest " .. id .. " cat spotted at point 1", mark), "the sighting logged")
     check(E.find("BRIDGE voice henry " .. tostring(q.spotted), mark), "said in Henry's voice")
+    check(barked(E, id, "spotted", mark) == 1 and not henryNarrated(E), "as his own bark, nothing on the narrative line")
     check(M.state.quests[id].spotted == true, "and kept in the store")
     E.advance(2100)
     check(E.count("BRIDGE voice henry " .. tostring(q.spotted), mark) == 1, "once")
@@ -4845,12 +5087,15 @@ case("Seek: the cat is made within hearing, calls, moves on as Henry closes, set
     E.advance(2100)
     check(M.state.quests[id].seen == true, "found, in the store")
     check(M.QuestFlagLetters(M.state.quests[id]) == "s", "the letter s, got " .. M.QuestFlagLetters(M.state.quests[id]))
-    check(E.count("BRIDGE quest token made", mark) == 1, "the token made")
-    -- And his aside at the find (bugs.txt 9 Nov 2026), once.
+    -- And his aside at the find (bugs.txt 9 Nov 2026), once: his voice, and a second token,
+    -- of the aside's own class, for his bark of it.
     check(q.discovered ~= nil and q.discovered ~= "", "the find's aside written")
+    check(E.count("BRIDGE quest token made", mark) == 2, "the find's token made, and the aside's")
     check(E.count("BRIDGE voice henry " .. tostring(q.discovered), mark) == 1, "said in Henry's voice at the find")
+    check(barked(E, id, "discovered", mark) == 1 and not henryNarrated(E), "as his own bark, nothing on the narrative line")
     E.advance(4100)
-    check(E.count("BRIDGE quest token made", mark) == 1, "once")
+    check(E.count("BRIDGE quest token made", mark) == 2, "once")
+    check(M.Count(player, q.asides.discovered) == 0, "the aside's token gone again")
     check(M.Count(player, q.token) == 0, "and gone again")
     -- A load sweeps the family; the next tick with Henry near makes them again at the spot.
     E.entities[name] = nil

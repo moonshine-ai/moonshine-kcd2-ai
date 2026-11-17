@@ -19,6 +19,12 @@ struct Persona {
     // npc.occupation is "beggar": the soul takes alms (food, a garment, groschen) from
     // Henry's pocket through the mod's @alms directive (behaviors.md 6.4).
     bool beggar = false;
+    // The soul's soul_id, which is what a Skald SoulAsset names in SharedSoulGuids, and the
+    // game level they live on (level_for_region of npc.region; "" for the event NPCs, who
+    // are nobody's level in particular). Read for the beggars' sake: each is named in his
+    // Level's graph so his thanks for a garment can be asked of him (emit.hpp, thanks_class).
+    std::string soul_guid;
+    std::string level;
 };
 
 // Filters are allowlists, applied together. All empty means "everything".
@@ -548,7 +554,7 @@ struct Quest {
     std::string spot_lift;
     // Henry to himself (bugs.txt 9 Nov 2026): `spotted` when the animal is first before his
     // eyes ("That's Maggie, is it? Let's see where she's off to"), `discovered` as he finds
-    // the litter. Said in his voice on the narrative line (WatchSeek). Optional.
+    // the litter. Said in his voice as barks of his own (WatchSeek, SelfTalk). Optional.
     std::string spotted, discovered;
     // A mind (kind "mind"): look in on the target `count` times, hours of game time apart.
     // The target's menu is his own: Henry's `check` and one reply per visit (the sequences

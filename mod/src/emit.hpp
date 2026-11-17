@@ -99,6 +99,23 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& quest);
 std::vector<std::pair<std::string, std::string>> holder_localization(const std::string& modid,
                                                                      const Quest& quest);
 
+// Data/Quests/<modid>/q_<id>_followed.xml -- the holder turning on Henry in the street
+// (npcdb.hpp has_follow), as the game's own forced dialogue: a ForcedDialog, the element 812
+// shipped quest files use for an NPC who stops the player and speaks first, enqueued in the
+// leg's graph by the followed token (emit_leg) with the holder as the one participant
+// beside the player and the two turned to each other. His `followed` line and Henry's
+// `followed_reply`, framed line by line as the holder's menu is, the same two text rows; the
+// exit is the Talk's own (`open followed`: the row noted, Henry's word on the night).
+// Chat 16 Nov 2026: "I didn't get a focused camera view when Ernest caught me watching him",
+// then "can you try the ForceDialog call please, since that would offer a more standard
+// experience". The Lua bind of that name (DialogModule.ForceDialog) is not it: either way
+// round it opens a letterboxed chooser of raw sequence ids -- the open-world surrender and
+// arrest dialogues, by their internal names -- with the holder walking on through it and the
+// game waiting for a pick (follow_force_probe.lua, twice on wl1). The graph node is how the
+// game itself forces a dialogue.
+std::string followed_node(const std::string& quest_id);
+std::string emit_followed_dialogue(const std::string& modid, const Quest& quest);
+
 // One beat of the dialogue graph that exists to fire a quest port. The app decides
 // when -- it writes "@quest <id> <command>" ahead of a turn's words -- and the Lua
 // turns that into the code below, which the graph Autoselects a sequence on, the
@@ -220,6 +237,87 @@ std::string hail_node(const std::string& quest_id);
 std::string hail_alias(const std::string& modid, const std::string& quest_id);
 std::string emit_hail_dialogue(const std::string& modid, const Quest& quest);
 
+// Henry talking to himself, as the game has him do it (chat 16 Nov 2026: "standardize how
+// Henry talks to himself ... the text appears just above the health bar, and I'd like to
+// have all the places our mod triggers Henry to talk to himself to look the same"). The
+// game's own is a bark on the player: at the map's edge, "Oof... I should go back." is
+// open_world/stavy_hrace_unavahlad/.../jindrich_narazil_na_level_barieru.xml, an `ingame
+// monolog` with a line of Henry's, and a quest's own (zakopanyZitrek's bark_po_smrti_mikuse)
+// is the same thing asked for by the graph, RequestMonologue on the alias `player` with
+// the decision's alias; the engine writes a player's bark as the plain subtitle, in white,
+// centred over the health bar, with no name before it. Until now the mod wrote these
+// lines itself on the HUD's narrative line ("Henry: ..." low on the right).
+//
+// So each line Henry says to himself is a bark of its own, made the hail's way: a
+// one-line dialogue q_<id>_self_<name>.xml under the role HENRY, a token class of its own
+// (the pray's shape under 4a, the letter J -- the game's files call him Jindrich -- with
+// the line's slot in the byte after it), and in the graph the trigger on that token and
+// the request it fires. The Lua's SelfTalk voices the words and makes the token; nothing
+// of the mod's is drawn. The trigger is live always (questState.None or not): when a line
+// is due is the Lua's to say, whatever the errand's state in the save.
+struct SelfLine {
+    int slot;            // fixed per kind of line, so a class means the same in every build
+    const char* field;   // the Lua table's field that holds the words (q.enters, q.wake...)
+    const char* name;    // its name in file names and string keys (self_<name>)
+    std::string text;
+};
+std::vector<SelfLine> self_lines(const Quest& quest);
+std::string self_class(const Quest& quest, int slot);
+std::string self_name(const Quest& quest, const SelfLine& line);
+std::string self_node(const std::string& quest_id, const SelfLine& line);
+std::string self_alias(const std::string& modid, const std::string& quest_id, const SelfLine& line);
+std::string emit_self_dialogue(const std::string& modid, const Quest& quest, const SelfLine& line);
+// How long the engine holds a line of his it has no clip of (the Response's ReferenceLength):
+// the app's speaking rate over the words (kCaptionSpeakRate), and never less than
+// kSelfMinSeconds. The Lua reckons the same (SelfTalk), to know when he has done.
+constexpr double kSelfMinSeconds = 1.5;
+// How long past that the Lua still counts him as speaking (SelfTalking): the token's road
+// to the graph and the bark's own start and end (measured 0.1 to 0.2 s over the length).
+constexpr double kSelfSlackSeconds = 0.5;
+double self_seconds(const std::string& text);
+
+// The other two lines the mod says outside a conversation, as head bubbles (chat 16 Nov
+// 2026: "Please do switch those to head bubbles"): a holder's `followed` row said in the
+// street when his forced dialogue never opened (FollowSaid), and a beggar's thanks for a
+// garment (AlmsDress). Both were on the HUD's narrative line ("<name>: ..." low on the
+// right) and are the hail's bark now: a one-line `ingame monolog` under the dice-game
+// role, with the hail's bubble distance and no ForceSubtitles, asked for by a token.
+//
+// The holder's is the hail's shape on the quest graph's `target`: q_<id>_street.xml, a
+// token class of its own (the pray's shape under 42, the letter B, for bubble), and in
+// the graph the trigger on it, live always as Henry's own lines' is, and the request.
+bool has_street_line(const Quest& quest);
+std::string street_class(const Quest& quest);
+std::string street_name(const Quest& quest);
+std::string street_node(const std::string& quest_id);
+std::string street_alias(const std::string& modid, const std::string& quest_id);
+std::string emit_street_dialogue(const std::string& modid, const Quest& quest);
+
+// A beggar has no graph of his own to name him, so his Level's does: every beggar who
+// lives on a level (Persona::level; the event beggars, who are nobody's level, in every
+// one) is a SoulAsset of that Level with a token class of his own (the pray's shape under
+// 54, the letter T, the tail the last twelve digits of his soul_id), a trigger on it in
+// Henry's pocket and the request for the bark, the hail's nodes once per beggar. The
+// dialogues are two per Level, a man's and a woman's (the role is by gender); the
+// decision's alias carries the Level's name, since each Level stands its own instance.
+// The words are kAlmsClothesThanks under one string key, and the tokens' inventory rows
+// share one name and one line of info.
+//
+// Naming him by the mod's own dialogue instead -- its node's output for the role it is
+// spoken through, `talk.MOONSHINE_SPEAKER`, which the shipped skill teachers' graph reads
+// the teacher off -- needed no list of beggars and did nothing: the garment is given
+// after his conversation has closed, and the output names nobody by then (the token made,
+// no thanks said, three times over; the same request with him named by an asset spoke at
+// once. README, "The last two lines off the narrative line", 16 Nov 2026).
+std::string thanks_class(const Persona& beggar);
+std::string thanks_name(const Persona& beggar);
+std::string thanks_asset(const Persona& beggar);
+bool thanks_in_level(const Persona& beggar, const std::string& level);
+std::string thanks_node(bool female);
+std::string thanks_alias(const std::string& modid, const std::string& level, bool female);
+std::string thanks_key(const std::string& modid);
+std::string emit_thanks_dialogue(const std::string& modid, const std::string& level, bool female);
+
 // A street night's marker (has_follow; bugs.txt 28 Oct 2026: "Ernest's map quest marker
 // only active when he's walking home to his love nest and for the night he's in bed, and
 // disable it if he discovers he's being followed"). The objective's marker is the one on
@@ -263,10 +361,12 @@ std::string giver_open_class(const Quest& quest);
 std::string giver_open_name(const Quest& quest);
 
 // Libs/Tables/item/item__<modid>.xml -- the mod's own item classes, for the things a
-// favour is about that the shipped tables have no carriable row for (a saw). Empty when
-// no quest names one, and then no file is written. The rows the inventory shows for them
-// go in the same localization table as everything else.
-std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests);
+// favour is about that the shipped tables have no carriable row for (a saw), and the
+// tokens the Lua tells the graph things by, a beggar's thanks among them (thanks_class:
+// one per beggar among `personas`, no quest's). Empty when there is nothing to write. The
+// rows the inventory shows for them go in the same localization table as everything else.
+std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests,
+                            const std::vector<Persona>& personas);
 std::vector<std::pair<std::string, std::string>> item_localization(const std::string& modid,
                                                                    const std::vector<Quest>& quests);
 
@@ -317,9 +417,12 @@ constexpr const char* kLevels[] = {"kutnohorsko", "trosecko", "klaster"};
 // giver lives on this level (Quest::level), at a quest per file, with the edges from the
 // dialogue's ports into them; quests of other levels are left out. Definition paths are
 // resolved against this file's directory, so they name <level>/<file>.xml from here.
+// The Level also stands the two dialogues of a beggar's thanks and, for each beggar among
+// `personas` who lives on it, the nodes that ask for them (thanks_class).
 std::string emit_quest_level(const std::string& modid,
                              const std::string& level,
                              const std::string& dialogue_name,
+                             const std::vector<Persona>& personas,
                              const std::vector<Quest>& quests);
 
 // Data/Quests/<modid>/q_<id>.xml -- one Micro quest in the shipped shape: a
@@ -492,14 +595,29 @@ constexpr const char* kAlmsClothesThanks = "Oh... bless you, sir. Let me put it 
 constexpr int kFollowOverMs = 2500;
 constexpr int kFollowRestHours = 11;
 constexpr int kFollowClearHours = 6;
-// The engine is asked for the holder's Talk this long after the Lua's verdict: time for him
-// to turn and the token to land.
+// The followed token is what brings his dialogue up (the graph's forced dialogue,
+// emit_followed_dialogue); the Lua looks this long after its verdict, and again
+// kFollowTalkWaitMs after that, for a dialogue on the screen.
 constexpr int kFollowTalkMs = 1500;
-// RequestDialog only queues; his behaviour tree runs it or sleeps through it (28 Oct 2026,
-// the user's log: `RequestDialog -> true` and no Talk, no line, no word to the player, and
-// the night lost all the same). If no dialogue is up this long after the request, the mod
-// says the row itself: his `followed` line in his voice on the narrative line, Henry's
-// reply, then `follow_over`, so a sighting is never silent.
+// The two stood for it (FollowFace; wl1, 16 Nov 2026, eighteen passes). The engine takes a
+// forced dialogue up only if, as it is enqueued, the two are at talking distance and turned
+// to each other; it does not wait for that. Facing each other at 2.7 m, the man walking up
+// to Henry: nothing. Henry behind him, or ten metres before him: nothing. The man 0.7 to
+// 0.9 m off and the two facing: up within half a second, every time. So the man is set
+// down kFollowFaceMetres from Henry, on the line between them, turned to him, and Henry's
+// view to the man, before the token is given; and the turning is kept up every
+// kFollowFaceTickMs until a dialogue is on the screen, kFollowFaceMs at most, since his
+// feet turn him back to his road.
+constexpr double kFollowFaceMetres = 1.0;
+constexpr int kFollowFaceMs = 1000;
+constexpr int kFollowFaceTickMs = 50;
+// The Lua used to ask for his Talk itself here (actor:RequestDialog), which only queues;
+// his behaviour tree ran it or slept through it (28 Oct 2026, the user's log:
+// `RequestDialog -> true` and no Talk, no line, no word to the player, and the night lost
+// all the same; 16 Nov 2026, the same in play and in two passes). If no dialogue is up by
+// the second look, the mod says the row itself: his `followed` line in his voice and in a
+// bubble over his head (street_class), Henry's reply, then `follow_over`, so a sighting is
+// never silent.
 constexpr int kFollowTalkWaitMs = 4000;
 // A sighting wants the holder *on his walk*: moved at least kFollowStepMetres since the
 // last tick (a man standing about catches nobody behind him), and not teleported -- a step
@@ -525,13 +643,13 @@ constexpr int kTravelMoodMetres = 40;
 // many seconds have passed. The words are the bark's own bubble over his head, which the
 // engine draws out to the dialogue's ChatBubblesDistance (its default,
 // wh_dlg_ChatBubblesDistance, is 12 m: short of the hail), so the hail's dialogue carries
-// kHailBubbleMetres, past kHailMetres with room for a step back while he speaks.
-// kHailSeconds is how long the narrative subtitle holds a line of the mod's other voices
-// (HailShow: Henry's asides, a holder's thanks), about what the widget gives one on its own.
+// kHailBubbleMetres, past kHailMetres with room for a step back while he speaks. The
+// mod's other bubbles (a holder's row said in the street, a beggar's thanks) carry the
+// same distance. Nothing of the mod's is on the HUD's narrative line any more: Henry's
+// own lines left it on 16 Nov 2026 (SelfLine) and those two the same day.
 constexpr int kHailMetres = 15;
 constexpr int kHailBubbleMetres = 25;
 constexpr int kHailAgainSeconds = 90;
-constexpr int kHailSeconds = 5;
 // With the shout goes the game's own "hold to look" hint (emit_leg, hailLook): "Look at
 // <giver>" at the lower right, Left Alt or LB held turning Henry's view to him. It is up
 // this many seconds, or until Henry has looked or taken the errand: long enough to find

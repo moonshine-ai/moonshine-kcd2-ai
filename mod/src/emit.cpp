@@ -828,6 +828,10 @@ std::string holder_node(const std::string& quest_id) {
     return quest_node(quest_id) + "_holder";
 }
 
+std::string followed_node(const std::string& quest_id) {
+    return quest_node(quest_id) + "_followed";
+}
+
 std::string token_class(const Quest& quest) {
     // A pray's token item class: a guid of the mod's own, made from the quest id (twelve
     // hex characters, which is the last group of a guid) under a fixed prefix, so it is
@@ -876,6 +880,57 @@ std::string hail_name(const Quest& quest) { return "hail_" + quest_node(quest.id
 // The look hint's words, as the game writes its own ("Look at Victoria", "Look at
 // Christopher" in text_ui_misc.xml).
 std::string hail_look_text(const Quest& quest) { return "Look at " + quest.giver_name; }
+
+bool has_street_line(const Quest& quest) { return quest.has_follow() && !quest.holder_followed.empty(); }
+
+std::string street_class(const Quest& quest) {
+    // The token of a holder's row said in the street as a bubble over his head (emit.hpp):
+    // the same shape under 42 (the letter B). Made by the Lua's FollowSaid.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4200-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string street_name(const Quest& quest) { return "street_" + quest_node(quest.id); }
+
+std::string street_node(const std::string& quest_id) { return quest_node(quest_id) + "_street"; }
+
+std::string thanks_class(const Persona& beggar) {
+    // The token of a beggar's thanks (emit.hpp): no quest's, so the tail is his own, the
+    // last twelve hex digits of his soul_id, under 54 (the letter T).
+    std::string hex;
+    for (const char c : beggar.soul_guid) {
+        if (std::isxdigit(static_cast<unsigned char>(c))) hex += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (hex.size() < 12) throw std::runtime_error("beggar " + beggar.soul_name + " has no soul_id to name him by");
+    return "6d6f6f6e-7368-5400-8000-" + hex.substr(hex.size() - 12);
+}
+
+std::string thanks_name(const Persona& beggar) {
+    // The token's item row and the stem of his nodes in the Level: the soul's own name,
+    // which the database keeps to letters, digits and underscores.
+    require_identifier(beggar.soul_name, "beggar's soul_name");
+    return "thanks_" + beggar.soul_name;
+}
+
+std::string thanks_asset(const Persona& beggar) {
+    require_identifier(beggar.soul_name, "beggar's soul_name");
+    return "alms_" + beggar.soul_name;
+}
+
+bool thanks_in_level(const Persona& beggar, const std::string& level) {
+    return beggar.beggar && (beggar.level.empty() || beggar.level == level);
+}
+
+std::string thanks_node(bool female) { return female ? "alms_thanks_f" : "alms_thanks_m"; }
+
+std::string thanks_alias(const std::string& modid, const std::string& level, bool female) {
+    require_identifier(level, "level");
+    return modid + "_" + level + "_alms_thanks_" + (female ? "f" : "m");
+}
+
+std::string thanks_key(const std::string& modid) { return modid + "_alms_thanks"; }
 
 std::string follow_class(const Quest& quest) {
     // The followed token: the same shape under 46 (the letter F). Made by the Lua when it
@@ -958,6 +1013,54 @@ std::string giver_open_class(const Quest& quest) {
 std::string giver_open_name(const Quest& quest) { return "open_" + quest_node(quest.id); }
 
 std::string hail_node(const std::string& quest_id) { return quest_node(quest_id) + "_hail"; }
+
+std::vector<SelfLine> self_lines(const Quest& quest) {
+    // Every line Henry says to himself in this quest, under the conditions the Lua table
+    // carries its words by (conversation_lua): the exposure's door, the street night's
+    // warning, answer and giving up, the bedside's waking, a seek's sighting and find.
+    std::vector<SelfLine> lines;
+    auto add = [&](int slot, const char* field, const char* name, const std::string& text) {
+        if (!text.empty()) lines.push_back({slot, field, name, text});
+    };
+    if (quest.has_expose()) {
+        add(1, "enters", "enters", quest.holder_enters);
+        if (quest.has_follow()) {
+            add(2, "followWarn", "follow_warn", quest.holder_follow_warn);
+            add(3, "followedReply", "followed_reply", quest.holder_followed_reply);
+            add(4, "followOver", "follow_over", quest.holder_follow_over);
+        }
+    }
+    if (quest.has_bedside()) add(5, "wake", "wake", quest.holder_wake);
+    if (quest.is_seek()) {
+        add(6, "spotted", "spotted", quest.spotted);
+        add(7, "discovered", "discovered", quest.discovered);
+    }
+    return lines;
+}
+
+std::string self_class(const Quest& quest, int slot) {
+    // The token of one of Henry's own lines (emit.hpp): the pray's shape under 4a (the
+    // letter J) with the line's slot in the byte after it, as a clue's has its holder.
+    require_identifier(quest.id, "quest id");
+    if (slot < 1 || slot > 255) throw std::runtime_error("quest " + quest.id + " self line slot out of range");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    char byte[3];
+    std::snprintf(byte, sizeof byte, "%02x", slot);
+    return "6d6f6f6e-7368-4a" + std::string(byte) + "-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string self_name(const Quest& quest, const SelfLine& line) {
+    return std::string("self_") + line.name + "_" + quest_node(quest.id);
+}
+
+std::string self_node(const std::string& quest_id, const SelfLine& line) {
+    return quest_node(quest_id) + "_self_" + line.name;
+}
+
+double self_seconds(const std::string& text) {
+    return std::max(kSelfMinSeconds, static_cast<double>(text.size()) / kCaptionSpeakRate);
+}
 
 std::string clue_class(const Quest& quest, std::size_t index) {
     // A clue-holder's asked token (emit.hpp): the same shape under 41 (the letter A), the
@@ -1404,6 +1507,7 @@ std::string emit_dialogue_project(const std::string& modid) {
 std::string emit_quest_level(const std::string& modid,
                              const std::string& level,
                              const std::string& dialogue_name,
+                             const std::vector<Persona>& personas,
                              const std::vector<Quest>& all_quests) {
     require_identifier(level, "level");
     // This level's quests only (Quest::level): a quest's graph belongs in the Level that is
@@ -1436,9 +1540,62 @@ std::string emit_quest_level(const std::string& modid,
     for (const QuestRun& run : runs) {
         s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + quest_node(run.legs.front()->id) + ".xml") + "\" />\r\n";
     }
+    for (const bool female : {false, true}) {
+        s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + thanks_node(female) + ".xml") + "\" />\r\n";
+    }
     s += "\t\t\t</Definitions>\r\n";
     s += "\t\t\t<Nodes>\r\n";
     s += "\t\t\t\t<" + dialogue_name + " Name=\"" + dialogue_name + "\" />\r\n";
+    // A beggar's thanks for a garment, in his own mouth (emit.hpp, thanks_class): the
+    // hail's nodes in the Level, since a beggar is in no quest's graph, once for each
+    // beggar who lives here -- his token's class, the trigger on it in Henry's pocket and
+    // the request, of him by an asset of his own. One dialogue for a man and one for a
+    // woman, the bark's role being by gender. The gate is a constant: a trigger with no
+    // IsActive edge never fired from a mod's graph (bark probe, 15 Nov 2026), and a Level
+    // has no quest state to hang one on.
+    std::vector<const Persona*> beggars;
+    {
+        std::set<std::string> classes;
+        for (const Persona& p : personas) {
+            if (!thanks_in_level(p, level)) continue;
+            if (!classes.insert(thanks_class(p)).second) {
+                throw std::runtime_error("two beggars share the thanks token " + thanks_class(p) + " (" + p.soul_name + ")");
+            }
+            beggars.push_back(&p);
+        }
+    }
+    s += "\t\t\t\t<ObjectProperties Name=\"almsPlayer\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+    s += "\t\t\t\t\t<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+    s += "\t\t\t\t</ObjectProperties>\r\n";
+    s += "\t\t\t\t<Function Name=\"almsAlways\" MethodName=\"math::boolean::Or\" DeclaringType=\"math::boolean\">\r\n";
+    s += "\t\t\t\t\t<Constant Name=\"A\" Value=\"true\" />\r\n";
+    s += "\t\t\t\t\t<Constant Name=\"B\" Value=\"true\" />\r\n";
+    s += "\t\t\t\t</Function>\r\n";
+    for (const bool female : {false, true}) {
+        s += "\t\t\t\t<" + thanks_node(female) + " Name=\"almsThanks" + (female ? "F" : "M") + "\" />\r\n";
+    }
+    for (const Persona* p : beggars) {
+        const std::string n = "_" + p->soul_name;
+        s += "\t\t\t\t<Function Name=\"almsClass" + n + "\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+             "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += "\t\t\t\t\t<Constant Name=\"ItemClass\" Value=\"" + xml_escape(thanks_class(*p)) + "\" />\r\n";
+        s += "\t\t\t\t\t<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += "\t\t\t\t</Function>\r\n";
+        s += "\t\t\t\t<ItemDescriptorTrigger Name=\"almsThanked" + n + "\">\r\n";
+        s += "\t\t\t\t\t<Edge From=\"almsClass" + n + ".ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += "\t\t\t\t\t<Edge From=\"almsPlayer.Inventory\" To=\"Inventory\" />\r\n";
+        s += "\t\t\t\t\t<Edge From=\"almsAlways.bool\" To=\"IsActive\" />\r\n";
+        s += "\t\t\t\t</ItemDescriptorTrigger>\r\n";
+        s += "\t\t\t\t<Function Name=\"almsBark" + n + "\" MethodName=\"wh::xgenaimodule::RequestMonologue\" "
+             "DeclaringType=\"wh::xgenaimodule\">\r\n";
+        s += "\t\t\t\t\t<Asset Name=\"Souls\" Alias=\"" + xml_escape(thanks_asset(*p)) + "\" />\r\n";
+        s += "\t\t\t\t\t<Constant Name=\"DecisionAlias\" Value=\"" +
+             xml_escape(thanks_alias(modid, level, p->gender == "female")) + "\" />\r\n";
+        s += "\t\t\t\t\t<Constant Name=\"CanBeDelayed\" Value=\"true\" />\r\n";
+        s += "\t\t\t\t\t<Constant Name=\"OverrideContextSuppress\" Value=\"true\" />\r\n";
+        s += "\t\t\t\t\t<Edge From=\"almsThanked" + n + ".OnAcquire\" To=\"Exec\" />\r\n";
+        s += "\t\t\t\t</Function>\r\n";
+    }
     // Every quest hangs off the one dialogue: an Edge from the port a sequence fires
     // to the In port of the quest it belongs to, the way a shipped Level wires its
     // dialogues into its quests. From is node.port, To is the port on this node.
@@ -1524,6 +1681,15 @@ std::string emit_quest_level(const std::string& modid,
     }
     for (const std::string& node : ors) s += node;
     s += "\t\t\t</Nodes>\r\n";
+    // Henry, for the thanks' triggers on his pocket (almsPlayer), and the beggars they
+    // are asked of.
+    s += "\t\t\t<Assets>\r\n";
+    s += "\t\t\t\t<SoulAsset Name=\"player\" SharedSoulGuids=\"" + std::string(kPlayerSoulGuid) + "\" />\r\n";
+    for (const Persona* p : beggars) {
+        s += "\t\t\t\t<SoulAsset Name=\"" + xml_escape(thanks_asset(*p)) + "\" SharedSoulGuids=\"" +
+             xml_escape(p->soul_guid) + "\" />\r\n";
+    }
+    s += "\t\t\t</Assets>\r\n";
     s += "\t\t</Level>\r\n";
     s += "\t</Skald>\r\n";
     s += "</Database>\r\n";
@@ -1722,12 +1888,21 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         ctx.multi ? out.complete_ports : std::vector<std::string>{"questState.OnDone"};
     const bool onward = quest.carries_on();
     if (holder) out.definitions += t(4) + "<Definition File=\"" + xml_escape(holder_node(quest.id) + ".xml") + "\" />\r\n";
+    if (quest.has_follow()) {
+        out.definitions += t(4) + "<Definition File=\"" + xml_escape(followed_node(quest.id) + ".xml") + "\" />\r\n";
+    }
     if (onward) out.definitions += t(4) + "<Definition File=\"" + xml_escape(onward_node(quest.id) + ".xml") + "\" />\r\n";
     if (quest.has_helper()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(helper_node(quest.id) + ".xml") + "\" />\r\n";
     }
     if (!quest.hail.empty()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(hail_node(quest.id) + ".xml") + "\" />\r\n";
+    }
+    for (const SelfLine& line : self_lines(quest)) {
+        out.definitions += t(4) + "<Definition File=\"" + xml_escape(self_node(quest.id, line) + ".xml") + "\" />\r\n";
+    }
+    if (has_street_line(quest)) {
+        out.definitions += t(4) + "<Definition File=\"" + xml_escape(street_node(quest.id) + ".xml") + "\" />\r\n";
     }
     const std::string rfo = " RequiredForOutput=\"" + xml_escape(quest.level) + "\"";
     std::string s;
@@ -2321,6 +2496,22 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
             s += t(5) + "<Edge From=\"watching.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            // And he turns on Henry with it (emit.hpp emit_followed_dialogue; chat 16 Nov
+            // 2026): the same token enqueues the leg's forced dialogue, the shipped shape
+            // (Quests/Testing/tv/dialog_basics/chat.xml's bohutafforced, and 856 files of
+            // the game's own): CreateDialogParams with the holder as the participant beside
+            // the player and the two turned to each other, its DialogParams and the trigger
+            // into the ForcedDialog's node. The engine stops him, takes the dialogue's
+            // camera and plays the row; nothing of it is asked for from the Lua.
+            s += t(4) + "<Function Name=\"followedParams\" MethodName=\"wh::dialogmodule::CreateDialogParams\" "
+                        "DeclaringType=\"wh::dialogmodule\">\r\n";
+            s += t(5) + "<Asset Name=\"Participants\" Alias=\"target\" />\r\n";
+            s += t(5) + "<Constant Name=\"RotateParticipants\" Value=\"true\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<" + followed_node(quest.id) + " Name=\"followedTalk\">\r\n";
+            s += t(5) + "<Edge From=\"followed.OnAcquire\" To=\"EnqueueDialogue\" />\r\n";
+            s += t(5) + "<Edge From=\"followedParams.DialogParams\" To=\"DialogParams\" />\r\n";
+            s += t(4) + "</" + followed_node(quest.id) + ">\r\n";
             s += t(4) + "<State Name=\"alerted\" TypeT=\"bool\">\r\n";
             s += t(5) + "<Edge From=\"followed.OnAcquire\" To=\"SetTrue\" />\r\n";
             s += t(5) + "<Edge From=\"followRest.OnFinished\" To=\"SetFalse\" />\r\n";
@@ -2534,6 +2725,78 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             out.elements += t(5) + "<Text StringName=\"" + xml_escape(quest_key(modid, quest.id, "look")) + "\" Text=\"" +
                             xml_escape(hail_look_text(quest)) + "\" />\r\n";
             out.elements += t(4) + "</ActionPromptElement>\r\n";
+        }
+        // Henry's own lines as barks of the game's (emit.hpp, SelfLine): for each, the
+        // hail's three nodes with the player in the giver's place -- the dialogue stood as
+        // a node so its alias is somebody's, the trigger on the line's token, and the
+        // RequestMonologue on `player` it fires, which is how the shipped quests have him
+        // remark on a thing (zakopanyZitrek's jidnra_barkuje_o_smrti_mikuse_v_openworldu).
+        // The engine writes a player's bark as the plain subtitle over the health bar.
+        // The gate is always on (the run's questState is None, or it is not): a trigger
+        // with no IsActive edge never fired from a mod's graph (bark probe, 15 Nov 2026),
+        // and when a line is due is the Lua's to say, whatever state the save has the
+        // errand in.
+        const std::vector<SelfLine> asides = self_lines(quest);
+        const bool street = has_street_line(quest);
+        if (!asides.empty() || street) {
+            s += t(4) + "<ObjectProperties Name=\"playerSoulSelf\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+            s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+            s += t(4) + "</ObjectProperties>\r\n";
+            s += t(4) + "<Function Name=\"selfNotNone\" MethodName=\"math::boolean::Not\" DeclaringType=\"math::boolean\">\r\n";
+            s += t(5) + "<Edge From=\"questState.None\" To=\"Value\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<Function Name=\"selfAlways\" MethodName=\"math::boolean::Or\" DeclaringType=\"math::boolean\">\r\n";
+            s += t(5) + "<Edge From=\"questState.None\" To=\"A\" />\r\n";
+            s += t(5) + "<Edge From=\"selfNotNone.bool\" To=\"B\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+        }
+        for (const SelfLine& line : asides) {
+            const std::string n = std::to_string(line.slot);
+            s += t(4) + "<" + self_node(quest.id, line) + " Name=\"selfTalk" + n + "\" />\r\n";
+            s += t(4) + "<Function Name=\"selfClass" + n + "\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(self_class(quest, line.slot)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"selfSaid" + n + "\">\r\n";
+            s += t(5) + "<Edge From=\"selfClass" + n + ".ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoulSelf.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"selfAlways.bool\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            s += t(4) + "<Function Name=\"selfBark" + n + "\" MethodName=\"wh::xgenaimodule::RequestMonologue\" "
+                        "DeclaringType=\"wh::xgenaimodule\">\r\n";
+            s += t(5) + "<Asset Name=\"Souls\" Alias=\"player\" />\r\n";
+            s += t(5) + "<Constant Name=\"DecisionAlias\" Value=\"" + xml_escape(self_alias(modid, quest.id, line)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"CanBeDelayed\" Value=\"true\" />\r\n";
+            s += t(5) + "<Constant Name=\"OverrideContextSuppress\" Value=\"true\" />\r\n";
+            s += t(5) + "<Edge From=\"selfSaid" + n + ".OnAcquire\" To=\"Exec\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+        }
+        // A holder's `followed` row said in the street, in his own mouth (emit.hpp,
+        // has_street_line): the hail's three nodes again with the holder in the giver's
+        // place and Henry's lines' gate, since the Lua says when (FollowSaid: the night
+        // his forced dialogue never opened) and the errand is under way by then. The
+        // words are the bubble over his head, as a hail's are.
+        if (street) {
+            s += t(4) + "<" + street_node(quest.id) + " Name=\"streetTalk\" />\r\n";
+            s += t(4) + "<Function Name=\"streetClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                        "DeclaringType=\"wh::entitymodule\">\r\n";
+            s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(street_class(quest)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+            s += t(4) + "</Function>\r\n";
+            s += t(4) + "<ItemDescriptorTrigger Name=\"streetSaid\">\r\n";
+            s += t(5) + "<Edge From=\"streetClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+            s += t(5) + "<Edge From=\"playerSoulSelf.Inventory\" To=\"Inventory\" />\r\n";
+            s += t(5) + "<Edge From=\"selfAlways.bool\" To=\"IsActive\" />\r\n";
+            s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            s += t(4) + "<Function Name=\"streetBark\" MethodName=\"wh::xgenaimodule::RequestMonologue\" "
+                        "DeclaringType=\"wh::xgenaimodule\">\r\n";
+            s += t(5) + "<Asset Name=\"Souls\" Alias=\"target\" />\r\n";
+            s += t(5) + "<Constant Name=\"DecisionAlias\" Value=\"" + xml_escape(street_alias(modid, quest.id)) + "\" />\r\n";
+            s += t(5) + "<Constant Name=\"CanBeDelayed\" Value=\"true\" />\r\n";
+            s += t(5) + "<Constant Name=\"OverrideContextSuppress\" Value=\"true\" />\r\n";
+            s += t(5) + "<Edge From=\"streetSaid.OnAcquire\" To=\"Exec\" />\r\n";
+            s += t(4) + "</Function>\r\n";
         }
         if (named) {
             s += t(4) + "<State Name=\"naming\" TypeT=\"bool\">\r\n";
@@ -3639,6 +3902,14 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
     if (quest.is_ambush() && !quest.log_directed.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_directed"), quest.log_directed);
     }
+    // Henry's own lines, for their barks' subtitles (emit_self_dialogue).
+    for (const SelfLine& line : self_lines(quest)) {
+        rows.emplace_back(self_alias(modid, quest.id, line), line.text);
+    }
+    // A holder's row said in the street, for its bubble (emit_street_dialogue).
+    if (has_street_line(quest)) {
+        rows.emplace_back(street_alias(modid, quest.id), quest.holder_followed);
+    }
     // The hail's words, for the bark's subtitle (emit_hail_dialogue).
     if (!quest.hail.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "hail"), quest.hail);
@@ -4526,9 +4797,10 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
         s += t(6) + "</Sequence>\r\n";
     }
     // The street (npcdb.hpp has_follow; notes.md 23 Oct 2026, n8): the night he has caught
-    // Henry behind him on his way to the witness, his Talk opens on him -- the Lua asks the
-    // engine for it as he turns (WatchFollow, the bedside's Attempt shape), or Henry presses
-    // Talk -- with his one line and Henry's one answer, and ends. That sequence is the
+    // Henry behind him on his way to the witness, his Talk opens on him when Henry presses
+    // Talk -- his one line and Henry's one answer, and ends -- if the forced dialogue the
+    // graph brings up as he turns (emit_followed_dialogue, the same two lines) has not
+    // already been played or said (followed_said takes the global down). That sequence is the
     // root's, above (open_followed, Autoselected so his line comes first); the followed
     // global is up from the Lua's verdict until the morning (QuestFlags), and down again
     // for the next night's day door. Not after the catching, when the bedside is his Talk.
@@ -4544,6 +4816,56 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     s += "\t</Skald>\r\n";
     s += "</Database>\r\n";
     return finish(s);
+}
+
+std::string emit_followed_dialogue(const std::string& modid, const Quest& raw) {
+    // The holder turning on Henry in the street, forced (emit.hpp). A ForcedDialog as the
+    // shipped ones are written: NonPlayer-initiated, no greeting or farewell (482 and 339 of
+    // the 812 shipped say so, and ours never have them: kMenuDialogue), the root decision at
+    // a side quest's priority and not Autoselected (42 of the 812 are; a dialogue the NPC
+    // starts plays its first open sequence). One sequence: his line, Henry's answer, each
+    // framed on its speaker, under the holder's own text rows (holder_localization), and
+    // the Talk door's exit (`open followed`). Its entry asks what the Talk's door asks of
+    // the globals -- followed up, the catching not made -- so a dialogue that comes off the
+    // queue after the mod has said the row itself (FollowSaid takes the global down) finds
+    // nothing to play. Voiced as every scripted exchange is (voiced_dialogue).
+    const Quest quest = with_holder_lines(raw);
+    if (!quest.has_follow()) throw std::runtime_error("quest " + quest.id + " has no street night");
+    const std::string node = followed_node(quest.id);
+    const std::string role = xml_escape(holder_role(quest.id));
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
+        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
+               t(depth + 1) + "<Text StringName=\"" +
+               xml_escape(quest_key(modid, quest.id, std::string("holder_") + field)) + "\" Text=\"" +
+               xml_escape(words) + "\" />\r\n" +
+               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
+               t(depth) + "</Response>\r\n";
+    };
+    const std::string seen_var = xml_escape(quest_flag_variable(modid, quest.id, "seen"));
+    const std::string followed_var = xml_escape(quest_flag_variable(modid, quest.id, "followed"));
+    std::string s = skald_header(modid);
+    s += t(2) + "<ForcedDialog Name=\"" + node + "\">\r\n";
+    s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (followed)") + "\" />\r\n";
+    s += t(3) + "<Dialogue TechnicalStatus=\"Enabled\" Initiator=\"NonPlayer\" AllowGreeting=\"false\" "
+                "AllowFarewell=\"false\">\r\n";
+    s += t(4) + "<Decision Name=\"dec1\" Priority=\"SideQuestSubmission\">\r\n";
+    s += t(5) + "<Sequences>\r\n";
+    s += t(6) + "<Sequence EntryCondition=\"gvar('" + followed_var + "')==1 AND gvar('" + seen_var +
+         "')!=1\" EndType=\"EndDialogue\" Name=\"followed\" ExitScript=\"Moonshine.QuestStage('" + quest.id +
+         "', 'open followed')\">\r\n";
+    s += t(7) + "<Elements>\r\n";
+    s += line(8, role, "followed", quest.holder_followed);
+    s += line(8, "HENRY", "followed_reply", quest.holder_followed_reply);
+    s += t(7) + "</Elements>\r\n";
+    s += t(6) + "</Sequence>\r\n";
+    s += t(5) + "</Sequences>\r\n";
+    s += t(4) + "</Decision>\r\n";
+    s += t(3) + "</Dialogue>\r\n";
+    s += t(2) + "</ForcedDialog>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return voiced_dialogue(std::move(s), quest.target_gender, quest.target_soul);
 }
 
 std::vector<std::pair<std::string, std::string>> holder_localization(const std::string& modid,
@@ -4928,6 +5250,54 @@ std::string hail_alias(const std::string& modid, const std::string& quest_id) {
     return quest_key(modid, quest_id, "hail");
 }
 
+namespace {
+
+// A line in somebody's mouth outside a conversation, as the game's own bark with the words
+// in a bubble over the speaker's head: the hail's dialogue (emit_hail_dialogue, where the
+// attributes are accounted for), shared by the mod's other bubbles.
+std::string bubble_dialogue(const std::string& modid,
+                            const std::string& node,
+                            const std::string& title,
+                            const std::string& alias,
+                            bool female,
+                            const std::string& sequence,
+                            const std::string& string_key,
+                            const std::string& text) {
+    const std::string role = female ? "KOSTKAR_ZENA" : "KOSTKAR_MUZ";
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    std::string s = skald_header(modid);
+    s += t(2) + "<Dialog Name=\"" + node + "\">\r\n";
+    s += t(3) + "<Text Text=\"" + xml_escape(title) + "\" />\r\n";
+    s += t(3) + "<Dialogue Type=\"ingame monolog\" TechnicalStatus=\"Enabled\" Hearing=\"35\" Initiator=\"NonPlayer\" "
+                "ClashPriority=\"Crime\" GesturesNotNeeded=\"true\" ChatBubblesDistance=\"" +
+         std::to_string(kHailBubbleMetres) + "\">\r\n";
+    s += t(4) + "<Decision Name=\"dec1\" Priority=\"General\" Included=\"true\" Autoselect=\"true\" Alias=\"" +
+         xml_escape(alias) + "\">\r\n";
+    s += t(5) + "<Sequences>\r\n";
+    s += t(6) + "<Sequence EndType=\"EndDialogue\" Name=\"" + sequence + "\">\r\n";
+    s += t(7) + "<Elements>\r\n";
+    // ReferenceLength is the line's length in seconds, which the shipped responses carry
+    // from their recordings; ours is the app's speaking rate over the words
+    // (kCaptionSpeakRate), so the engine has a length for the line it has no clip of.
+    const double seconds = std::max(1.5, static_cast<double>(text.size()) / kCaptionSpeakRate);
+    char length[32];
+    std::snprintf(length, sizeof length, "%.2f", seconds);
+    s += t(8) + "<Response Role=\"" + role + "\" ReferenceLength=\"" + length + "\">\r\n";
+    s += t(9) + "<Text StringName=\"" + xml_escape(string_key) + "\" Text=\"" + xml_escape(text) + "\" />\r\n";
+    s += t(8) + "</Response>\r\n";
+    s += t(7) + "</Elements>\r\n";
+    s += t(6) + "</Sequence>\r\n";
+    s += t(5) + "</Sequences>\r\n";
+    s += t(4) + "</Decision>\r\n";
+    s += t(3) + "</Dialogue>\r\n";
+    s += t(2) + "</Dialog>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return s;
+}
+
+}  // namespace
+
 std::string emit_hail_dialogue(const std::string& modid, const Quest& quest) {
     // The giver's shout as the game's own bark (emit.hpp, hail_class): one `ingame monolog`
     // dialogue with one line, the shape ambient-design/plan.md section 1.1 played on the Windows laptop
@@ -4946,29 +5316,65 @@ std::string emit_hail_dialogue(const std::string& modid, const Quest& quest) {
     if (quest.hail.empty()) {
         throw std::runtime_error("quest " + quest.id + " has no hail");
     }
-    const std::string node = hail_node(quest.id);
-    const std::string role = quest.giver_gender == "female" ? "KOSTKAR_ZENA" : "KOSTKAR_MUZ";
+    return bubble_dialogue(modid, hail_node(quest.id), quest.name + " (hail)", hail_alias(modid, quest.id),
+                           quest.giver_gender == "female", "hail", quest_key(modid, quest.id, "hail"), quest.hail);
+}
+
+std::string street_alias(const std::string& modid, const std::string& quest_id) {
+    return quest_key(modid, quest_id, "street");
+}
+
+std::string emit_street_dialogue(const std::string& modid, const Quest& quest) {
+    // A holder's `followed` row as a bubble over his head (emit.hpp, has_street_line): the
+    // hail's dialogue on the holder, for the night his forced dialogue never opened and
+    // the Lua says the row in the street (FollowSaid). The text row is its own
+    // (quest_localization, `street`), the same words as the forced dialogue's.
+    if (!has_street_line(quest)) throw std::runtime_error("quest " + quest.id + " has no row to say in the street");
+    return bubble_dialogue(modid, street_node(quest.id), quest.name + " (followed, in the street)",
+                           street_alias(modid, quest.id), quest.target_gender == "female", "street",
+                           street_alias(modid, quest.id), quest.holder_followed);
+}
+
+std::string emit_thanks_dialogue(const std::string& modid, const std::string& level, bool female) {
+    // A beggar's thanks for a garment as a bubble over his head (emit.hpp, thanks_class):
+    // the hail's dialogue, a man's or a woman's, stood in each Level and asked for there of
+    // the beggar the garment went to, by his own token.
+    return bubble_dialogue(modid, thanks_node(female), std::string("Alms (thanks, ") + (female ? "woman" : "man") + ")",
+                           thanks_alias(modid, level, female), female, "thanks", thanks_key(modid),
+                           kAlmsClothesThanks);
+}
+
+std::string self_alias(const std::string& modid, const std::string& quest_id, const SelfLine& line) {
+    return quest_key(modid, quest_id, std::string("self_") + line.name);
+}
+
+std::string emit_self_dialogue(const std::string& modid, const Quest& quest, const SelfLine& line) {
+    // One of Henry's own lines as the game's bark on the player (emit.hpp, SelfLine): the
+    // hail's dialogue with Henry's role in the giver's -- HENRY, the role the shipped
+    // quests write his barks under (bark_po_smrti_mikuse.xml) -- and no bubble distance,
+    // since a player's bark is not a bubble: the engine writes it as the plain subtitle
+    // over the health bar, as it does "Oof... I should go back." at the map's edge. The
+    // text row is the line's own (quest_localization, self_<name>), so the words on the
+    // screen are the words SelfTalk voices; no clip is shipped, and the subtitle is held
+    // for the ReferenceLength, the app's speaking rate over the words.
+    if (line.text.empty()) throw std::runtime_error("quest " + quest.id + " has an empty line of Henry's");
+    const std::string node = self_node(quest.id, line);
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
     std::string s = skald_header(modid);
     s += t(2) + "<Dialog Name=\"" + node + "\">\r\n";
-    s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (hail)") + "\" />\r\n";
-    s += t(3) + "<Dialogue Type=\"ingame monolog\" TechnicalStatus=\"Enabled\" Hearing=\"35\" Initiator=\"NonPlayer\" "
-                "ClashPriority=\"Crime\" GesturesNotNeeded=\"true\" ChatBubblesDistance=\"" +
-         std::to_string(kHailBubbleMetres) + "\">\r\n";
+    s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (Henry, " + line.name + ")") + "\" />\r\n";
+    s += t(3) + "<Dialogue Type=\"ingame monolog\" TechnicalStatus=\"Enabled\" Initiator=\"NonPlayer\" "
+                "ClashPriority=\"Crime\" GesturesNotNeeded=\"true\">\r\n";
     s += t(4) + "<Decision Name=\"dec1\" Priority=\"General\" Included=\"true\" Autoselect=\"true\" Alias=\"" +
-         xml_escape(hail_alias(modid, quest.id)) + "\">\r\n";
+         xml_escape(self_alias(modid, quest.id, line)) + "\">\r\n";
     s += t(5) + "<Sequences>\r\n";
-    s += t(6) + "<Sequence EndType=\"EndDialogue\" Name=\"hail\">\r\n";
+    s += t(6) + "<Sequence EndType=\"EndDialogue\" Name=\"self\">\r\n";
     s += t(7) + "<Elements>\r\n";
-    // ReferenceLength is the line's length in seconds, which the shipped responses carry
-    // from their recordings; ours is the app's speaking rate over the words
-    // (kCaptionSpeakRate), so the engine has a length for the line it has no clip of.
-    const double seconds = std::max(1.5, static_cast<double>(quest.hail.size()) / kCaptionSpeakRate);
     char length[32];
-    std::snprintf(length, sizeof length, "%.2f", seconds);
-    s += t(8) + "<Response Role=\"" + role + "\" ReferenceLength=\"" + length + "\">\r\n";
-    s += t(9) + "<Text StringName=\"" + xml_escape(quest_key(modid, quest.id, "hail")) + "\" Text=\"" +
-         xml_escape(quest.hail) + "\" />\r\n";
+    std::snprintf(length, sizeof length, "%.2f", self_seconds(line.text));
+    s += t(8) + "<Response Role=\"HENRY\" ReferenceLength=\"" + length + "\">\r\n";
+    s += t(9) + "<Text StringName=\"" + xml_escape(self_alias(modid, quest.id, line)) + "\" Text=\"" +
+         xml_escape(line.text) + "\" />\r\n";
     s += t(8) + "</Response>\r\n";
     s += t(7) + "</Elements>\r\n";
     s += t(6) + "</Sequence>\r\n";
@@ -5203,7 +5609,8 @@ std::string letter_page(const Quest& quest) {
     return page_markup(with_holder_lines(quest).letter);
 }
 
-std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests) {
+std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests,
+                            const std::vector<Persona>& personas) {
     const std::vector<const CustomItem*> used = custom_items_used(quests);
     const std::vector<const RepricedItem*> repriced = repriced_items_used(quests);
     std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads, clued;
@@ -5218,8 +5625,11 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
     }
     // The giver's marker gate (emit.hpp giver_closed_class): two tokens per run, the head's.
     for (const QuestRun& run : quest_runs(quests)) heads.push_back(run.legs.front());
+    // Nothing to write for a build with no quests and no beggar among its souls (a
+    // beggar's thanks is a token of his own, no quest's: thanks_class).
+    const bool beggars = std::any_of(personas.begin(), personas.end(), [](const Persona& p) { return p.beggar; });
     if (used.empty() && repriced.empty() && letters.empty() && tokens.empty() && keys.empty() && hails.empty() &&
-        follows.empty() && heads.empty() && clued.empty()) {
+        follows.empty() && heads.empty() && clued.empty() && !beggars) {
         return {};
     }
     // The shape of item__aux.xml and the other shipped fragments: the same root as
@@ -5306,6 +5716,41 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
              "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
              "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
              xml_escape(taken_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + taken) + "\" />\r\n";
+    }
+    // The token of each line Henry says to himself (emit.hpp, SelfLine): the same row under
+    // the line's own class, made by the Lua's SelfTalk and gone a moment later.
+    for (const Quest& q : quests) {
+        for (const SelfLine& line : self_lines(q)) {
+            const std::string name = self_name(q, line);
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, name)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, name)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
+                 xml_escape(self_class(q, line.slot)) + "\" Name=\"" + xml_escape(modid + "_" + name) + "\" />\r\n";
+        }
+    }
+    // The tokens of the mod's other bubbles (emit.hpp, street_class and thanks_class): a
+    // holder's row said in the street, one per street night, and a beggar's thanks, one
+    // per beggar, which are no quest's. The beggars' rows share one name and one line of
+    // info (item_localization), there being nothing to tell them apart by in a pocket.
+    {
+        struct Bubble {
+            std::string name, cls, ui;
+        };
+        std::vector<Bubble> bubbles;
+        for (const Quest& q : quests) {
+            if (has_street_line(q)) bubbles.push_back({street_name(q), street_class(q), street_name(q)});
+        }
+        for (const Persona& p : personas) {
+            if (p.beggar) bubbles.push_back({thanks_name(p), thanks_class(p), "thanks"});
+        }
+        for (const Bubble& b : bubbles) {
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, b.ui)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, b.ui)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" + xml_escape(b.cls) +
+                 "\" Name=\"" + xml_escape(modid + "_" + b.name) + "\" />\r\n";
+        }
     }
     // A hail's token: the pray token's row under the hail's class, made in Henry's pocket
     // by the watch as the giver shouts and gone a moment later (emit.hpp, hail_class).
@@ -5459,6 +5904,22 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         if (q.hail.empty()) continue;
         rows.emplace_back(item_ui_key(modid, hail_name(q)), "A shout");
         rows.emplace_back(item_info_key(modid, hail_name(q)), q.giver_name + " called Henry over.");
+    }
+    for (const Quest& q : quests) {
+        if (!has_street_line(q)) continue;
+        rows.emplace_back(item_ui_key(modid, street_name(q)), "A word in the street");
+        rows.emplace_back(item_info_key(modid, street_name(q)), q.target_name + " spoke to Henry in the street.");
+    }
+    // One name and one line for every beggar's token (emit_item_table).
+    rows.emplace_back(item_ui_key(modid, "thanks"), "A beggar's thanks");
+    rows.emplace_back(item_info_key(modid, "thanks"), "A beggar thanked Henry for a garment.");
+    // And the thanks itself, for its bubble (emit_thanks_dialogue).
+    rows.emplace_back(thanks_key(modid), kAlmsClothesThanks);
+    for (const Quest& q : quests) {
+        for (const SelfLine& line : self_lines(q)) {
+            rows.emplace_back(item_ui_key(modid, self_name(q, line)), "A thought");
+            rows.emplace_back(item_info_key(modid, self_name(q, line)), "Henry said something to himself.");
+        }
     }
     for (const Quest& q : quests) {
         if (!q.has_follow()) continue;
@@ -7456,6 +7917,12 @@ std::string emit_conversation_lua(const std::string& modid,
         }
     }
     s += "}\n";
+    // The token of each beggar's thanks for a garment, by his soul (emit.hpp, thanks_class).
+    s += g + ".thanksTokens = {\n";
+    for (const Persona& p : personas) {
+        if (p.beggar) s += "[\"" + lua_escape(p.soul_name) + "\"]=\"" + lua_escape(thanks_class(p)) + "\",\n";
+    }
+    s += "}\n";
     s += g + ".npcName = \"\"\n";
     s += "\n";
     s += g + ".hint = \"@" + lua_escape(conversation_hint_key(modid)) + "\"\n";
@@ -7911,10 +8378,12 @@ std::string emit_conversation_lua(const std::string& modid,
                 if (!q.holder_follow_warn.empty()) s += ", followWarn = \"" + lua_escape(q.holder_follow_warn) + "\"";
                 if (!q.holder_follow_over.empty()) s += ", followOver = \"" + lua_escape(q.holder_follow_over) + "\"";
                 // His own row for when his Talk never opens on the request (FollowSaid): his
-                // line and Henry's answer, with his name and voice for the narrative line.
+                // line and Henry's answer, with his name and voice, and the token that asks
+                // the graph for the line as a bubble over his head (street_class).
                 s += ", followedLine = \"" + lua_escape(q.holder_followed) + "\", followedReply = \"" +
                      lua_escape(q.holder_followed_reply) + "\", holderName = \"" + lua_escape(q.target_name) +
                      "\", holderVoice = \"" + (q.target_gender == "female" ? "female" : "male") + "\"";
+                if (has_street_line(q)) s += ", streetToken = \"" + lua_escape(street_class(q)) + "\"";
                 // The night's marker (WatchMarker): on him from kFollowMarkLeadHours before his
                 // homecoming (routine_home_at, else the street watch's start) to the night
                 // window's end, off otherwise and for a `followed` night; the two tokens for the
@@ -7951,6 +8420,16 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", wake = \"" + lua_escape(q.holder_wake) + "\", denouncedVar = \"" +
                  lua_escape(quest_flag_variable(modid, q.id, "denounced")) + "\", blackmail = " +
                  std::to_string(q.blackmail_groschen);
+        }
+        {
+            // The token of each line Henry says to himself, by the field its words are in
+            // (SelfTalk; emit.hpp SelfLine).
+            std::string asides;
+            for (const SelfLine& line : self_lines(q)) {
+                asides += (asides.empty() ? "" : ", ") + std::string(line.field) + " = \"" +
+                          lua_escape(self_class(q, line.slot)) + "\"";
+            }
+            if (!asides.empty()) s += ", asides = { " + asides + " }";
         }
         if (q.has_chest()) {
             // The chest the thing lies in (WatchChest spawns it at the spot when Henry comes
@@ -8962,9 +9441,20 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn gap <= " + g + ".range\n";
     s += "end\n";
     s += "\n";
+    // In a conversation, which a line Henry is saying to himself is not: the engine has
+    // IsInDialog up on the player for the whole of a bark of his own (self_talk_pass on
+    // wl1, 16 Nov 2026: up 0.1 s after SelfTalk's token and down 5.6 s on for a 5.4 s line),
+    // and everything that asks this is asking whether somebody is talking with him. So
+    // while a line of his is reckoned to be up (SelfTalking) the answer is no -- except
+    // inside the app's own conversation, where the engine's word is taken as it always
+    // was (Begin cuts his line short first). A talk of the game's own opened in those
+    // few seconds is not seen until they are over; what the mod itself starts in them
+    // waits them out or cuts the line (the bedside's Talk, the man turning on Henry).
     s += "function " + g + ".InDialog()\n";
     s += "\tlocal ok, got = pcall(function() return player.human:IsInDialog() end)\n";
-    s += "\treturn ok and got == true\n";
+    s += "\tif not (ok and got == true) then return false end\n";
+    s += "\tif " + g + ".active then return true end\n";
+    s += "\treturn not " + g + ".SelfTalking()\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".Call(label, fn)\n";
@@ -10673,9 +11163,6 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".lipPieced = false\n";
     s += "\t" + g + ".cutShort = false\n";
     s += "\t" + g + ".menuHeld = false\n";
-    // A hail's line still on the narrative subtitle (put up in the breath before the
-    // conversation opened) goes with it (HailShow, 28 Oct 2026).
-    s += "\tpcall(" + g + ".HailHide)\n";
     // A beat still waiting to play is not going to now, and a code left up would gate
     // every face of the next conversation.
     s += "\tif " + g + ".questCode ~= 0 or #" + g + ".questQueue > 0 then\n";
@@ -12811,7 +13298,8 @@ std::string emit_conversation_lua(const std::string& modid,
     // actor:EquipInventoryItem, the bind the game's own dressing uses (scripts/autopilot/
     // alms_probe.lua, 6 Oct 2026: moves and the equip call return without raising on a
     // sitting beggar). His thanks are a bark in his voice, the conversation being over: the
-    // same line the app would have said in it, with his name over it on the HUD.
+    // same line the app would have said in it, in the bubble over his head (Bubble, by the
+    // token that is his alone: his Level's almsBark_<soul> asks it of him).
     s += "function " + g + ".AlmsDress(npc, class)\n";
     s += "\tlocal p = " + g + ".Player()\n";
     s += "\tlocal name = EntityUtils.GetName(npc)\n";
@@ -12831,8 +13319,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE alms clothes \" .. class .. \" moved \" .. moved .. \" to \" .. name .. worn)\n";
     s += "\tif moved > 0 then\n";
     s += "\t\tlocal thanks = \"" + lua_escape(kAlmsClothesThanks) + "\"\n";
-    s += "\t\t" + g + ".Voice(" + g + ".beggars[name] or \"male\", thanks, name)\n";
-    s += "\t\t" + g + ".HailShow(thanks, " + g + ".soulNames[name] or \"\", 0)\n";
+    s += "\t\tlocal voice = " + g + ".beggars[name] == \"female\" and \"female\" or \"male\"\n";
+    s += "\t\t" + g + ".Voice(voice, thanks, name)\n";
+    s += "\t\t" + g + ".Bubble(" + g + ".thanksTokens[name], name, \"thanks for a garment\")\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";
@@ -13039,14 +13528,13 @@ std::string emit_conversation_lua(const std::string& modid,
     // one repeat at most.
     s += g + ".hailMetres = " + std::to_string(kHailMetres) + "\n";
     s += g + ".hailAgain = " + std::to_string(kHailAgainSeconds) + "\n";
-    s += g + ".hailSeconds = " + std::to_string(kHailSeconds) + "\n";
     s += g + ".hailed = {}\n";
-    s += g + ".hailGen = 0\n";
     s += "function " + g + ".WatchHail(id, q, pp)\n";
     s += "\tlocal f = ((" + g + ".state or {}).quests or {})[id]\n";
     s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
     s += "\tif not " + g + ".QuestOn(id) then return end\n";
-    s += "\tif " + g + ".active or " + g + ".InDialog() then return end\n";
+    // Not over a conversation, nor over a line Henry is saying to himself: the next tick will do.
+    s += "\tif " + g + ".active or " + g + ".InDialog() or " + g + ".SelfTalking() then return end\n";
     // Her day (hail_hours; notes.md 25 Oct 2026): asleep or at her supper she does not call
     // Henry over, and her marker is off the map (the graph's giverDay).
     s += "\tif q.hailHours ~= nil and not " + g + ".HourIn(q.hailHours) then return end\n";
@@ -13072,65 +13560,68 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif q.hailToken ~= nil then " + g + ".Token(q, q.hailToken) end\n";
     s += "end\n";
     s += "\n";
-    // A line of the mod's own on the screen outside a conversation (Henry's asides, a
-    // holder's thanks, a beggar's; not the giver's hail, whose words are its bark's bubble
-    // since 15 Nov 2026): the HUD's narrative subtitle (SetNarrativeSubtitles,
-    // the big period-font line the game uses for a narrator outside a conversation), as
-    // "<name>: <words>", layout 0 (a block low on the right; layout 2 is one wide line
-    // that runs off the screen, 1 and 3 draw nothing). The conversation caption
-    // (SetSubtitles on bc.subtitles) is not used: its plate only draws while a dialogue is
-    // open (caption_probe, 14 Oct 2026: the call returned ok, every parent visible and at
-    // alpha 100, and the shot carried nothing), and Game.SendInfoText reads each word as a
-    // string id (`@You! @Yes, ...`).
-    //
-    // One put, `delay` ms from now, and a hide with a fade at hailSeconds after it. One put
-    // is the whole of it because the widget keeps a line about five seconds from the first
-    // put and nothing said again extends that (narr_probe5, 14 Oct 2026, three roads in one
-    // run: a single put, gone between 4.5 and 5.5 s; the same words put back every 400 ms
-    // for eight seconds, taken down or not first, gone at the same moment; the mod's
-    // earlier loop, gone a little sooner), so hailSeconds is what the widget gives and the
-    // hide is for tidiness. The delay is for a caller with a bark of the game's opening at
-    // the same moment, which wipes the line (hail_run28, 14 Oct 2026); none passes one now.
-    // A UI without the function (an older HUD) is left alone: the pcall fails quietly and
-    // the voice is all there is.
-    //
-    // The hide is owed whether or not a conversation is open by then: until 28 Oct 2026 it
-    // stood down when one was (`active`, so as to leave the HUD to the dialogue), and
-    // Christine's shout stayed on the screen through the whole talk that followed it and
-    // for minutes after (bugs.txt), since the widget's own five seconds do not run while a
-    // dialogue holds the HUD and nothing else ever took the line down. HideNarrativeSubtitles
-    // touches the narrative line alone, not the dialogue's captions. hailUp notes a line on
-    // the screen, and Leave takes it down too if the timer has not (HailHide), for a line put
-    // up in the last breath before the conversation opened.
-    s += g + ".hailUp = false\n";
-    s += "function " + g + ".HailHide()\n";
-    s += "\tif not " + g + ".hailUp then return end\n";
-    s += "\t" + g + ".hailUp = false\n";
-    s += "\tfor _, i in ipairs(" + g + ".hudIds) do\n";
-    s += "\t\tpcall(function() UIAction.CallFunction(\"hud\", i, \"HideNarrativeSubtitles\", 0.3) end)\n";
+    // Somebody else's line outside a conversation, other than a hail (a holder's row said
+    // in the street, a beggar's thanks; emit.hpp, street_class and thanks_class): the token
+    // of its class, for the graph's trigger to ask the engine for the line as a bark of the
+    // speaker's own, the words in the bubble over his head as a hail's are. The caller
+    // voices it. Nothing of the mod's is drawn: until 16 Nov 2026 these two were written on
+    // the HUD's narrative subtitle (SetNarrativeSubtitles, "<name>: <words>" low on the
+    // right, held about five seconds and taken down by hand), where Henry's own lines
+    // were until the same day and the hail's words until the day before. A table with no
+    // class for the line (an older build's) is the voice alone, and the log says so.
+    s += "function " + g + ".Bubble(class, who, why)\n";
+    s += "\tif class == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE bubble over \" .. tostring(who) .. \" (\" .. tostring(why) .. \"): no bark of it, the voice alone\")\n";
+    s += "\t\treturn false\n";
     s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE bubble over \" .. tostring(who) .. \" (\" .. tostring(why) .. \")\")\n";
+    s += "\t" + g + ".Token(nil, class)\n";
+    s += "\treturn true\n";
     s += "end\n";
     s += "\n";
-    s += "function " + g + ".HailShow(text, above, delay)\n";
-    s += "\t" + g + ".hailGen = " + g + ".hailGen + 1\n";
-    s += "\tlocal gen = " + g + ".hailGen\n";
-    s += "\tlocal line = (above ~= \"\" and (above .. \": \") or \"\") .. text\n";
-    s += "\tlocal function show()\n";
-    s += "\t\tif gen ~= " + g + ".hailGen or " + g + ".active then return end\n";
-    s += "\t\t" + g + ".hailUp = true\n";
-    s += "\t\tfor _, i in ipairs(" + g + ".hudIds) do\n";
-    s += "\t\t\tpcall(function() UIAction.CallFunction(\"hud\", i, \"SetNarrativeSubtitles\", line, 0, 0.2) end)\n";
-    s += "\t\tend\n";
-    s += "\t\tpcall(function() Script.SetTimer(" + g + ".hailSeconds * 1000, function()\n";
-    s += "\t\t\tif gen ~= " + g + ".hailGen then return end\n";
-    s += "\t\t\t" + g + ".HailHide()\n";
-    s += "\t\tend) end)\n";
+    // Henry to himself (emit.hpp, SelfLine; chat 16 Nov 2026): the words of q[field] in his
+    // voice, and the token of that line's class for the graph's selfSaid trigger, which
+    // asks the engine for the line as a bark of his own -- the game's subtitle over the
+    // health bar, the way it writes "I should go back" at the map's edge. Nothing of the
+    // mod's is drawn. selfUntil is when the engine will have done with the line (the
+    // dialogue's ReferenceLength, self_seconds: the same reckoning), and with any line of
+    // his still up before it: a second asked for while the first is up waits its turn
+    // (the request's CanBeDelayed; self_talk_pass, two lines a second apart held
+    // IsInDialog for 13.6 s, the 7.3 and the 6.3 end to end). Returns the line's seconds.
+    //
+    // SelfTalking: a line of his is up, give or take selfSlackSeconds for the token's
+    // road to the graph. SelfHush: the line cut short, for a caller about to want a real
+    // dialogue -- player.human:InterruptDialogs(), which Cut uses on a session; it ends
+    // a bark at once, the words gone from the screen and IsInDialog down in the same
+    // call, and a bark asked for straight after comes up at once (self_cut_probe, 16 Nov
+    // 2026). His voice, the app's, says the line out regardless.
+    s += g + ".selfMinSeconds = " + health_text(kSelfMinSeconds) + "\n";
+    s += g + ".selfSlackSeconds = " + health_text(kSelfSlackSeconds) + "\n";
+    s += g + ".selfUntil = 0\n";
+    s += "function " + g + ".SelfTalking()\n";
+    s += "\treturn " + g + ".selfUntil > 0 and " + g + ".Now() < " + g + ".selfUntil + " + g + ".selfSlackSeconds\n";
+    s += "end\n";
+    s += "function " + g + ".SelfHush(why)\n";
+    s += "\tif not " + g + ".SelfTalking() then return false end\n";
+    s += "\t" + g + ".selfUntil = 0\n";
+    s += "\tlocal ok, err = pcall(function() player.human:InterruptDialogs() end)\n";
+    s += "\t" + g + ".Log(\"BRIDGE Henry's own line cut short, \" .. tostring(why) .. (ok and \"\" or (\": InterruptDialogs raised \" .. tostring(err))))\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "function " + g + ".SelfTalk(id, q, field)\n";
+    s += "\tlocal text = q[field]\n";
+    s += "\tif text == nil or text == \"\" then return 0 end\n";
+    s += "\t" + g + ".Voice(\"henry\", text)\n";
+    s += "\tlocal class = q.asides ~= nil and q.asides[field] or nil\n";
+    s += "\tif class == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" Henry to himself (\" .. field .. \"): no bark of it, his voice alone\")\n";
+    s += "\t\treturn 0\n";
     s += "\tend\n";
-    s += "\tif (delay or 0) > 0 then\n";
-    s += "\t\tpcall(function() Script.SetTimer(delay, show) end)\n";
-    s += "\telse\n";
-    s += "\t\tshow()\n";
-    s += "\tend\n";
+    s += "\tlocal seconds = math.max(" + g + ".selfMinSeconds, #text / " + g + ".speakRate)\n";
+    s += "\t" + g + ".selfUntil = math.max(" + g + ".selfUntil, " + g + ".Now()) + seconds\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" Henry to himself (\" .. field .. \") for \" .. string.format(\"%.1f\", seconds) .. \"s\")\n";
+    s += "\t" + g + ".Token(q, class)\n";
+    s += "\treturn seconds\n";
     s += "end\n";
     s += "\n";
     // A holder dressed for his part (notes.md 13 Oct 2026: Benesh says Paul Schmidt bought
@@ -13472,8 +13963,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t.. (q.bedPos ~= nil and \"m from the bed\" or \"m from her\")\n";
     s += "\t\t.. (inside == nil and \", unlabelled\" or (inside and \"\" or \", at the door\")))\n";
     s += "\tif " + g + ".active or " + g + ".InDialog() then return end\n";
-    s += "\t" + g + ".Voice(\"henry\", q.enters)\n";
-    s += "\t" + g + ".HailShow(q.enters, \"Henry\", 0)\n";
+    // Nor with Henry at the bedside already, in the night's hours: this same tick is the
+    // catching, which has its own line (the waking), and two barks of his asked for in
+    // one breath are said one after the other, fifteen seconds of them before the Talk.
+    s += "\tif " + g + ".HourIn(q.hours)\n";
+    s += "\t\tand math.sqrt((pp.x - tp.x) ^ 2 + (pp.y - tp.y) ^ 2 + (pp.z - tp.z) ^ 2) <= " + g + ".exposeMetres\n";
+    s += "\t\tand math.sqrt((wp.x - tp.x) ^ 2 + (wp.y - tp.y) ^ 2 + (wp.z - tp.z) ^ 2) <= " + g + ".exposeWithMetres then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" enters not said, Henry is at the bedside\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".SelfTalk(id, q, \"enters\")\n";
     s += "end\n";
     s += "function " + g + ".WatchExpose(id, q, pp)\n";
     s += "\tlocal tp, wp = nil, nil\n";
@@ -13512,17 +14011,21 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".StateQuest, id, \"seen\")\n";
     s += "\t" + g + ".Token(q)\n";
     // The bedside (notes.md 22 Oct 2026): Henry says what wakes the man, in his own voice
-    // and on the narrative line as a hail is, and the engine is asked for the holder's Talk
+    // and as a bark of his own (SelfTalk), and the engine is asked for the holder's Talk
     // (RequestDialog, the Attempt shape) a few seconds on, once the token has landed and the
-    // seen global is up so that the Talk opens on the bedside sequence and not the day's.
+    // seen global is up so that the Talk opens on the bedside sequence and not the day's --
+    // and once his own line is done, since the engine has Henry in a dialogue for as long
+    // as his bark is up and the look below would take it for a talk already open.
     // Our own held conversation is never a candidate for it, since the holder has no role of
     // ours granted outside a session; the game's own Talk on him is the one match. The
     // request only queues (Attempt): if his behaviour tree sleeps through it, the player
     // presses Talk on him, and the sequence is the same.
     s += "\tif q.wake ~= nil then\n";
-    s += "\t\t" + g + ".Voice(\"henry\", q.wake)\n";
-    s += "\t\t" + g + ".HailShow(q.wake, \"Henry\", 0)\n";
-    s += "\t\tpcall(function() Script.SetTimer(" + std::to_string(kWakeTalkMs) + ", function()\n";
+    // A line of his still up from the door is cut short for this one (SelfHush).
+    s += "\t\tpcall(" + g + ".SelfHush, \"the catching\")\n";
+    s += "\t\t" + g + ".SelfTalk(id, q, \"wake\")\n";
+    s += "\t\tlocal wait = math.max(" + std::to_string(kWakeTalkMs) + ", math.floor((" + g + ".selfUntil - " + g + ".Now() + " + g + ".selfSlackSeconds) * 1000) + 100)\n";
+    s += "\t\tpcall(function() Script.SetTimer(wait, function()\n";
     s += "\t\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
     s += "\t\t\tlocal e = nil\n";
     s += "\t\t\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
@@ -13541,9 +14044,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // (System.RayTraceCheck, true when the ray from one to the other meets nothing but the
     // two of them; where the engine has no such call the sight is clear). Then the night
     // is his: the store's `followed` (the global his Talk reads, QuestFlags), the token for
-    // the graph (his bed swapped, the journal's line), and the engine asked for his Talk a
-    // moment on, as at the bedside, so he turns on Henry with the line; if his behaviour
-    // tree sleeps through it, Henry's own press of Talk opens the same. FollowMorning clears
+    // the graph (his bed swapped, the journal's line, and the forced dialogue in which he
+    // turns on Henry with the line: emit_followed_dialogue, the two stood for it first by
+    // FollowFace); if the engine does not take the dialogue up, the mod says the row itself
+    // (FollowSaid). FollowMorning clears
     // the night once the hour is past the window's end (the graph's own rest Timer clears
     // its side). The game's own perception was the first design (the graph's
     // PerceptionTrigger reporting through the console command, GraphSaid): the trigger
@@ -13571,6 +14075,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".clockJumpSeconds = " + std::to_string(kClockJumpSeconds) + "\n";
     s += g + ".followStillSeconds = " + std::to_string(kFollowStillSeconds) + "\n";
     s += g + ".followTalkWaitMs = " + std::to_string(kFollowTalkWaitMs) + "\n";
+    s += g + ".followFaceMetres = " + health_text(kFollowFaceMetres) + "\n";
+    s += g + ".followFaceMs = " + std::to_string(kFollowFaceMs) + "\n";
+    s += g + ".followFaceTickMs = " + std::to_string(kFollowFaceTickMs) + "\n";
     s += g + ".followLast = {}\n";
     s += g + ".followHeld = {}\n";
     s += g + ".followClock = nil\n";
@@ -13669,6 +14176,36 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\treturn why\n";
     s += "end\n";
+    // The two stood for his dialogue (emit.hpp kFollowFace*; README, "His dialogue forced
+    // when he turns on Henry"). The engine takes a forced dialogue up only with the two at
+    // talking distance and turned to each other as it is enqueued, and does not wait for
+    // them: with Henry a few metres behind a man walking away, or ten before him, nothing
+    // came up at all. So before the token the man is set down followFaceMetres from Henry
+    // on the line between them (a line the sighting's ray has just found clear), turned to
+    // him, and Henry's view to the man (FaceFrom); `first` is that setting down, and without
+    // it only the turning, which WatchFollow keeps up until the dialogue is on the screen,
+    // since his feet turn him back to his road. He goes on with his walk from there once
+    // the dialogue closes, as he does from the carry's setting down.
+    s += "function " + g + ".FollowFace(id, q, e, first)\n";
+    s += "\tlocal me = " + g + ".Player()\n";
+    s += "\tif me == nil or e == nil or me.GetWorldPos == nil or e.GetWorldPos == nil then return end\n";
+    s += "\tlocal tp, pp = e:GetWorldPos(), me:GetWorldPos()\n";
+    s += "\tlocal dx, dy = tp.x - pp.x, tp.y - pp.y\n";
+    s += "\tlocal d = math.sqrt(dx * dx + dy * dy)\n";
+    s += "\tif d < 0.1 then return end\n";
+    s += "\tif first and d > " + g + ".followFaceMetres then\n";
+    s += "\t\tlocal to = { x = pp.x + dx / d * " + g + ".followFaceMetres, y = pp.y + dy / d * " + g +
+         ".followFaceMetres, z = pp.z + 0.1 }\n";
+    s += "\t\tlocal ok = pcall(function() e:SetWorldPos(to) end)\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s holder set before Henry at %.1fm, from %.1fm%s\", id, " + g +
+         ".followFaceMetres, d,\n";
+    s += "\t\t\tok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "\t\ttp = to\n";
+    s += "\tend\n";
+    // About z as FaceFrom has it: zero is north (+y), positive to the west; his way is to Henry.
+    s += "\tpcall(function() e:SetAngles({ x = 0, y = 0, z = math.atan2(dx, -dy) }) end)\n";
+    s += "\t" + g + ".FaceFrom(me, pp, tp)\n";
+    s += "end\n";
     s += "function " + g + ".WatchFollow(id, q, pp, tp, wp)\n";
     s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
     s += "\tif not f.accepted or f.done or f.handed or f.seen or f.followed then return end\n";
@@ -13701,8 +14238,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\t" + g + ".followNight[id] = " + g + ".WorldTime()\n";
     s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" follow warn, \" .. q.target .. \" at \" .. string.format(\"%.1f\", d) .. \"m, \" .. why)\n";
     s += "\t\t\t\tif not " + g + ".active and not " + g + ".InDialog() then\n";
-    s += "\t\t\t\t\t" + g + ".Voice(\"henry\", q.followWarn)\n";
-    s += "\t\t\t\t\t" + g + ".HailShow(q.followWarn, \"Henry\", 0)\n";
+    s += "\t\t\t\t\t" + g + ".SelfTalk(id, q, \"followWarn\")\n";
     s += "\t\t\t\tend\n";
     s += "\t\t\tend\n";
     s += "\t\tend\n";
@@ -13723,29 +14259,49 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t.. \"m, \" .. how)\n";
     s += "\t" + g + ".followNight[id] = " + g + ".WorldTime()\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"followed\")\n";
+    // The two stood for it first (FollowFace), then the token, which is the asking: the
+    // graph's forced dialogue comes up off it (emit.hpp emit_followed_dialogue,
+    // kFollowTalkMs, kFollowTalkWaitMs). Not over a conversation of ours or the game's.
+    // A line Henry is saying to himself -- his warning, a breath ago -- is cut short for
+    // it (SelfHush), so that the looks below read the dialogue's coming up and not his bark.
+    s += "\tpcall(" + g + ".SelfHush, \"he has turned on Henry\")\n";
+    s += "\tlocal free = not " + g + ".active and not " + g + ".InDialog()\n";
+    s += "\tif free then pcall(" + g + ".FollowFace, id, q, e, true) end\n";
     s += "\t" + g + ".Token(q, q.followToken)\n";
-    s += "\tif " + g + ".active or " + g + ".InDialog() then return end\n";
+    s += "\tif not free then return end\n";
+    // The turning kept up until the dialogue is on the screen, or followFaceMs at most.
+    s += "\tlocal began = " + g + ".Now()\n";
+    s += "\tlocal function hold()\n";
+    s += "\t\tif " + g + ".active or " + g + ".InDialog() or (" + g + ".Now() - began) * 1000 >= " + g + ".followFaceMs then return end\n";
+    s += "\t\tpcall(" + g + ".FollowFace, id, q, e, false)\n";
+    s += "\t\tpcall(function() Script.SetTimer(" + g + ".followFaceTickMs, hold) end)\n";
+    s += "\tend\n";
+    s += "\tpcall(function() Script.SetTimer(" + g + ".followFaceTickMs, hold) end)\n";
+    // The Lua then only looks, twice: a dialogue on the screen is his, and the log says
+    // so; none by the second look, and the mod says the row itself (FollowSaid).
     s += "\tpcall(function() Script.SetTimer(" + std::to_string(kFollowTalkMs) + ", function()\n";
-    s += "\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
-    s += "\t\tlocal e = nil\n";
-    s += "\t\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
-    s += "\t\tif e == nil or e.actor == nil then return end\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" asks for the holder's Talk in the street\")\n";
-    s += "\t\t" + g + ".Attempt(e, " + g + ".Player())\n";
-    // The request only queues (emit.hpp kFollowTalkWaitMs): if no dialogue is up by then,
-    // the mod says the row itself (FollowSaid).
+    s += "\t\tif " + g + ".active then return end\n";
+    s += "\t\tif " + g + ".InDialog() then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" holder's dialogue is up in the street\")\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
     s += "\t\tpcall(function() Script.SetTimer(" + g + ".followTalkWaitMs, function()\n";
-    s += "\t\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
+    s += "\t\t\tif " + g + ".active then return end\n";
     s += "\t\t\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
     s += "\t\t\tif not f.followed or f.followedSaid then return end\n";
+    s += "\t\t\tif " + g + ".InDialog() then\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" holder's dialogue is up in the street\")\n";
+    s += "\t\t\t\treturn\n";
+    s += "\t\t\tend\n";
     s += "\t\t\t" + g + ".FollowSaid(id, q)\n";
     s += "\t\tend) end)\n";
     s += "\tend) end)\n";
     s += "end\n";
     // The row said without his Talk (bugs.txt 28 Oct 2026: the sighting judged, the request
     // made and answered true, and no dialogue, no line, nothing on the screen; the night
-    // lost in silence). His line in his voice and on the narrative line as a hail is, with
-    // his name before it; Henry's answer once it has been read; then the night given up
+    // lost in silence). His line in his voice and in the bubble over his head as a hail is
+    // (Bubble, the graph's streetBark); Henry's answer once it has been read, a bark of his
+    // own (SelfTalk); then the night given up
     // (FollowOver), as his Talk's exit would have. The store notes the row said
     // (followed_said), which takes the global down (QuestFlags) so a later press of Talk on
     // him opens his day's menu and not the row again; the night itself stands until morning.
@@ -13754,14 +14310,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" holder's Talk never opened, the row said in the street\")\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"followed_said\")\n";
     s += "\t" + g + ".Voice(q.holderVoice or \"male\", q.followedLine, q.target)\n";
-    s += "\t" + g + ".HailShow(q.followedLine, q.holderName or \"\", 0)\n";
+    s += "\t" + g + ".Bubble(q.streetToken, q.target, \"his row said in the street\")\n";
     s += "\tlocal wait = " + g + ".Reading(q.followedLine) * 1000\n";
     s += "\tpcall(function() Script.SetTimer(wait, function()\n";
     s += "\t\tif " + g + ".active or " + g + ".InDialog() then return end\n";
-    s += "\t\tif q.followedReply ~= nil and q.followedReply ~= \"\" then\n";
-    s += "\t\t\t" + g + ".Voice(\"henry\", q.followedReply)\n";
-    s += "\t\t\t" + g + ".HailShow(q.followedReply, \"Henry\", 0)\n";
-    s += "\t\tend\n";
+    s += "\t\t" + g + ".SelfTalk(id, q, \"followedReply\")\n";
     s += "\t\t" + g + ".FollowOver(id)\n";
     s += "\tend) end)\n";
     s += "end\n";
@@ -13925,8 +14478,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\treturn\n";
     s += "\t\tend\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" follow over\")\n";
-    s += "\t\t" + g + ".Voice(\"henry\", q.followOver)\n";
-    s += "\t\t" + g + ".HailShow(q.followOver, \"Henry\", 0)\n";
+    s += "\t\t" + g + ".SelfTalk(id, q, \"followOver\")\n";
     s += "\tend) end)\n";
     s += "end\n";
     s += "\n";
@@ -14469,16 +15021,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn true, \"in view\"\n";
     s += "end\n";
     s += "\n";
-    // Henry's aside on the seek (spotted, discovered): his voice and the narrative line, not
-    // over a conversation (the app's turn, or the game's own Talk), and said in the log.
+    // Henry's aside on the seek (spotted, discovered): his voice and a bark of his own
+    // (SelfTalk), not over a conversation (the app's turn, or the game's own Talk), and
+    // said in the log.
     s += "function " + g + ".SeekAside(id, q, text, what)\n";
     s += "\tif text == nil or text == \"\" then return end\n";
     s += "\tif " + g + ".active or " + g + ".InDialog() then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. what .. \" aside kept back, in conversation\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\t" + g + ".Voice(\"henry\", text)\n";
-    s += "\t" + g + ".HailShow(text, \"Henry\", 0)\n";
+    s += "\t" + g + ".SelfTalk(id, q, what)\n";
     s += "end\n";
     s += "\n";
     // Her voice (bugs.txt 9 Nov 2026, "I don't hear any audio from the cat"; the probes of
@@ -15409,7 +15961,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest stage \" .. tostring(id) .. \" \" .. tostring(what))\n";
     // The street's Talk closing on the holder's turn (the followed sequence's exit script):
     // Henry's own word on the night (FollowOver).
-    s += "\tif tostring(what) == \"open followed\" then pcall(" + g + ".FollowOver, tostring(id)) end\n";
+    // And the row noted (followed_said), as when the mod says it itself: the global
+    // down, so a press of Talk on him after it is his day's menu and not the row again.
+    s += "\tif tostring(what) == \"open followed\" then\n";
+    s += "\t\tpcall(" + g + ".StateQuest, tostring(id), \"followed_said\")\n";
+    s += "\t\tpcall(" + g + ".FollowOver, tostring(id))\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".QuestHolderGave(id, how)\n";
@@ -15787,6 +16344,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // The pump opens the session rather than this, so there is one path in and it is
     // the same one every beat afterwards runs through.
     s += "\tif " + g + ".active then return end\n";
+    // A line Henry is saying to himself is cut short for it (SelfHush): the engine counts
+    // his bark as a dialogue he is in, and the pump below reads IsInDialog for ours.
+    s += "\tpcall(" + g + ".SelfHush, \"a conversation is opening\")\n";
     s += "\t" + g + ".active = true\n";
     s += "\t" + g + ".beganAt = " + g + ".Now()\n";
     // The disk is opened for reading by the pump (Step), once the dialogue is up, and not

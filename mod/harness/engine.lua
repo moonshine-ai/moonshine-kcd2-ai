@@ -364,6 +364,8 @@ function Engine.soul(name, opts)
     e.dir = opts.dir or { x = 0, y = 1, z = 0 }
     function e:GetDirectionVector() return { x = self.dir.x, y = self.dir.y, z = self.dir.z } end
     function e:SetDirectionVector(d) self.dir = { x = d.x, y = d.y, z = d.z or 0 } end
+    -- Turned about z (the mod's FollowFace): zero is north (+y), positive to the west.
+    function e:SetAngles(a) self.dir = { x = -math.sin(a.z), y = math.cos(a.z), z = 0 } end
     -- Sounds played on the entity, by ATL trigger name in the order they were asked for
     -- (Sound.GetAudioTriggerID hands the name back as the id, below).
     e.sounds = {}
@@ -1052,6 +1054,8 @@ function Engine.reset()
     Moonshine.voiced = false
     Moonshine.spoken = false
     Moonshine.henryUntil = 0
+    -- A line Henry was saying to himself in the case before (SelfTalk): the clock starts over.
+    Moonshine.selfUntil = 0
     Moonshine.lipKey = nil
     Moonshine.lipSeq = 1
     Moonshine.lipWho = nil

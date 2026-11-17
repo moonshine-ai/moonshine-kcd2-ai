@@ -421,8 +421,14 @@ int main(int argc, char** argv) {
                 // journal's region comes from it), and its folder, where their files go.
                 const std::string level_dir = "Quests/" + o.modid + "/" + level + "/";
                 data_pak.add("Quests/" + o.modid + "/" + level + ".xml",
-                             kcd2::emit_quest_level(o.modid, level, dialogue_name, quests));
+                             kcd2::emit_quest_level(o.modid, level, dialogue_name, personas, quests));
                 data_pak.add(level_dir + dialogue_name + ".xml", dialogue);
+                // And a beggar's thanks for a garment, a man's and a woman's, stood in the
+                // Level (thanks_class).
+                for (const bool female : {false, true}) {
+                    data_pak.add(level_dir + kcd2::thanks_node(female) + ".xml",
+                                 kcd2::emit_thanks_dialogue(o.modid, level, female));
+                }
             }
             // One file per quest beside its level's dialogue, and its journal rows in the
             // same table as everything else the mod says.
@@ -459,17 +465,31 @@ int main(int argc, char** argv) {
                 if (!q.hail.empty()) {
                     data_pak.add(level_dir + kcd2::hail_node(q.id) + ".xml", kcd2::emit_hail_dialogue(o.modid, q));
                 }
+                // And a holder's row said in the street as a bubble over his head.
+                if (kcd2::has_street_line(q)) {
+                    data_pak.add(level_dir + kcd2::street_node(q.id) + ".xml", kcd2::emit_street_dialogue(o.modid, q));
+                }
+                // And each line Henry says to himself as a bark of his own (SelfLine).
+                for (const kcd2::SelfLine& line : kcd2::self_lines(q)) {
+                    data_pak.add(level_dir + kcd2::self_node(q.id, line) + ".xml",
+                                 kcd2::emit_self_dialogue(o.modid, q, line));
+                }
                 // And the holder's menu beside it, which the quest file lists as its own
                 // definition, with the twelve lines it says. A find has no holder.
                 if (!q.has_holder()) continue;
                 data_pak.add(level_dir + kcd2::holder_node(q.id) + ".xml", kcd2::emit_holder_dialogue(o.modid, q));
+                // And, for a holder who can catch Henry behind him in the street, the forced
+                // dialogue he turns on him with (its two lines are the holder's own rows).
+                if (q.has_follow()) {
+                    data_pak.add(level_dir + kcd2::followed_node(q.id) + ".xml", kcd2::emit_followed_dialogue(o.modid, q));
+                }
                 for (auto& row : kcd2::holder_localization(o.modid, q)) {
                     loc_extras.push_back(std::move(row));
                 }
             }
             // The mod's own item rows, when a favour is about a thing the shipped tables
             // cannot put in a pocket, and their names for the inventory.
-            if (const std::string items = kcd2::emit_item_table(o.modid, quests); !items.empty()) {
+            if (const std::string items = kcd2::emit_item_table(o.modid, quests, personas); !items.empty()) {
                 data_pak.add("Libs/Tables/item/item__" + o.modid + ".xml", items);
                 for (auto& row : kcd2::item_localization(o.modid, quests)) {
                     loc_extras.push_back(std::move(row));
