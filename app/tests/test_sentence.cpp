@@ -118,6 +118,74 @@ TEST_CASE("a dash at the end stops the sentence, one at the start goes, and hyph
     CHECK(undashed("6d6f6f6e-7368-6b00-8000-979c4fccd41b") == "6d6f6f6e-7368-6b00-8000-979c4fccd41b");
 }
 
+TEST_CASE("stage directions between asterisks go, and the words around them close up") {
+    CHECK(undirected("*rubs hands together and glances at the ground* Doing as well as a man can.") ==
+          "Doing as well as a man can.");
+    CHECK(undirected("Aye. *rubs hands together* What'll it be?") == "Aye. What'll it be?");
+    CHECK(undirected("Well now, *scratches his chin* that's a hard one.") == "Well now, that's a hard one.");
+    CHECK(undirected("God keep you, sir. *crosses himself*") == "God keep you, sir. ");
+    CHECK(undirected("*He looks up briefly.* Sir, I am a married man.") == "Sir, I am a married man.");
+    CHECK(undirected("*sighs* *looks away* Aye.") == "Aye.");
+    CHECK(undirected("*sighs*\n\nAye, it has been a hard winter.") == "Aye, it has been a hard winter.");
+    CHECK(undirected("Aye.\n\n*spits on the ground*\n\nThat for the king's men.") == "Aye.\n\nThat for the king's men.");
+    // The mark after a direction is the direction's own, unless words lead up to it.
+    CHECK(undirected("Aye. *sighs heavily*. Well, come in.") == "Aye. Well, come in.");
+    CHECK(undirected("Thank you kindly *bows low*. Good day.") == "Thank you kindly. Good day.");
+    CHECK(undirected("Hold*waves a hand*there.") == "Hold there.");
+    // One word, standing apart from the sentences around it.
+    CHECK(undirected("Aye. *nods* The mill is past the bridge.") == "Aye. The mill is past the bridge.");
+    CHECK(undirected("*Sighs* Aye.") == "Aye.");
+    CHECK(undirected("Thank you kindly *bows*") == "Thank you kindly ");
+    CHECK(undirected("Nothing between asterisks here.") == "Nothing between asterisks here.");
+}
+
+TEST_CASE("a stressed word keeps its place, and asterisks that are not a pair just go") {
+    CHECK(undirected("I *never* said so.") == "I never said so.");
+    CHECK(undirected("No. *Never* again.") == "No. Never again.");
+    CHECK(undirected("That I *never*.") == "That I never.");
+    CHECK(undirected("It was **his** axe, and ***mine*** after.") == "It was his axe, and mine after.");
+    CHECK(undirected("Two * three, he said.") == "Two  three, he said.");
+    CHECK(undirected("A loaf*") == "A loaf");
+    // No partner on the line, or none near: not a direction, and the words stay.
+    CHECK(undirected("*rubs hands\nGood day.") == "rubs hands\nGood day.");
+    CHECK(undirected("*rubs hands together and") == "rubs hands together and");
+    const std::string far = "*" + std::string(300, 'a') + "* Good day.";
+    CHECK(undirected(far) == std::string(300, 'a') + " Good day.");
+}
+
+TEST_CASE("a streamed reply holds back from an asterisk until what it starts is known") {
+    CHECK(speakable("Aye. *rubs", false) == "Aye.");
+    CHECK(speakable("Aye. *rubs hands together*", false) == "Aye.");
+    CHECK(speakable("Aye. *rubs hands together* What", false) == "Aye. What");
+    CHECK(speakable("Aye. *", false) == "Aye.");
+    CHECK(speakable("I *never*", false) == "I");
+    CHECK(speakable("I *never* s", false) == "I never s");
+    CHECK(speakable("Aye. *rubs hands together", true) == "Aye. rubs hands together");
+    CHECK(speakable("He was a mason \xE2\x80\x94 *shrugs* a good one.", true) == "He was a mason, a good one.");
+
+    // However the reply is cut, what is settled is a prefix of what the whole gives, and
+    // never shrinks: only the new tail is ever handed on.
+    const std::vector<std::string> replies = {
+        "*rubs hands together and glances at the ground* Doing as well as a man can, God willing.",
+        "Aye. *sighs heavily*. Well, come in -- *waves* mind the step. I *never* lock it.",
+        "Thank you kindly *bows low*. Good day *nods*",
+        "No. *Never* again, **not** for fifty groschen * or more.\n\n*spits*\n\n*Sighs* Go on.",
+        "Hold*waves a hand*there \xE2\x80\x94 *looks up*, sir. *unfinished direction",
+    };
+    for (const std::string& whole : replies) {
+        const std::string all = speakable(whole, true);
+        CHECK(all.find('*') == std::string::npos);
+        std::size_t before = 0;
+        for (std::size_t cut = 0; cut <= whole.size(); ++cut) {
+            const std::string head = speakable(whole.substr(0, cut), false);
+            CAPTURE(whole.substr(0, cut));
+            CHECK(all.compare(0, head.size(), head) == 0);
+            CHECK(head.size() >= before);
+            before = head.size();
+        }
+    }
+}
+
 TEST_CASE("a streamed piece holds back what a later byte could change") {
     CHECK(undash_safe("He lodges up the stair") == std::string("He lodges up the stair").size());
     CHECK(undash_safe("He lodges up the stair ") == std::string("He lodges up the stair").size());

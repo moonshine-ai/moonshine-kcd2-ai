@@ -874,6 +874,51 @@ TEST_CASE("a reply that opens by repeating the last line loses the repeat, and n
     CHECK(shown.size() == 1);  // held back throughout, then the whole line at the end
 }
 
+TEST_CASE("what the model writes of what the person does never reaches the screen, the voice or the history") {
+    Fixture f;
+    f.session.set_stream_interval(std::chrono::milliseconds(0));
+    f.llm.chunk = 3;
+    // As Claude Haiku wrote them on 17 Nov 2026, one at the head of every reply.
+    f.llm.replies.push_back(
+        "*rubs hands together and glances at the ground* Doing as well as a man can, God willing. "
+        "*crosses himself* The rain has got into everything I own.");
+    f.session.handle({Marker::Begin, 0, kBartel});
+
+    const std::string words = "Doing as well as a man can, God willing. The rain has got into everything I own.";
+    std::vector<std::string> shown;
+    while (const std::optional<std::string> update = f.game.play()) shown.push_back(*update);
+    REQUIRE(shown.size() > 2);
+    for (const std::string& update : shown) {
+        CHECK(update.find('*') == std::string::npos);
+        CHECK(words.rfind(update, 0) == 0);  // each update is the words so far, and only words
+    }
+    CHECK(shown.back() == words);
+    std::string voiced;
+    for (const std::string& piece : f.spoken) voiced += (voiced.empty() ? "" : " ") + piece;
+    CHECK(voiced == words);
+    REQUIRE(f.session.history().size() == 1);
+    CHECK(f.session.history().back().content == words);
+    bool noted = false;
+    for (const std::string& line : f.statuses) {
+        if (line.find("stage direction") != std::string::npos) noted = true;
+    }
+    CHECK(noted);
+
+    // A reply that is all direction has nothing to say: the model is asked once more, told
+    // to speak, and that telling is not kept.
+    const std::size_t calls = f.llm.calls.size();
+    f.llm.replies.push_back("*nods slowly and looks away*");
+    f.llm.replies.push_back("Aye, sir. That is so.");
+    f.session.say("Is the road to Kuttenberg open?");
+    shown.clear();
+    while (const std::optional<std::string> update = f.game.play()) shown.push_back(*update);
+    REQUIRE_FALSE(shown.empty());
+    CHECK(shown.back() == "Aye, sir. That is so.");
+    REQUIRE(f.llm.calls.size() == calls + 2);
+    CHECK(f.llm.calls[calls + 1].messages.back().content.find("Answer in words") != std::string::npos);
+    CHECK(f.session.history()[f.session.history().size() - 2].content == "Is the road to Kuttenberg open?");
+}
+
 TEST_CASE("a reply that opens with the tail of the last line, from a sentence on, loses that too") {
     Fixture f;
     f.session.set_stream_interval(std::chrono::milliseconds(0));

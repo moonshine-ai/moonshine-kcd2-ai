@@ -454,6 +454,13 @@ MOONSHINE_API_KEY=... app/build/moonshine_app --api-url https://api.openai.com/v
 python3 scripts/fake_game.py --api-url http://127.0.0.1:8080/v1 --api-model any    # a conversation through one
 ```
 
+Hosted models like to write what the character does between asterisks ("\*rubs hands
+together\* Good day, sir."); Claude Haiku opened four replies in four that way. Those are
+taken out of every reply as it streams, before the screen, the voice or the history has
+them (`speakable` in `app/src/sentence.cpp`), a stressed word (`I *never* said so`) keeps
+its place, and a reply that was nothing but a direction is asked for once more. The log
+says when it happened: "the model wrote asterisks; they were left out".
+
 What has and has not been tried. Against llama.cpp's server, with the shipped Qwen3 and
 with a small Qwen3 that reasons (its reasoning in a field of its own, and inline between
 `<think>` tags): whole conversations through `fake_game.py` stay in step with the game,

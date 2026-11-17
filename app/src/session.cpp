@@ -1306,8 +1306,9 @@ void Session::answer(std::string_view said, bool remember) {
     };
     // Gives the sentence buffer, and the voice, whatever has been settled and not yet given.
     //
-    // Undashed on the way, so the screen, the voice and the history all have the same
-    // words; a trailing hyphen or space waits for the next piece, unless this is the end.
+    // Made speakable on the way (sentence.h: what the model wrote of what the person does
+    // is taken out, and the dashes), so the screen, the voice and the history all have the
+    // same words; what a later byte could change waits for it, unless this is the end.
     std::size_t clean_fed = 0;  // how much of the undashed reply has been given
     // Whether the reply is coming from the model as it is written, so its pieces are
     // spoken as they complete (Listener::on_speak_piece) and the mod told of each (@lip).
@@ -1344,18 +1345,17 @@ void Session::answer(std::string_view said, bool remember) {
         return so_far(buffer.text().substr(0, pieces_out.front().end));
     };
     const auto feed = [&](bool whole = false) {
-        if (!skip || raw.size() <= std::max(*skip, fed)) return;
-        const std::string_view reply(std::string_view(raw).substr(*skip));
-        const std::size_t safe = whole ? reply.size() : undash_safe(reply);
-        if (*skip + safe <= fed) return;
-        // Undashed from the start each time, since a dash reads by what is around it: up
-        // to a safe point the result is a prefix of the whole's, so only the new tail goes.
-        const std::string clean = undashed(reply.substr(0, safe));
+        if (!skip || raw.size() <= *skip) return;
+        // Nothing new to read, unless this is the end, when what was held back is due.
+        if (!whole && raw.size() <= fed) return;
+        // From the start each time, since a dash and an asterisk read by what is around
+        // them: what is settled is a prefix of the whole's, so only the new tail goes.
+        const std::string clean = speakable(std::string_view(raw).substr(*skip), whole);
         if (clean.size() > clean_fed) {
             for (std::string& ready : buffer.push(std::string_view(clean).substr(clean_fed))) piece(ready);
             clean_fed = clean.size();
         }
-        fed = *skip + safe;
+        fed = raw.size();
     };
     // The lines the voice has finished with, while the model writes: Henry's own line
     // among them, which the mod holds the reply behind until it hears so (spoken).
@@ -1463,6 +1463,26 @@ void Session::answer(std::string_view said, bool remember) {
         }
     } else if (skip && *skip > 0) {
         status("the reply opened by repeating the last line, which was dropped");
+    }
+    // A reply that was all stage direction ("*nods slowly*") has no words in it once the
+    // directions are out, and nothing of it has reached the game or the voice. Asked once
+    // more, told to speak; like the telling above, that is not kept in the history.
+    const auto acted_only = [&]() {
+        if (cut || wrote || !skip || raw.find_first_not_of(" \t\r\n", *skip) == std::string::npos) return false;
+        return speakable(std::string_view(raw).substr(*skip), true).find_first_not_of(" \t\r\n") == std::string::npos;
+    };
+    if (acted_only()) {
+        status("the model wrote only what " + persona_.name + " does, and no words; asking again");
+        raw.clear();
+        skip.reset();
+        fed = 0;
+        clean_fed = 0;
+        const std::string told =
+            heard + " [Answer in words, spoken aloud. Write nothing of what you do.]";
+        if (!generate(told, options_)) return;
+    }
+    if (skip && raw.find('*', *skip) != std::string::npos) {
+        status("the model wrote asterisks; they were left out, with any stage direction between them");
     }
     std::string reply;
     if (cut) {

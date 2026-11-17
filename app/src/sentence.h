@@ -33,6 +33,23 @@ std::string undashed(std::string_view text);
 // until the next piece says what follows it.
 std::size_t undash_safe(std::string_view text);
 
+// What a model writes of what its character does, between asterisks, taken out: only
+// words are spoken and shown ("*rubs hands together* Good day, sir." is "Good day, sir.").
+// Hosted models write these far more than the local one does (17 Nov 2026: Claude Haiku
+// opened four replies in four with one). A pair of asterisks on one line around more than
+// one word is a direction and goes, with the blank or the full stop that was its own. One
+// word between asterisks goes too ("Aye. *nods*"), unless the sentence runs through it
+// ("I *never* said so", "*Never* again"), which is stress, and the word stays. Asterisks
+// that are neither (doubled for bold, or with no partner on the line) go and what is
+// around them stays.
+std::string undirected(std::string_view text);
+
+// What of a reply is settled enough to say and show: directions out, then dashes. With
+// `whole` false the reply is still being written, and whatever a later byte could change
+// is held back (an asterisk whose partner has not come, and what undash_safe holds); up
+// to there the result is a prefix of what the whole reply will give.
+std::string speakable(std::string_view reply, bool whole);
+
 class SentenceBuffer {
 public:
     explicit SentenceBuffer(std::size_t least_chars = 45);

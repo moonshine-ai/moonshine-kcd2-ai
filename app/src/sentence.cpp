@@ -1,6 +1,7 @@
 #include "sentence.h"
 
 #include <cctype>
+#include <utility>
 
 namespace moonshine {
 
@@ -66,7 +67,120 @@ bool is_pause(char c) {
     return c == ',' || c == ';' || c == ':';
 }
 
+bool is_mark(char c) {
+    return is_stop(c) || is_pause(c);
+}
+
+// A letter or a digit; every byte of a character outside ASCII counts as a letter.
+bool is_word(char c) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    return u >= 0x80 || std::isalnum(u) != 0;
+}
+
+// A direction is a phrase, not a paragraph: an asterisk with no partner this near is not
+// the start of one, and a reply is not held back for longer than this waiting to find out.
+constexpr std::size_t kLongestDirection = 200;
+
+enum class Star {
+    Marker,     // an asterisk that means nothing here: it goes, and nothing else does
+    Direction,  // the start of a stage direction, which goes whole
+    Stress,     // the start of one stressed word, which stays without its asterisks
+    Unsettled,  // more of the reply is needed to say which
+};
+
+// What the asterisk at s[i] is, and where what it starts ends (the last byte of it).
+std::pair<Star, std::size_t> star_at(std::string_view s, std::size_t i, bool whole) {
+    std::size_t j = i;
+    while (j < s.size() && s[j] == '*') ++j;
+    if (j - i >= 2) return {Star::Marker, j - 1};
+    if (j == s.size()) return {whole ? Star::Marker : Star::Unsettled, i};
+    if (is_space(s[j])) return {Star::Marker, i};
+    std::size_t close = j;
+    for (; close < s.size() && s[close] != '*'; ++close) {
+        if (s[close] == '\n' || close - i > kLongestDirection) return {Star::Marker, i};
+    }
+    if (close == s.size()) return {whole ? Star::Marker : Star::Unsettled, i};
+
+    for (std::size_t at = j; at < close; ++at) {
+        if (is_space(s[at])) return {Star::Direction, close};
+    }
+    // One word. Stress when the sentence runs through it: a word before it and, after it, a
+    // small letter or the sentence's own mark hard against it ("I *never* said", "that I
+    // *never*."); or a capital of its own with a small letter after, which is a sentence
+    // opening on it ("*Never* again."). Anything else stands apart from the sentences
+    // around it, as a direction does ("Aye. *nods*", "a mason, *shrugs* a good one").
+    std::size_t before = i;
+    while (before > 0 && s[before - 1] == ' ') --before;
+    // Not a word when it is a dash, a curled quote or an ellipsis: U+2000 to U+203F, which
+    // is every character whose UTF-8 opens E2 80.
+    const bool typographic = before >= 3 && static_cast<unsigned char>(s[before - 3]) == 0xE2 &&
+                             static_cast<unsigned char>(s[before - 2]) == 0x80;
+    const bool follows_word = before > 0 && is_word(s[before - 1]) && !typographic;
+    const bool capital = s[j] >= 'A' && s[j] <= 'Z';
+    std::size_t after = close + 1;
+    if (after < s.size() && is_mark(s[after])) return {follows_word ? Star::Stress : Star::Direction, close};
+    if (!follows_word && !capital) return {Star::Direction, close};
+    while (after < s.size() && (s[after] == ' ' || s[after] == '\t')) ++after;
+    if (after == s.size()) return {whole ? Star::Direction : Star::Unsettled, close};
+    return {s[after] >= 'a' && s[after] <= 'z' ? Star::Stress : Star::Direction, close};
+}
+
+// The text without its directions, as far as it is settled: all of it when `whole`.
+std::string undirect(std::string_view s, bool whole) {
+    std::string out;
+    out.reserve(s.size());
+    std::size_t i = 0;
+    while (i < s.size()) {
+        if (s[i] != '*') {
+            out += s[i++];
+            continue;
+        }
+        const auto [kind, end] = star_at(s, i, whole);
+        if (kind == Star::Unsettled) break;
+        if (kind == Star::Marker) {
+            i = end + 1;
+            continue;
+        }
+        if (kind == Star::Stress) {
+            out.append(s.substr(i + 1, end - i - 1));
+            i = end + 1;
+            continue;
+        }
+        // A direction, gone. What was around it is closed up: a mark after it is its own
+        // when no words came before it in the sentence ("Aye. *sighs*. Well"), and is the
+        // sentence's when they did ("Aye *sighs*. Well"); the blank on one side is kept,
+        // not both. Only spaces are taken back off the end, which a streamed piece has
+        // not been given yet (undash_safe holds them).
+        std::size_t next = end + 1;
+        if (next < s.size() && is_mark(s[next])) {
+            const std::size_t last = out.find_last_not_of(' ');
+            if (last == std::string::npos || is_mark(out[last]) || is_space(out[last]) || out[last] == '(') {
+                while (next < s.size() && is_mark(s[next])) ++next;
+            } else {
+                out.erase(last + 1);
+            }
+        }
+        if (out.empty() || is_space(out.back())) {
+            while (next < s.size() && is_space(s[next])) ++next;
+        } else if (next < s.size() && is_word(s[next])) {
+            out += ' ';
+        }
+        i = next;
+    }
+    return out;
+}
+
 }  // namespace
+
+std::string undirected(std::string_view s) {
+    return undirect(s, true);
+}
+
+std::string speakable(std::string_view reply, bool whole) {
+    const std::string words = undirect(reply, whole);
+    if (whole) return undashed(words);
+    return undashed(std::string_view(words).substr(0, undash_safe(words)));
+}
 
 std::string undashed(std::string_view s) {
     std::string out;
