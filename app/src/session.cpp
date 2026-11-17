@@ -87,6 +87,11 @@ void Session::status(std::string_view text) {
     if (listener_.on_status) listener_.on_status(text);
 }
 
+void Session::model_failed(std::string_view what, const std::exception& why) {
+    status(std::string(what) + ": " + why.what());
+    if (listener_.on_model_error) listener_.on_model_error(why.what());
+}
+
 void Session::handle(const Event& event) {
     switch (event.marker) {
         case Marker::Begin:
@@ -762,7 +767,7 @@ bool Session::fold(const std::function<bool()>& interrupted) {
         ++fold.stops;
         return true;
     } catch (const std::exception& e) {
-        status(std::string("the model could not be reached to fold them: ") + e.what());
+        model_failed("the model could not be reached to fold them", e);
         fold_.reset();
         return false;
     }
@@ -1054,7 +1059,7 @@ std::string Session::judge(std::string_view said) {
                   judge_options(options_),
                   [&](std::string_view delta) { verdict_text += delta; });
     } catch (const std::exception& e) {
-        status(std::string("the judge could not be reached: ") + e.what());
+        model_failed("the judge could not be reached", e);
         return {};
     }
     const Verdict verdict = read_verdict(verdict_text);
@@ -1421,7 +1426,7 @@ void Session::answer(std::string_view said, bool remember) {
             status("the player skipped the reply; it ends where it was on the screen");
             return true;
         } catch (const std::exception& e) {
-            status(std::string("the model could not be reached: ") + e.what());
+            model_failed("the model could not be reached", e);
             // Nothing reached the game, so nothing was said. Otherwise the reply ends where
             // it broke off, and the game is told so rather than left waiting for the rest.
             return wrote;
@@ -2421,7 +2426,7 @@ std::optional<bool> Session::look_ahead(const std::function<bool()>& interrupted
         ++guess.stops;
         return true;
     } catch (const std::exception& e) {
-        status(std::string("the model could not be reached for a guess: ") + e.what());
+        model_failed("the model could not be reached for a guess", e);
         greeting_guess_.reset();
         return false;
     }
@@ -2473,7 +2478,7 @@ bool Session::speculate(const std::function<bool()>& interrupted) {
         // the rows go and the guess with them; if not, it is picked up again next time.
         return true;
     } catch (const std::exception& e) {
-        status(std::string("the model could not be reached for a guess: ") + e.what());
+        model_failed("the model could not be reached for a guess", e);
         guesses_.clear();
         return false;
     }

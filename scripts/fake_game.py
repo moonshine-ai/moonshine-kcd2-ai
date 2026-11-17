@@ -404,6 +404,14 @@ def run(args: argparse.Namespace) -> int:
         # finishes in a second or two.
         if args.canned:
             command.append("--canned")
+        elif args.api_url:
+            # A model behind an OpenAI-compatible API. The key is not a flag: the app reads
+            # MOONSHINE_API_KEY, which it inherits from whoever ran this.
+            command += ["--api-url", args.api_url, "--api-model", args.api_model]
+            if args.api_extra:
+                command += ["--api-extra", args.api_extra]
+            if args.guessing:
+                command.append("--guessing")
         elif args.ollama:
             command += ["--ollama", "--host", args.host, "--model", args.model]
         else:
@@ -563,7 +571,11 @@ def run(args: argparse.Namespace) -> int:
         looked = pump.capture(r"-- (looked at .+)", timeout=args.timeout)
         guessed_ahead = False
         pressed_early = False
-        if looked is None:
+        if looked is None and args.api_url and not args.guessing:
+            # A model behind an API is not asked for anything ahead of the press unless
+            # --guessing says so, and a look plans nothing then: no status is the right answer.
+            print("  the look planned nothing: guessing is off for an API", flush=True)
+        elif looked is None:
             faults.append("the look at the soul before the second conversation never reached the app")
         elif args.press_after is not None:
             # The player quicker than the model: the press comes while the guess is still
@@ -1014,6 +1026,15 @@ def main() -> int:
     parser.add_argument("--gguf", type=pathlib.Path,
                         help="weights for the in-process backend; default is whichever blob "
                              "Ollama already holds for --model")
+    parser.add_argument("--api-url", metavar="URL",
+                        help="ask an OpenAI-compatible API instead (the app's --api-url); the "
+                             "key is MOONSHINE_API_KEY in the environment")
+    parser.add_argument("--api-model", metavar="NAME", default="",
+                        help="the model to ask the API for")
+    parser.add_argument("--api-extra", metavar="JSON", default="",
+                        help="a JSON object merged into every request to the API")
+    parser.add_argument("--guessing", action="store_true",
+                        help="with --api-url, let the app guess replies ahead (off there by default)")
     parser.add_argument("--soul", default="kkut_additive_man_47",
                         help="the soul id the mod would log for whoever the player met")
     parser.add_argument("--doing", default="LumberJackSawVAR",

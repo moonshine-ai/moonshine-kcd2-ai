@@ -69,6 +69,9 @@ int tokens_already_cached(const Timing& timing, double prefill_rate) {
 Prefiller::Prefiller(Llm& llm, Options options) : llm_(llm), options_(std::move(options)) {}
 
 Timing Prefiller::prefill(const std::string& system) {
+    // Nothing is asked of a backend that is paid by the token (Llm::wants_warming): an
+    // empty Timing, which every caller already reads as "nothing was measured".
+    if (!llm_.wants_warming()) return {};
     Options opts = options_;
     opts.reply_tokens = kPrefillReplyTokens;
 
@@ -81,6 +84,7 @@ Timing Prefiller::prefill(const std::string& system) {
 }
 
 Timing Prefiller::warm_world(std::string_view world) {
+    if (!llm_.wants_warming()) return {};
     const std::string system = shared_prefix(world);
     // The branch first: the state after exactly the shared text, kept by a backend whose
     // cache cannot be cut back to it. Then the ordinary prefill, which on such a backend is
@@ -92,8 +96,11 @@ Timing Prefiller::warm_world(std::string_view world) {
 }
 
 Warmth Prefiller::prove_world(std::string_view world) {
-    const std::string system = shared_prefix(world);
     Warmth warmth;
+    // No warm and no probe of a backend that is not to be warmed: both are prompts paid
+    // for, and the rate they would measure is the server's, which nothing here acts on.
+    if (!llm_.wants_warming()) return warmth;
+    const std::string system = shared_prefix(world);
     const Timing held = llm_.hold_branch(system);
     warmth.warm = prefill(system);
     // The branch's own prefill is the cold one, and so the one the rate can be read off.
@@ -126,6 +133,7 @@ Timing Prefiller::warm_persona(std::string_view world, const Persona& persona) {
 
 bool Prefiller::warm_persona(std::string_view world, const Persona& persona,
                              const std::function<bool()>& interrupted) {
+    // Always so for a backend that is not to be warmed (is_warm).
     if (is_warm(persona)) return true;
     Options opts = options_;
     opts.reply_tokens = kPrefillReplyTokens;
@@ -146,6 +154,9 @@ bool Prefiller::warm_persona(std::string_view world, const Persona& persona,
 }
 
 bool Prefiller::is_warm(const Persona& persona) const {
+    // A backend that is not to be warmed is as warm as it will ever be: saying so here is
+    // what stops every caller from asking, and from waiting on, a warm that will not come.
+    if (!llm_.wants_warming()) return true;
     return warm_.count(persona.sheet) != 0;
 }
 

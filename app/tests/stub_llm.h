@@ -51,6 +51,10 @@ public:
 
     std::string describe() const override { return "stub"; }
 
+    // False to stand in for a model behind an API, which is asked nothing ahead of need.
+    bool warming = true;
+    bool wants_warming() const override { return warming; }
+
     const Call& last() const { return calls.back(); }
 
 private:

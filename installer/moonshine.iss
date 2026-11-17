@@ -16,8 +16,22 @@
 ; status line, the sha256 checked as each lands, Setup's own Retry/Skip/Cancel when one
 ; fails. A file already in place with the right hash is left alone, so running the
 ; installer again after a failed download, or over an older version, fetches only what is
-; missing or changed. Fetch-Package.ps1 reads the same manifest for the Start Menu's
-; "Download or repair Moonshine files" and for Moonshine.ps1 -Update.
+; missing or changed. Moonshine.exe reads the same manifest for "Repair files" and for its
+; update (app/gui/fetch.cpp), as Fetch-Package.ps1 does for the console launcher.
+;
+; What it installs is a window, Moonshine.exe, and the app it starts, moonshine_app.exe.
+; The one Start Menu entry is that window; the check, the logs, updating, repairing and
+; removing are inside it, where earlier versions had a Start Menu entry each. The window
+; needs Microsoft Edge WebView2, which Windows 11 has and nearly every Windows 10; where
+; it is missing, Microsoft's small bootstrapper is run, as vc_redist is. The console
+; launcher (Moonshine.ps1, with Fetch-Package.ps1 and Collect-Logs.ps1) is still installed:
+; Moonshine.exe offers it when it cannot make a window, and the verify scripts drive it.
+;
+; Moonshine.exe updates itself by downloading the new one of these and running it
+; /SILENT /DIR=<where it is> /RELAUNCH=1, then closing; and removes itself by running the
+; uninstaller /SILENT, then closing. Both wait here for that window to have gone (it
+; holds a mutex for as long as its process lives), and /RELAUNCH=1 opens it again at the
+; end of a silent install.
 ;
 ; The mod is one of the downloaded parts, and a task, on by default, copies it into the
 ; game's mods\ folder: the mod and the app then always come from the same build. The
@@ -39,15 +53,29 @@
 #endif
 #define AppName "Moonshine for Kingdom Come: Deliverance 2"
 #define Pkg Stage + "\Moonshine"
+; /DTestInstall: an installer for trying the install, the window's update and its uninstall
+; on a machine that has a real Moonshine, without touching it. It is another application
+; as far as Windows is concerned (its own AppId, so its own uninstall entry and its own
+; memory of the last install), in its own folder, with its own Start Menu group and
+; shortcut names. Pass /MERGETASKS=!copymod as well: the game's mods folder is shared.
+#ifdef TestInstall
+  #define AppIdValue "{{7C2E3C1A-5B7D-4E7E-9C64-3A1B2C4D5EFE}"
+  #define Folder "MoonshineTest"
+  #define Shortcut "Moonshine Test"
+#else
+  #define AppIdValue "{{7C2E3C1A-5B7D-4E7E-9C64-3A1B2C4D5E6F}"
+  #define Folder "Moonshine"
+  #define Shortcut "Moonshine"
+#endif
 
 [Setup]
-AppId={{7C2E3C1A-5B7D-4E7E-9C64-3A1B2C4D5E6F}
+AppId={#AppIdValue}
 AppName={#AppName}
 AppVersion={#Version}
 AppVerName=Moonshine {#Version} (tester build)
 AppPublisher=Pete Warden
-DefaultDirName={localappdata}\Moonshine
-DefaultGroupName=Moonshine
+DefaultDirName={localappdata}\{#Folder}
+DefaultGroupName={#Shortcut}
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 PrivilegesRequired=lowest
@@ -58,7 +86,7 @@ MinVersion=10.0
 OutputBaseFilename=Moonshine-{#Version}-setup
 SetupIconFile={#Source}\moonshine.ico
 UninstallDisplayIcon={app}\moonshine.ico
-UninstallDisplayName=Moonshine (tester build {#Version})
+UninstallDisplayName={#Shortcut} (tester build {#Version})
 LicenseFile={#Pkg}\LICENSES\README.txt
 InfoBeforeFile={#Pkg}\README.txt
 Compression=lzma2/max
@@ -70,7 +98,10 @@ ExtraDiskSpaceRequired=314572800
 WizardStyle=modern
 ShowLanguageDialog=no
 CloseApplications=yes
-CloseApplicationsFilter=moonshine_app.exe
+CloseApplicationsFilter=Moonshine.exe,moonshine_app.exe
+; The window holds this while it is open (app/gui/main_gui.cpp), and gives it up before it
+; starts this installer or the uninstaller itself. Anybody else is asked to close it.
+AppMutex=Moonshine.KCD2.Window
 RestartApplications=no
 SetupLogging=yes
 #ifdef Sign
@@ -95,12 +126,13 @@ Name: "copymod"; Description: "Install the mod into the game's mods folder (unti
 
 [Files]
 ; The program and its scripts, compressed.
+Source: "{#Pkg}\Moonshine.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\moonshine_app.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\Moonshine.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\Fetch-Package.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\Collect-Logs.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Pkg}\README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "{#Pkg}\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\VERSION.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\setting.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pkg}\manifest.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -108,6 +140,8 @@ Source: "{#Pkg}\LICENSES\*"; DestDir: "{app}\LICENSES"; Flags: ignoreversion rec
 Source: "{#Source}\moonshine.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The VC++ runtime, unpacked to run and then thrown away.
 Source: "{#Stage}\extra\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsRedist
+; Microsoft's WebView2 bootstrapper, likewise, where there is no WebView2 for the window.
+Source: "{#Stage}\extra\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsWebView2
 ; The downloads (data\, models\, mod\) and the mod's copy into the game: written by Stage.ps1.
 #include Stage + "\download_files.iss"
 
@@ -115,22 +149,28 @@ Source: "{#Stage}\extra\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafter
 Name: "{app}\logs"
 
 [Icons]
-Name: "{group}\Moonshine"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Start Moonshine and the game together"
-Name: "{group}\Check the Moonshine installation"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Check"; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"
-Name: "{group}\Download or repair Moonshine files"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Fetch-Package.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Fetch again any model or data file that is missing or damaged"
-Name: "{group}\Update Moonshine"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Update"; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Comment: "Look for a newer Moonshine and install it"
-Name: "{group}\Collect Moonshine logs"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\Collect-Logs.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"
+; One entry: the window. What used to be entries of their own here (the check, download or
+; repair, update, collect logs, uninstall) is inside it; [InstallDelete] takes away the
+; ones an earlier version left. Windows' own "Installed apps" still lists the uninstaller,
+; and the guide keeps its entry.
+Name: "{group}\{#Shortcut}"; Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Comment: "Start Moonshine and the game together"
 Name: "{group}\Read me"; Filename: "{app}\README.txt"
-Name: "{group}\Uninstall Moonshine"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Moonshine"; Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\moonshine.ico"; Tasks: desktopicon
+Name: "{autodesktop}\{#Shortcut}"; Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Comment: "Start Moonshine and the game together"; Tasks: desktopicon
 
 [Run]
 ; The runtime first, quietly; it asks for elevation itself. 1638 is "a newer one is
 ; already here" and 3010 is "reboot to finish", neither a failure for our purposes.
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing the Microsoft Visual C++ runtime ..."; Flags: waituntilterminated; Check: NeedsRedist
-; Then the package's own check, in a window the tester can read, so a bad install is seen
-; here and not as a silent app on the first evening.
-Filename: "powershell.exe"; Parameters: "-NoExit -ExecutionPolicy Bypass -File ""{app}\Moonshine.ps1"" -Check"; WorkingDir: "{app}"; Description: "Check the installation now (recommended)"; Flags: postinstall nowait skipifsilent
+; WebView2, where Windows does not have it: the bootstrapper downloads the runtime (about
+; 150 MB) and installs it for this user, or for everybody when Setup is elevated.
+Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft Edge WebView2 ..."; Flags: waituntilterminated; Check: NeedsWebView2
+; Then the app itself, whose first screen is the check of the installation, so a bad
+; install is seen here and not as a silent app on the first evening.
+Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Description: "Open Moonshine now"; Flags: postinstall nowait skipifsilent
+; The guide was the page before the install; here it is offered, not opened unasked.
+Filename: "{app}\README.txt"; Description: "Read the guide"; Flags: postinstall shellexec nowait skipifsilent unchecked
+; An update the window started (/SILENT /RELAUNCH=1) ends with the window open again.
+Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent runasoriginaluser; Check: WantsRelaunch
 
 [InstallDelete]
 ; What an earlier version put here and this one does not: the Qwen3-TTS voice engine
@@ -142,11 +182,19 @@ Type: files; Name: "{app}\libopenblas.dll"
 Type: filesandordirs; Name: "{app}\models\qwen3-tts-0.6b"
 Type: filesandordirs; Name: "{app}\data\kcd2\voices\clones"
 Type: filesandordirs; Name: "{app}\data\kcd2\voices\phrases"
+; The Start Menu entries of the console launcher (to 0.9.102), whose jobs are in the window.
+Type: files; Name: "{group}\Check the Moonshine installation.lnk"
+Type: files; Name: "{group}\Download or repair Moonshine files.lnk"
+Type: files; Name: "{group}\Update Moonshine.lnk"
+Type: files; Name: "{group}\Collect Moonshine logs.lnk"
+Type: files; Name: "{group}\Uninstall Moonshine.lnk"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\moonshine.cfg"
-; What Fetch-Package.ps1 put there after the install, which the uninstall log does not know.
+; The window's own WebView2 profile (cache and the like; it keeps nothing of the player's).
+Type: filesandordirs; Name: "{app}\webview"
+; What a repair or an update put there after the install, which the uninstall log does not know.
 Type: filesandordirs; Name: "{app}\data"
 Type: filesandordirs; Name: "{app}\models"
 Type: filesandordirs; Name: "{app}\mod"
@@ -302,6 +350,71 @@ begin
   if not Result then Log('VC++ runtime already present, not running vc_redist');
 end;
 
+// The window is drawn by Microsoft Edge WebView2. Windows 11 comes with it and Edge's own
+// updates have put it on nearly every Windows 10, so this is rarely true. The test is
+// Microsoft's: a version under the runtime's client key, for the machine or for this user.
+function WebView2Version(const Root: Integer): String;
+begin
+  Result := '';
+  if not RegQueryStringValue(Root, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Result) then
+    Result := '';
+  if Result = '0.0.0.0' then Result := '';
+end;
+
+function NeedsWebView2: Boolean;
+var
+  Found: String;
+begin
+  Found := WebView2Version(HKLM32);
+  if Found = '' then Found := WebView2Version(HKCU);
+  Result := Found = '';
+  if Result then Log('no WebView2 runtime; running the bootstrapper')
+  else Log('WebView2 runtime ' + Found + ' already present');
+end;
+
+// /RELAUNCH=1: the window started this install to update itself, and wants to be opened
+// again when it is done.
+function WantsRelaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
+
+// The window that started an update or an uninstall closes itself straight after, and its
+// file cannot be replaced or deleted until it has. It holds this mutex from its first
+// moment to its last (the one in AppMutex it gives up early, so as not to be asked to
+// close itself), so its going is waited for here: a second or so, fifteen at the most.
+// Both waits come after the AppMutex question, so a window the player simply left open is
+// asked about first, and then given the time it takes to stop the engine and go.
+procedure WaitForTheWindowToGo;
+var
+  I: Integer;
+begin
+  for I := 1 to 100 do begin
+    if not CheckForMutexes('Moonshine.KCD2.Process') then exit;
+    Sleep(150);
+  end;
+  Log('Moonshine.exe is still running after 15 s');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  WaitForTheWindowToGo;
+  Result := '';
+end;
+
+// A key for a model API, if the player gave the window one, is kept by Windows (Credential
+// Manager), not in this folder. The window removes it when the uninstall is started from
+// it; this is for an uninstall started from Windows' own list. cmdkey says "not found"
+// when there is none, which is as good.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Code: Integer;
+begin
+  if CurUninstallStep = usUninstall then WaitForTheWindowToGo;
+  if CurUninstallStep = usPostUninstall then
+    Exec(ExpandConstant('{sys}\cmdkey.exe'), '/delete:"Moonshine: model API key"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 // The app looks for the game under a few fixed paths (Program Files, X:\SteamLibrary); the
 // folder Steam actually records is handed to it through moonshine.cfg's `root`, which the
 // launcher passes as --root. Only written when the file does not already say where the
@@ -325,7 +438,8 @@ begin
 end;
 
 // A warning, not a refusal: the game may be about to be installed, or be somewhere Steam
-// does not record. The launcher's own check will say more.
+// does not record. The window's own check will say more, and its Settings can be told
+// where the game is.
 function InitializeSetup: Boolean;
 begin
   Result := True;
@@ -334,7 +448,7 @@ begin
   if ExpandConstant('{param:MIRROR}') <> '' then Log('mirror: ' + ExpandConstant('{param:MIRROR}'));
   if GameDir('') = '' then
     if SuppressibleMsgBox('Kingdom Come: Deliverance 2 was not found in a Steam library on this PC.' + #13#10#13#10 +
-        'Moonshine can be installed anyway, but the mod cannot be copied into the game''s folder, and the app will look for the game again when it starts (its folder can be given in moonshine.cfg). Continue?',
+        'Moonshine can be installed anyway, but the mod cannot be copied into the game''s folder, and Moonshine will look for the game again when it opens (its folder can be chosen in Moonshine''s Settings). Continue?',
         mbConfirmation, MB_YESNO, IDYES) = IDNO then
       Result := False;
 end;

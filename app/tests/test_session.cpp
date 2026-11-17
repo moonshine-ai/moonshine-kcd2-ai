@@ -1227,3 +1227,43 @@ TEST_CASE("a fold due is not in the way of the next begin, and is stopped by a l
     });
     CHECK(stopped != f.statuses.end());
 }
+
+TEST_CASE("a model behind an API is asked only for what is said: no warm, and still a fold") {
+    // Paid by the token (Llm::wants_warming), so the sheet's prefill that a written
+    // greeting otherwise leaves for the poller is not there to do...
+    Fixture f;
+    f.llm.warming = false;
+    LogTailer tailer(f.game.log());
+    f.with_greeting("What is it? Make it quick, I have water to draw.");
+    f.game.dump(kBartel, 3, grown(700), "", 4);
+    f.game.begin(kBartel);
+    f.drain(tailer);
+    CHECK(f.game.play() == "What is it? Make it quick, I have water to draw.");
+    f.drain(tailer);
+    CHECK(f.llm.calls.empty());
+    CHECK_FALSE(f.session.has_speculation());
+    // ...and nothing complains that the soul was not warmed.
+    for (const std::string& status : f.statuses) {
+        CAPTURE(status);
+        CHECK(status.find("not warmed") == std::string::npos);
+    }
+
+    // The reply is one call, with the whole reply's budget.
+    f.llm.replies.push_back("The well, over yonder. Mind the mud.");
+    f.session.say("Where can I find water?");
+    CHECK(f.game.play() == "The well, over yonder. Mind the mud.");
+    f.drain(tailer);
+    REQUIRE(f.llm.calls.size() == 1);
+    CHECK(f.llm.last().options.reply_tokens > 1);
+
+    // What the soul remembers is still folded when it has grown: that is the save's
+    // upkeep, not a guess, and is owed whoever answers.
+    f.llm.replies.push_back("Henry came to you twice: once for the way to the mill, which "
+                            "you gave him, and once to ask after water.");
+    f.game.left();
+    f.drain(tailer);
+    REQUIRE(f.session.has_speculation());
+    CHECK_FALSE(f.session.speculate([] { return false; }));
+    CHECK(f.llm.calls.size() == 2);
+    CHECK(f.llm.last().options.temperature == doctest::Approx(0.3));
+}

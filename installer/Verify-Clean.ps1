@@ -1,8 +1,11 @@
 # Run the installer as somebody who has never had Moonshine: a fresh local account on this
 # machine, whose profile has no Ollama, no moonshine_voice cache, no checkout and no
 # Saved Games\kingdomcome2 -- only what the installer brings, and the game that Steam
-# installed for everybody. Then the launcher's own check from that account, and a real
+# installed for everybody. Then the console launcher's check from that account, and a real
 # conversation (model, embedder, voice) against the installed tree with the fake game.
+# The window (Moonshine.exe) is checked for being there, signed like the app, and what the
+# shortcuts open; it is not opened, since a scheduled task as another account has no
+# desktop to open it on. scripts\gui_conversation.py is the test of the window itself.
 #
 #   powershell -ExecutionPolicy Bypass -File installer\Verify-Clean.ps1 -Version 0.9.94 [-Keep] [-Download]
 #
@@ -127,7 +130,7 @@ try {
     Write-Output "  profile: $home_"
     $app = Join-Path $home_ 'AppData\Local\Moonshine'
     if (-not (Test-Path -LiteralPath (Join-Path $app 'moonshine_app.exe'))) { Fault "no moonshine_app.exe under $app" }
-    foreach ($need in @('Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
+    foreach ($need in @('Moonshine.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
                         'data\kcd2\npcs.sqlite', 'data\kcd2\npcs-vectors.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon\backbone.ort', 'models\phonon\voices\toby.safetensors',
                         'onnxruntime.dll', 'moonshine.cfg')) {
         if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }
@@ -137,10 +140,26 @@ try {
     if ($llm.Count -ne 1) { Fault "expected one LLM gguf, found $($llm.Count)" }
     $stt = @(Get-ChildItem -LiteralPath (Join-Path $app 'models\stt') -Directory -ErrorAction SilentlyContinue)
     if ($stt.Count -ne 1) { Fault "expected one STT folder, found $($stt.Count)" }
-    foreach ($link in @("$home_\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Moonshine\Moonshine.lnk",
-                        "$home_\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Moonshine\Collect Moonshine logs.lnk")) {
-        if (-not (Test-Path -LiteralPath $link)) { Fault "no shortcut $link" }
+    # One entry that starts something, and it opens the window; what the console launcher
+    # had entries for (the check, repair, update, logs, uninstall) is inside the window.
+    $menu = "$home_\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Moonshine"
+    $link = Join-Path $menu 'Moonshine.lnk'
+    if (-not (Test-Path -LiteralPath $link)) { Fault "no shortcut $link" }
+    else {
+        $target = (New-Object -ComObject WScript.Shell).CreateShortcut($link).TargetPath
+        if ($target -notlike '*\Moonshine.exe') { Fault "the Moonshine shortcut opens $target, not Moonshine.exe" }
     }
+    foreach ($gone in @('Check the Moonshine installation', 'Download or repair Moonshine files', 'Update Moonshine', 'Collect Moonshine logs', 'Uninstall Moonshine')) {
+        if (Test-Path -LiteralPath (Join-Path $menu "$gone.lnk")) { Fault "the Start Menu still has '$gone'" }
+    }
+    # Signed like the app beside it, or unsigned like it: one without the other is a stage
+    # that forgot a file.
+    $sigApp = (Get-AuthenticodeSignature -LiteralPath (Join-Path $app 'moonshine_app.exe') -ErrorAction SilentlyContinue).Status
+    $sigGui = (Get-AuthenticodeSignature -LiteralPath (Join-Path $app 'Moonshine.exe') -ErrorAction SilentlyContinue).Status
+    if ($sigApp -ne $sigGui) { Fault "moonshine_app.exe's signature is $sigApp and Moonshine.exe's is $sigGui" }
+    # WebView2, which the window needs: here already (Windows 11) or brought by the installer.
+    $wvVersion = (Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue).pv
+    if ($wvVersion -and $wvVersion -ne '0.0.0.0') { Write-Output "  WebView2 runtime $wvVersion" } else { Write-Output '  WebView2 runtime: not machine-wide (per-user, if the installer brought it)' }
     if (Test-Path -LiteralPath (Join-Path $app 'unins000.exe')) { Write-Output '  uninstaller present' } else { Fault 'no uninstaller' }
     $installed = (Get-ChildItem -LiteralPath $app -Recurse -File | Measure-Object Length -Sum).Sum
     Write-Output ("  installed: " + [math]::Round($installed / 1GB, 2) + " GB")
@@ -180,6 +199,8 @@ try {
     $code = Run-As 'uninstall' $cmd 600
     Start-Sleep -Seconds 3
     if (Test-Path -LiteralPath (Join-Path $app 'moonshine_app.exe')) { Fault 'the uninstaller left moonshine_app.exe' }
+    if (Test-Path -LiteralPath (Join-Path $app 'Moonshine.exe')) { Fault 'the uninstaller left Moonshine.exe' }
+    if (Test-Path -LiteralPath (Join-Path $app 'webview')) { Fault 'the uninstaller left webview\' }
     if (Test-Path -LiteralPath (Join-Path $app 'models')) { Fault 'the uninstaller left models\' }
     Write-Output "  uninstaller exit $code"
 } finally {

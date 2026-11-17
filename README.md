@@ -1,7 +1,7 @@
 # Moonshine AI for Kingdom Come: Deliverance II
 
 [This mod](https://download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe) gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
-name, history, [friends](https://liber.moonshine.ai) , family, and a *Talk* option. Speak to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC; nothing you say leaves it.
+name, history, [friends](https://liber.moonshine.ai) , family, and a *Talk* option. Speak to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC, and as installed nothing you say leaves it.
 
 [![Intro: a conversation in Kingdom Come: Deliverance II](images/kcd2-intro.gif)](https://www.youtube.com/watch?v=ytNBseHc7dk)
 
@@ -20,7 +20,7 @@ Load a saved game and walk up to anybody who would have been unnamed, like a Hir
 
 Start a conversation, you'll see a custom greeting and a new set of dialog options. You can pick any of these, or if there's something different you're interested in, hold down RT (or V on the keyboard) and speak into the microphone.
 
-Your partner will answer in their own voice, based on what they know, and how they feel about you. These conversations are remembered over time, and people are likely to be more patient and open with questions as they get to know you better. None of this leaves your machine, it's all running completely locally.
+Your partner will answer in their own voice, based on what they know, and how they feel about you. These conversations are remembered over time, and people are likely to be more patient and open with questions as they get to know you better. As installed, none of this leaves your machine: it's all running completely locally. (The app can be pointed at a model service of your choosing instead, see *Using a different model* below; that is off unless you turn it on.)
 
 Some of these newly-named people need your help. You'll see them marked on a map, and they may even call you over as you pass. There are over fifty new stories to play through, and I'm hoping the community will add more over time.
 
@@ -103,16 +103,19 @@ Download [download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe](
     the installer again later and it continues with the files it does not have yet.
 11. Near the end, if your PC does not already have the Microsoft Visual C++ runtime, a
     Windows **User Account Control** prompt asks for permission to install it. Click
-    **Yes**. This is the only step that asks for administrator rights.
-12. **Finished**: leave **Check the installation now (recommended)** ticked. *View
-    README.txt* can be unticked. Click **Finish**.
+    **Yes**. This is the only step that asks for administrator rights. If the PC has no
+    Microsoft Edge WebView2 either (Windows 11 comes with it, and nearly every Windows 10
+    PC has it), the installer adds that as well, which takes a minute.
+12. **Finished**: leave **Open Moonshine now** ticked. *Read the guide* opens this text
+    and can stay unticked. Click **Finish**.
 
-**You should see** a window titled *Moonshine* listing everything the app found: the
-game folder, the model, the voices, the database. The last line is `ready`. Close the
-window.
+**You should see** the Moonshine window. For a moment it says *Checking the
+installation*, then **Ready to play**, with a **Play** button. You can close it for now,
+or carry straight on to Step 3.
 
-If the last line is `NOT READY`, look a few lines up for something marked `MISSING` and
-see *If something goes wrong*.
+If it says something else (*Some of Moonshine's files are missing*, *Kingdom Come:
+Deliverance 2 was not found*), the button under the message is the fix; see *If
+something goes wrong*.
 
 ### Step 3: Play
 
@@ -121,11 +124,14 @@ needs the companion app running to handle the local AI model generation.
 
 1. Double-click **Moonshine** on the desktop (or search for the Moonshine app after
    pressing the Windows key).
-2. A console window opens. It checks the installation, asks Steam to start the game, and
-   loads the model, which takes ten to thirty seconds. Leave this window open while you
-   play; closing it stops the voices, and the game carries on without them.
-3. When the game is up, load a save in Kuttenberg or anywhere around Trosky.
-4. Walk up to anyone who used to be called just *Beggar*, *Villager*, *Miner* or the
+2. The Moonshine window opens and says **Ready to play**. Press **Play**. It asks Steam
+   to start the game and loads the model, which takes ten to thirty seconds; the window
+   says *Starting* while it does, then **Listening**.
+3. Leave Moonshine open while you play. Minimise it if you like: it gives back nearly all
+   of its memory while minimised. Closing it stops the voices (it asks first), and the
+   game carries on without them.
+4. When the game is up, load a save in Kuttenberg or anywhere around Trosky.
+5. Walk up to anyone who used to be called just *Beggar*, *Villager*, *Miner* or the
    like.
 
 **You should see** a name over them instead of their trade, and **Talk** (or **Chat**)
@@ -154,28 +160,31 @@ Things that are known and not worth reporting: a voice that does not quite match
 face; an answer that repeats a phrase; a long pause before the first line after a load;
 the lips moving roughly rather than exactly.
 
-To stop: type `/quit` in the Moonshine window, or close it. The game is not affected.
+To stop: press **Stop** in the Moonshine window, or close it. The game is not affected.
+
+The **Settings** tab has the few things there are to choose: where the game is, whether
+Play also starts the game, whether Moonshine presses Play by itself when it opens, and
+whether the microphone is listened to.
 
 ### If something goes wrong
 
-**The installer said the game was not found, or the check ends in `NOT READY` with the
-game marked `MISSING`.**
+**The installer said the game was not found, or Moonshine says *Kingdom Come:
+Deliverance 2 was not found*.**
 The game is somewhere Steam does not record. Install the app anyway (click **Yes** at
-that box), then tell it where the game is: open the Moonshine folder (paste
-`%LOCALAPPDATA%\Moonshine` into Explorer's address bar), open `moonshine.cfg` in Notepad
-(make it if it is not there) and add one line with your game's folder:
+that box), then tell it where the game is: in the Moonshine window press **Choose game
+folder** (or Settings > Game folder > **Choose…**) and pick the folder the game is in,
+for example `D:\SteamLibrary\steamapps\common\KingdomComeDeliverance2`. The mod was
+not copied in this case, so get it from the Workshop (below) instead.
 
-```
-root = D:\SteamLibrary\steamapps\common\KingdomComeDeliverance2
-```
+**Moonshine says *Some of Moonshine's files are missing*.**
+A download did not finish. Press **Repair files** under the message (it is also on the
+About tab): it fetches whatever is missing or damaged and leaves the rest alone. Running
+the installer again does the same.
 
-Save, then run Start Menu > Moonshine > **Check the Moonshine installation**. The mod
-was not copied in this case, so get it from the Workshop (below) instead.
-
-**The check ends in `NOT READY` and something else is `MISSING`.**
-A download did not finish. Run Start Menu > Moonshine > **Download or repair Moonshine
-files**: it fetches whatever is missing or damaged and leaves the rest alone. Running the
-installer again does the same.
+**Double-clicking Moonshine shows a box saying its window could not be opened.**
+Microsoft Edge WebView2, which draws the window, is missing or broken. The box offers to
+start Moonshine in a console window instead, which plays just the same; running the
+installer again puts WebView2 back.
 
 **The installer stops with "Verification of the source file failed".**
 The file that arrived is not the one expected, usually a download cut short by a proxy
@@ -199,18 +208,20 @@ It is installed both ways. Either unsubscribe from the Workshop item or delete t
 `moonshine_names` folder from the game's `mods` folder; keep one.
 
 **Names, but no *Talk* option; or *Talk* and then silence.**
-The app is not running or cannot see the game. Is the Moonshine window open, and has it
-said it is following the game's log? If you started the game from Steam, quit it and
-start it from the Moonshine shortcut instead.
+The app is not running or cannot see the game. Is the Moonshine window open, and does
+it say **Listening**? If it says *Ready to play*, press **Play**. If you started the game
+from Steam, quit it and start it with **Play** instead.
 
 **They do not hear me.**
 Windows may be blocking the microphone. Settings > Privacy & security > Microphone: turn
 on *Microphone access* and *Let desktop apps access your microphone*. If the app cannot
-open the microphone at all, the trigger does nothing and the Moonshine window says so;
-you can always type instead through **(Say something else)**.
+open the microphone at all, the trigger does nothing and the *Microphone* light at the
+bottom of the Moonshine window is off; you can always type instead through **(Say
+something else)**.
 
-**The Moonshine window says the app keeps stopping.**
-It restarts the app automatically and gives up after five quick failures. Collect the
+**The Moonshine window says *Moonshine could not start*, or keeps saying *Starting
+again*.**
+It restarts its engine automatically and gives up after five quick failures. Collect the
 logs (below) and send them.
 
 **The voice lags far behind the text, or the game stutters while people speak.**
@@ -219,37 +230,71 @@ which record your CPU, and send them.
 
 #### Collecting logs
 
-Start Menu > Moonshine > **Collect Moonshine logs** (or run `Collect-Logs.ps1` in the
-Moonshine folder). It writes `Moonshine-logs-<date>.zip` to your desktop: the app's logs,
-the game's `kcd.log`, what the app found of the installation and a few lines about your
-PC. No saves, and nothing personal beyond what you typed into conversations. Send that
-zip with a sentence about what you were doing when it went wrong.
+In the Moonshine window, open the **Logs** tab and press **Collect logs** (or run
+`Collect-Logs.ps1` in the Moonshine folder). It writes `Moonshine-logs-<date>.zip` to
+your desktop: the app's logs, the game's `kcd.log`, what the app found of the
+installation and a few lines about your PC. No saves, no API key, and nothing personal
+beyond what you said or typed in conversations. Send that zip with a sentence about what
+you were doing when it went wrong. The Logs tab also shows the log itself, if you are
+curious or somebody asks what it says.
 
 ### Updating
 
-Start Menu > Moonshine > **Update Moonshine** looks for a newer version. If there is
-one, it downloads the new installer and starts it; the installer keeps every model and
-data file that has not changed, so an update is usually much smaller than the first
-install. If you already have the newest version, it checks the files instead and fetches
-any that are missing.
+Moonshine looks for a newer version each time it opens: it fetches one small file from
+download.moonshine.ai, and nothing about you or your game goes with the request. When
+there is one, **Update to
+<version>** appears at the bottom of the window; the same button is on the **About**
+tab, beside **Check for updates**. Pressing it downloads the new installer, runs it, and
+opens Moonshine again when it is done. Every model and data file that has not changed is
+kept, so an update is usually much smaller than the first install. **Repair files**, on
+the same tab, checks the files you have and fetches any that are missing or damaged.
 
 ### Removing Moonshine
 
-- **The app**: Start Menu > Moonshine > **Uninstall Moonshine**, or Settings > Apps >
-  Installed apps > Moonshine > Uninstall. It removes the Moonshine folder and its logs.
-- **The mod**: delete the `moonshine_names` folder from the game's `mods` folder (in
-  Steam, right-click the game > Manage > Browse local files). The uninstaller leaves it
-  alone on purpose, so that removing the app does not change what loads in the game. If
-  you used the Workshop, unsubscribe from the item instead.
+- **The app**: in the Moonshine window, About > **Uninstall…**, or Windows Settings >
+  Apps > Installed apps > Moonshine > Uninstall (close Moonshine first). It removes the
+  Moonshine folder, its models and its logs, and an API key if you gave it one.
+- **The mod**: tick *Also remove the Moonshine mod from the game's mods folder* when
+  Moonshine asks, or delete the `moonshine_names` folder from the game's `mods` folder
+  yourself (in Steam, right-click the game > Manage > Browse local files). Unless you
+  tick that box the mod is left alone on purpose, so that removing the app does not
+  change what loads in the game. If you used the Workshop, unsubscribe from the item
+  instead.
 
 Saves made with the mod load fine without it; the names simply go back to *Beggar* and
 *Villager*.
+
+### Using a different model
+
+This is optional, and off unless you turn it on. The model that writes the replies is a
+small one, chosen to run on a CPU beside the game. If you have an account with a model
+service, or run a bigger model on another machine, Moonshine can ask that instead:
+Settings > Dialogue model > **Custom API**. It takes the service's address, your API key
+and a model name, and works with anything that speaks the OpenAI chat API: OpenAI,
+OpenRouter, Groq, a llama.cpp, LM Studio or Ollama server of your own, and others.
+**Test connection** says whether it answers.
+
+What changes when you do:
+
+- What you say, what the characters say, and each character's description are sent to
+  that service, which writes the replies. Speech recognition and the voices still run on
+  your PC, and your voice itself is never sent, only the words.
+- The service bills you, not Moonshine. Ten exchanges with one character send about
+  15,000 tokens and receive about 500.
+- The model on your PC is not loaded, which frees about 2.4 GB of memory for the game.
+- Your key is kept in Windows Credential Manager, not in Moonshine's folder, and it is
+  never written to a log or to the zip **Collect logs** makes.
+
+This part is new and has been tried far less than the rest: characters may be wordier,
+or less in character, with a model the prompts were not written for. Switch back to **On
+this PC** at any time.
 
 ### What is in it
 
 The language model is Qwen3, the voices are Phonon's British English catalogue, the ear
 is Moonshine Voice; all run locally. The list of third-party software and model weights
-and their licences is in `LICENSES\README.txt` in the Moonshine folder.
+and their licences is in `LICENSES\README.txt` in the Moonshine folder, and behind
+**Licences** on the About tab.
 
 ## The repository
 
@@ -258,10 +303,14 @@ Two pieces, built here:
 - **The mod** (`mod/`): a deterministic pak writer, `kcd2modgen`, that turns the database
   of souls into a KCD2 mod -- names, dialogue graphs, quests, and one Lua file. No DLL and
   no injector; uninstalling is deleting one folder.
-- **The app** (`app/`): `moonshine_app`, a C++ program that runs beside the game, follows
-  its log, and talks to the mod through files. It runs the model (llama.cpp), the voices
-  (Phonon, through the Moonshine framework), the ear (Moonshine Voice), and the knowledge base
-  each soul answers from.
+- **The app** (`app/`): two programs. `moonshine_app` is the engine, a C++ program that
+  runs beside the game, follows its log, and talks to the mod through files. It runs the
+  model (llama.cpp, or an OpenAI-compatible API the player names), the voices (Phonon,
+  through the Moonshine framework), the ear (Moonshine Voice), and the knowledge base each
+  soul answers from. `Moonshine` (`app/gui/`) is the window the player opens: a web page in
+  a native frame (WebView2 on Windows) that checks the installation, starts the game and
+  the engine, restarts the engine when it dies, and holds the logs, the settings, updating
+  and uninstalling.
 
 And the installer (`installer/`) that packs the app, the models and the data for players.
 The part of this file above this heading is the player's guide; `installer\Stage.ps1`
@@ -345,6 +394,85 @@ Windows, `scripts\build_windows.bat` finds Visual Studio, configures with Ninja,
 and runs the tests; `scripts\build_windows.bat release` is the CPU-only build the
 installer ships.
 
+#### The window
+
+The same build makes `Moonshine` (`Moonshine.exe` on Windows; `-DMOONSHINE_GUI=OFF` to
+leave it out). Nothing has to be installed for it: the webview library, Microsoft's
+`WebView2.h` and Mbed TLS (for HTTPS, to the update server and to a model API) are
+vendored under `app/vendor/`, and the page (`app/gui/ui/`, plain HTML, CSS and JavaScript
+with no build step) is compiled into the program. On the Mac it is built over WKWebView
+so that it can be worked on there; it is shipped only for Windows.
+
+```sh
+MOONSHINE_HOME=$PWD app/build/Moonshine          # the window over this checkout's engine, models and data
+MOONSHINE_HOME=$PWD MOONSHINE_UI_DIR=app/gui/ui app/build/Moonshine    # the page read from disk: edit, reopen
+python3 -m http.server -d app/gui/ui 8377        # the page alone in a browser, against a stand-in (mock.js): /?scene=ready
+```
+
+The window's logic has no window in it (`moonshine_gui_core`: `supervisor`, `settings`,
+`fetch`, `bridge`, `secrets`) and is covered by `moonshine_tests` with engines, servers and
+installers that are not there. What the tests cannot reach, the real window with a real
+engine behind it, is driven by scripts the window runs in its own page
+(`MOONSHINE_UI_SCRIPT`): `scripts/gui-walk.js` presses Play and Stop and reports what the
+page showed, `scripts/gui-tour.js` holds each screen for a picture, and
+`scripts/gui_conversation.py` opens the window, has it start the engine, and holds one
+conversation with that engine as the game would (`--canned` needs no model).
+
+| | |
+|---|---|
+| `--play` | press Play as soon as the check passes (what the setting "Press Play for me when Moonshine opens" does) |
+| `MOONSHINE_HOME` | the installation, when it is not the folder the program is in |
+| `MOONSHINE_UI_DIR` | read the page from this folder rather than from the program |
+| `MOONSHINE_UI_DEBUG` | allow the browser's developer tools |
+| `MOONSHINE_UI_SCRIPT` | JavaScript to run in the page once it has loaded |
+| `MOONSHINE_UI_TRACE` | a file for what that script reports (a Windows program with a window has no stderr) |
+
+The window keeps the engine at arm's length, through things the engine already did or
+that were added for it: `--where --json` (the installation check as JSON), `--status FILE`
+(a small JSON file the engine rewrites as its phase changes: loading, warming, ready,
+talking with whom, the last error), `--log`, `--quit-on-eof`, and `/quit` on stdin for a
+clean stop. Settings are `moonshine.cfg` beside the programs, the file the installer and
+the console launcher already used; the window adds `model`, `api_url`, `api_model`,
+`api_extra`, `api_guessing`, `launch_game`, `autostart` and `mic` to it, and never the key.
+
+#### A model somewhere else
+
+`--api-url URL --api-model NAME` make the engine ask an OpenAI-compatible Chat
+Completions API for the replies instead of loading the model (`app/src/openai.cpp`); this
+is what Settings > Dialogue model > Custom API sets. The key is read from
+`MOONSHINE_API_KEY` in the environment and from nowhere else: never a flag, never
+`moonshine.cfg`, never a log. The window keeps it in Windows Credential Manager (a file
+only its owner can read, in a Mac build) and hands it to the engine it starts.
+`--api-extra JSON` (or `MOONSHINE_API_EXTRA`) is merged into every request, for what one
+provider needs and the others do not, such as `{"reasoning_effort":"low"}`; `--api-test`
+asks one short question and says what came back. A metered model changes what is asked of
+it: nothing is sent to warm a cache, the idle rewarm is off, and replies are not worked
+out ahead of the player's choice unless `--guessing` says so.
+
+```sh
+MOONSHINE_API_KEY=... app/build/moonshine_app --api-url https://api.openai.com/v1 --api-model gpt-4.1-mini --api-test
+python3 scripts/fake_game.py --api-url http://127.0.0.1:8080/v1 --api-model any    # a conversation through one
+```
+
+What has and has not been tried. Against llama.cpp's server, with the shipped Qwen3 and
+with a small Qwen3 that reasons (its reasoning in a field of its own, and inline between
+`<think>` tags): whole conversations through `fake_game.py` stay in step with the game,
+the judge's verdict is read, reasoning is never spoken, and a model found to be reasoning
+is reported with where to turn it off. Ten exchanges with one character sent about 15,000
+tokens and received about 500, which is the figure in the settings text. Eight hosted
+services were reached without a key, which exercised certificate checking and what each
+of them says to a request it will not serve. One hosted model has carried conversations
+over HTTPS: `openai-fast` (GPT-OSS 20B, which reasons) on text.pollinations.ai's keyless
+tier, two runs of `fake_game.py`, both in step with the game. Its lines were short and in
+character and it did not refuse talk of killing bandits or punishing a thief, but one of
+its four replies ran to 132 tokens, said itself twice and had a stray "We followed
+rules." in the middle, which is the model's reasoning arriving as ordinary text, where
+nothing can tell it from the line. The first word took 24 to 41 seconds and the rest came
+at once; whether that is the free tier's queue or the reasoning was not separated, so it
+says nothing about a paid service. Not yet done, for want of a funded key: any of the
+commercial models, and time to first token against the local model on a service that
+answers promptly.
+
 ### The mod
 
 ```sh
@@ -386,8 +514,8 @@ and copy it over) before `scripts/release.sh`. `scripts/deploy_wl1.sh` is also t
 development deploy: it installs the working tree over the laptop's `%LOCALAPPDATA%\Moonshine`
 as `<VERSION>.<n>`, so the desktop shortcut runs what was just built; `scripts/start-moonshine-on-wl1.sh`
 (local, gitignored) runs that deploy by way of moonshine-voice-characters' `scripts/wl1_deploy.sh`
-and then opens the shortcut, so one command plays the current code and data (`--play` to
-only open it). `--prebuilt-mod` sends the folder already under
+and then opens the window and has it press Play (`Moonshine.exe --play`), so one command plays the
+current code and data (the script's own `--play` skips the deploy and only opens it). `--prebuilt-mod` sends the folder already under
 `release/mod/moonshine_names` instead of building one -- moonshine-voice-characters'
 `scripts/wl1_deploy.sh` builds it there with the scheduler override (made on the laptop
 against its own `level.pak`, which `build_mod.sh` cannot do from a machine with no game),
@@ -421,17 +549,41 @@ that has not changed since the last release is the same URL and is never uploade
 twice, a changed one lands beside the old rather than over it, and every installer ever
 handed out keeps finding exactly the bytes its manifest names; nothing is deleted. Per
 release there are only `<DownloadBase>/<version>/manifest.json` and the installer beside
-it, and `<DownloadBase>/latest/manifest.json`, which the installed `Moonshine.ps1 -Update`
-reads to find a newer build. `py -3 installer\publish.py --version <version>` (standard
+it, and `<DownloadBase>/latest/manifest.json`, which the installed window reads when it
+opens (and `Moonshine.ps1 -Update`, from a console) to find a newer build. `py -3 installer\publish.py --version <version>` (standard
 library only; the credentials from the environment, or on stdin from release.sh)
 hash-checks the stage against the manifest, uploads the blobs the bucket lacks, then the
 installer and manifest, then `latest`; `--check` reports what it would move. The same
-manifest drives `Fetch-Package.ps1`, the Start Menu's "Download or repair" and the
-update; an in-app Update would read it too. `scripts/release_version.sh` prints the
+manifest drives the window's Repair and Update (`app/gui/fetch.cpp`, a port of
+`Fetch-Package.ps1`, which stays in the package for the console launcher and the
+verifiers): files are fetched to `.part`, resumed with range requests, and put in place
+only when their size and sha256 match. An update downloads the new installer, checks it
+against `setup.sha256` in the published manifest, and runs it `/SILENT /RELAUNCH=1` into
+the same folder; the installer opens the window again when it is done. Uninstall runs the
+Inno uninstaller `/SILENT` and closes the window. `scripts/release_version.sh` prints the
 version a build carries: `VERSION` at the root, unless `MOONSHINE_VERSION` says otherwise.
 `installer\Verify-Clean.ps1` runs the installer as a fresh local account and talks to the
 result, with `/MIRROR=release\stage\Moonshine` so nothing is fetched (`-Download` to test
 the hosting too); `installer\Verify-Install.ps1` does the same from a player's link.
+
+The package carries `Moonshine.exe` (what the shortcuts open), `moonshine_app.exe`, and
+the console launcher (`Moonshine.ps1`) as the fallback the window offers when WebView2
+cannot make a window. `Stage.ps1` fetches Microsoft's WebView2 bootstrapper into
+`extra\`, and the installer runs it only on a PC that has no WebView2 runtime. Two
+mutexes keep the installer and the window out of each other's way: `Moonshine.KCD2.Window`
+is the installer's `AppMutex` (the window gives it up just before it starts an update or
+an uninstall, so as not to be asked to close itself), and `Moonshine.KCD2.Process` is held
+until the window's process has gone, which the installer and uninstaller wait for before
+touching its files.
+
+To try an installer, an update or an uninstall beside the copy you play from, compile
+with `ISCC /DTestInstall ...`: a separate AppId, `%LOCALAPPDATA%\MoonshineTest`, and a
+"Moonshine Test" shortcut. Install it with `/MERGETASKS=!copymod,!desktopicon`, since the
+game's `mods` folder and the desktop are not separate, and install it from the desktop
+session rather than over ssh: an ssh session on Windows is elevated, Inno Setup records
+that the install was made by an administrator, and the uninstaller then asks for
+elevation (a consent prompt on the desktop that nobody over ssh can see, and that gives
+up after two minutes having removed nothing).
 
 ## Installing the mod by hand
 
@@ -481,10 +633,12 @@ Three details are easy to get wrong and hard to debug:
 ## Layout
 
 ```
-app/            the companion app: src/, tests/, vendor/ (llama.cpp submodule, qwen3-tts, opus, headers)
+app/            the companion app: src/ (the engine), gui/ (the window; ui/ is its page), tests/,
+                vendor/ (llama.cpp submodule, qwen3-tts, opus, mbedtls, webview, WebView2.h, headers)
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
-installer/      Stage.ps1, publish.py, moonshine.iss, the launcher (Moonshine.ps1), the verifiers, LICENSES/
-scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py
+installer/      Stage.ps1, publish.py, moonshine.iss, the console launcher (Moonshine.ps1), the verifiers, LICENSES/
+scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py,
+                gui-walk.js, gui-tour.js and gui_conversation.py (the window, driven by a script)
 tools/          assemble_db.py, fetch_drop.py, s3_sign.py, kitten_textures.py (the kitten coats under mod/assets)
 data/           schema.sql (the shipped database's schema), DROP (the pin), kcd2/voices/ (catalogues)
 third_party/    sqlite3 (shared by app and mod); moonshine-voice/ when fetched

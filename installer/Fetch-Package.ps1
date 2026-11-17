@@ -1,9 +1,10 @@
 # Bring the big files of a Moonshine installation into place from the manifest that lists
 # them: the models, the database and the mod, around 8 GB. The installer downloads them
 # itself the first time (Inno Setup's own downloader, from the same list); this is for
-# afterwards: the Start Menu's "Download or repair Moonshine files" runs it against the
-# installed manifest, Moonshine.ps1 -Update runs it against the newest one, and the in-app
-# Update of the future is this script's logic over the same manifest, in the app.
+# afterwards, from a console: run by hand it works from the installed manifest, and
+# Moonshine.ps1 -Update runs it against the newest one. The window (Moonshine.exe) does the
+# same two jobs itself, Repair files and Update, with this script's logic in C++ over the
+# same manifest (app/gui/fetch.cpp); this stays for the console launcher and the verifiers.
 #
 #   powershell -ExecutionPolicy Bypass -File Fetch-Package.ps1 [-Manifest <file or https URL>]
 #       [-Dest <folder>] [-ModTo <game>\mods] [-Mirror <folder>] [-Check]
@@ -11,7 +12,7 @@
 # The manifest is JSON:
 #
 #   { "version": "0.9.123",
-#     "latest": "https://.../latest/manifest.json",            where -Update looks
+#     "latest": "https://.../latest/manifest.json",            where an update is looked for
 #     "setup": { "url": "https://.../Moonshine-0.9.123-setup.exe", "bytes": ..., "sha256": "..." },
 #     "files": [ { "path": "models/llm/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
 #                  "bytes": 2497281120,

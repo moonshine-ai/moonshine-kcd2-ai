@@ -137,6 +137,14 @@ public:
     // A name for the status UI.
     virtual std::string describe() const = 0;
 
+    // Whether it is worth asking this backend for a prompt before the prompt is needed.
+    // True for a model on this machine, where the asking costs idle time and buys the wait
+    // off the player's opening line (prefill.h). False for one paid for by the token
+    // (openai.h): a warm there is a whole prompt bought to save a wait the server's own
+    // cache may not even shorten. The prefiller asks nothing of a backend that says false,
+    // and the app leaves its guessing ahead off unless told otherwise.
+    virtual bool wants_warming() const { return true; }
+
     // Prefills exactly the text every prompt begins with -- the system message up to where a
     // soul's sheet would start -- and keeps a copy of the state at that point, to return to
     // when a later prompt starts the same way but the cache cannot be cut back to it. A no-op

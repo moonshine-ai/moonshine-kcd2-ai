@@ -180,3 +180,29 @@ TEST_CASE("how much of a prefill was already cached, in tokens rather than secon
     CHECK(tokens_already_cached(Timing{.prompt_tokens = 981, .prefill_seconds = 0.45}, 0.0) == 0);
     CHECK(tokens_already_cached(Timing{.prompt_tokens = 0, .prefill_seconds = 0.0}, rate) == 0);
 }
+
+TEST_CASE("a backend that is not to be warmed is asked nothing, and nothing waits for it") {
+    // A model behind an API, paid by the token (Llm::wants_warming): a warm is a prompt
+    // bought, the probe is another, and neither is sent.
+    StubLlm llm;
+    llm.warming = false;
+    Prefiller prefiller(llm, Options{});
+
+    const Warmth warmth = prefiller.prove_world(kWorld);
+    CHECK(warmth.warm.prompt_tokens == 0);
+    CHECK(warmth.probe.prompt_tokens == 0);
+    // No rate, which every reader of it takes for "nothing was measured".
+    CHECK(warmth.prefill_rate() == doctest::Approx(0.0));
+    CHECK(prefiller.warm_world(kWorld).prompt_tokens == 0);
+
+    // Every sheet is as warm as it will get, so whoever asks is not told to wait or to warm.
+    CHECK(prefiller.is_warm(kAdam));
+    CHECK(prefiller.warm_persona(kWorld, kAdam).prompt_tokens == 0);
+    int asked = 0;
+    CHECK(prefiller.warm_persona(kWorld, kVojta, [&] { ++asked; return false; }));
+    CHECK(asked == 0);
+    prefiller.forget();
+    CHECK(prefiller.is_warm(kVojta));
+
+    CHECK(llm.calls.empty());
+}

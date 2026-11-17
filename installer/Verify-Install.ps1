@@ -23,7 +23,8 @@
 #   cfg        the cloud machines carry the GOG build at C:\KCD2, which neither Steam's
 #              registry nor the app's fixed paths know, so `root = <game>` goes into
 #              moonshine.cfg -- the road a tester with a second Steam library takes
-#   check      Moonshine.ps1 -Check must end in `ready`
+#   check      Moonshine.ps1 -Check must end in `ready` (the console launcher: the window,
+#              Moonshine.exe, runs the same moonshine_app --where, and needs a desktop)
 #   converse   scripts/fake_game.py against the installed tree: model, embedder, voice
 #   app        unless -KeepApp is off: the launcher is left running with -NoGame, from the
 #              installed folder, so a real game started after it (the autopilot) finds the
@@ -46,6 +47,16 @@ $ErrorActionPreference = 'Stop'
 $faults = @()
 function Step([string]$t) { Write-Output ("=== " + $t) }
 function Fault([string]$t) { $script:faults += $t; Write-Output ("  FAULT: " + $t) }
+# The runtime the window (Moonshine.exe) is drawn with: Microsoft's test, a version under
+# the client key, for the machine or for this user.
+function WebView2-Present {
+    foreach ($k in @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                     'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')) {
+        $v = (Get-ItemProperty $k -ErrorAction SilentlyContinue).pv
+        if ($v -and $v -ne '0.0.0.0') { return $v }
+    }
+    return 'absent'
+}
 function Runtime-Present {
     $k = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
     if (-not (Test-Path $k)) { return 'absent' }
@@ -95,13 +106,14 @@ if (-not (Test-Path -LiteralPath $setup)) { Write-Error "no $setup"; exit 1 }
 
 # --- install ---------------------------------------------------------------------------------
 Step 'install'
-Get-Process moonshine_app -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process Moonshine, moonshine_app -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 if (Test-Path -LiteralPath (Join-Path $app 'unins000.exe')) {
     Write-Output '  removing the earlier Moonshine'
     Start-Process -FilePath (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
 }
 if (Test-Path -LiteralPath $app) { Remove-Item -LiteralPath $app -Recurse -Force -ErrorAction SilentlyContinue }
 Write-Output ("  VC++ runtime before: " + (Runtime-Present))
+Write-Output ("  WebView2 before:     " + (WebView2-Present))
 $installLog = Join-Path $work 'install.log'
 $t0 = Get-Date
 $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS=!copymod', "/LOG=`"$installLog`"")
@@ -116,12 +128,14 @@ function Count-Logged([string]$tag) {
 Write-Output ("  files: {0} downloaded, {1} from the mirror, {2} already right" -f (Count-Logged 'to download: '), (Count-Logged 'from the mirror: '), (Count-Logged 'already right: '))
 Write-Output ("  VC++ runtime after:  " + (Runtime-Present))
 if ((Runtime-Present) -eq 'absent') { Fault 'no VC++ runtime after the install' }
+Write-Output ("  WebView2 after:      " + (WebView2-Present))
+if ((WebView2-Present) -eq 'absent') { Fault 'no WebView2 runtime after the install: Moonshine.exe cannot open its window' }
 # The [Code] logs 'VC++ runtime already present' when its Check says no; a run shows as
 # a 'Running the command' line naming the exe.
 $skipped = Select-String -LiteralPath $installLog -Pattern 'VC\+\+ runtime already present' -Quiet
 $ran = Select-String -LiteralPath $installLog -Pattern 'Running the command.*vc_redist' -Quiet
 Write-Output ("  installer log: vc_redist " + $(if ($ran) { 'was run' } elseif ($skipped) { 'skipped, runtime already present' } else { 'neither run nor skipped?' }))
-foreach ($need in @('moonshine_app.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
+foreach ($need in @('Moonshine.exe', 'moonshine_app.exe', 'Moonshine.ps1', 'Fetch-Package.ps1', 'Collect-Logs.ps1', 'README.txt', 'VERSION.txt', 'setting.txt', 'manifest.json', 'LICENSES\README.txt',
                     'data\kcd2\npcs.sqlite', 'data\kcd2\npcs-vectors.sqlite', 'models\embeddinggemma-300m-q8_0.gguf', 'models\phonon\backbone.ort', 'models\phonon\voices\toby.safetensors',
                     'onnxruntime.dll', 'unins000.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $app $need))) { Fault "installed tree lacks $need" }

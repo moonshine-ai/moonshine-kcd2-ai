@@ -14,6 +14,11 @@
 //
 // Every call blocks, and a backend serving one slot will queue them, so this
 // belongs on a worker thread and not on the thread answering the game.
+//
+// None of it is done for a backend that says it is not to be warmed (Llm::wants_warming,
+// a model behind an API paid by the token): every warm returns at once having asked
+// nothing, the measurement is not taken, and every sheet counts as warm, so that nothing
+// which waits for a warm waits.
 
 #ifndef MOONSHINE_PREFILL_H
 #define MOONSHINE_PREFILL_H

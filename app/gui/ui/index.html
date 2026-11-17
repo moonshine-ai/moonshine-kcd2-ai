@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Moonshine</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="mark">Moonshine</div>
+  <nav class="tabs" aria-label="Sections">
+    <button class="tab" data-view="home" aria-current="page">Home</button>
+    <button class="tab" data-view="logs">Logs</button>
+    <button class="tab" data-view="settings">Settings</button>
+    <button class="tab" data-view="about">About<span class="badge" id="about-badge" hidden></span></button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- Home: one line, one button. -->
+  <section class="view" id="view-home">
+    <div class="stage">
+      <div class="lamp" id="lamp" data-tone="busy" aria-hidden="true"><span></span></div>
+      <h1 id="home-title">Checking the installation</h1>
+      <p class="detail" id="home-detail"></p>
+      <div class="progress" id="home-progress" hidden><div></div></div>
+      <div class="actions">
+        <button class="primary" id="home-button" hidden></button>
+        <button class="quiet" id="home-fix" hidden></button>
+      </div>
+      <p class="notice" id="home-notice" hidden><span></span><button class="link" data-call="dismissTask">Dismiss</button></p>
+    </div>
+    <footer class="strip">
+      <span class="pip" id="pip-mic"><i></i><span>Microphone</span></span>
+      <span class="pip" id="pip-voice"><i></i><span>Voices</span></span>
+      <span class="pip" id="pip-model"><i></i><span>Model on this PC</span></span>
+      <span class="grow"></span>
+      <button class="link" id="update-link" data-view="about" hidden></button>
+      <span class="version" id="version"></span>
+    </footer>
+  </section>
+
+  <!-- Logs: what the app has been saying, for when somebody asks. -->
+  <section class="view" id="view-logs" hidden>
+    <div class="toolbar">
+      <div class="segmented" role="tablist">
+        <button data-log="app" aria-selected="true">App</button>
+        <button data-log="launcher" aria-selected="false">Launcher</button>
+      </div>
+      <span class="grow"></span>
+      <button class="quiet" id="log-copy">Copy</button>
+      <button class="quiet" data-call="open" data-what="logs">Open folder</button>
+      <button class="quiet" id="log-collect">Collect logs</button>
+    </div>
+    <p class="notice inline" id="logs-notice" hidden><span></span><button class="link" id="logs-show" hidden>Show</button><button class="link" data-call="dismissTask">Dismiss</button></p>
+    <pre class="log" id="log" tabindex="0"></pre>
+  </section>
+
+  <!-- Settings. -->
+  <section class="view scroll" id="view-settings" hidden>
+    <form id="settings" autocomplete="off" novalidate>
+
+      <h2>Game</h2>
+      <label class="field">
+        <span>Game folder</span>
+        <div class="row">
+          <input type="text" id="set-root" spellcheck="false" placeholder="Found automatically">
+          <button type="button" class="quiet" id="choose-folder">Choose…</button>
+        </div>
+        <small id="root-found"></small>
+      </label>
+      <label class="check"><input type="checkbox" id="set-launch"><span>Start the game when I press Play</span></label>
+      <label class="check"><input type="checkbox" id="set-autostart"><span>Press Play for me when Moonshine opens</span></label>
+
+      <h2>Speech</h2>
+      <label class="check"><input type="checkbox" id="set-mic"><span>Listen to the microphone while the talk button is held</span></label>
+
+      <h2>Dialogue model</h2>
+      <label class="choice">
+        <input type="radio" name="model" id="set-local" value="local">
+        <span><b>On this PC</b><small>The model that comes with Moonshine. Nothing you say leaves your computer.</small></span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="model" id="set-api" value="api">
+        <span><b>Custom API</b><small>An OpenAI-compatible service of your choice writes the replies: OpenAI, OpenRouter, Groq, a server of your own, and others.</small></span>
+      </label>
+
+      <div class="panel" id="api-panel" hidden>
+        <label class="field">
+          <span>Address</span>
+          <input type="text" id="set-api-url" spellcheck="false" placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="field">
+          <span>API key</span>
+          <div class="row">
+            <input type="password" id="set-api-key" spellcheck="false" autocomplete="new-password">
+            <button type="button" class="quiet" id="key-remove" hidden>Remove</button>
+          </div>
+          <small id="key-kept"></small>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input type="text" id="set-api-model" spellcheck="false" placeholder="gpt-4.1-mini">
+        </label>
+        <label class="field">
+          <span>Extra request JSON <em>optional</em></span>
+          <input type="text" id="set-api-extra" spellcheck="false" placeholder='{"reasoning_effort": "low"}'>
+          <small>Added to every request, for switches a provider needs, such as turning a model's reasoning down.</small>
+        </label>
+        <label class="check"><input type="checkbox" id="set-api-guessing"><span>Prepare replies ahead <small>Faster answers; uses several times more tokens.</small></span></label>
+        <div class="row">
+          <button type="button" class="quiet" id="api-test">Test connection</button>
+          <span class="result" id="api-result"></span>
+        </div>
+        <p class="privacy">With a custom API, what you say, what the characters say, and each character's description are sent to that service to write the replies. Speech recognition and the voices still run on this PC. The service bills you: ten exchanges with one character send about 15,000 tokens and receive about 500.</p>
+      </div>
+
+      <details class="more">
+        <summary>Advanced</summary>
+        <label class="field">
+          <span>Extra options for the app</span>
+          <input type="text" id="set-args" spellcheck="false" placeholder="--no-voice">
+          <small>Added to the app's command line. Leave empty unless you were asked to set it.</small>
+        </label>
+      </details>
+
+      <div class="savebar">
+        <button type="submit" class="primary small" id="save" disabled>Save</button>
+        <button type="button" class="quiet" id="revert" hidden>Discard changes</button>
+        <span class="result" id="save-result"></span>
+      </div>
+    </form>
+  </section>
+
+  <!-- About and maintenance. -->
+  <section class="view scroll" id="view-about" hidden>
+    <h2>Moonshine for Kingdom Come: Deliverance 2</h2>
+    <p class="plain">Version <span id="about-version"></span></p>
+    <p class="plain" id="update-line"></p>
+    <div class="row wrap">
+      <button class="quiet" id="update-button"></button>
+      <button class="quiet" id="repair-button">Repair files</button>
+    </div>
+    <div class="task" id="about-task" hidden>
+      <p class="plain" id="task-title"></p>
+      <div class="progress"><div id="task-bar"></div></div>
+      <p class="plain muted" id="task-detail"></p>
+      <button class="quiet" data-call="cancelTask">Cancel</button>
+    </div>
+    <p class="notice inline" id="about-notice" hidden><span></span><button class="link" data-call="dismissTask">Dismiss</button></p>
+
+    <h2>The installation</h2>
+    <ul class="checklist" id="checklist"></ul>
+    <div class="row wrap">
+      <button class="quiet" data-call="recheck">Check again</button>
+      <button class="quiet" data-call="open" data-what="home">Open install folder</button>
+    </div>
+
+    <h2>More</h2>
+    <div class="row wrap">
+      <button class="quiet" data-call="open" data-what="readme">Read me</button>
+      <button class="quiet" data-call="open" data-what="licences">Licences</button>
+    </div>
+
+    <h2>Remove</h2>
+    <p class="plain muted">Removes Moonshine, its models and its voices from this PC.</p>
+    <div class="row wrap">
+      <button class="quiet danger" id="uninstall-button">Uninstall…</button>
+    </div>
+  </section>
+
+</main>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <label class="check" id="confirm-option" hidden><input type="checkbox" id="confirm-check"><span id="confirm-option-text"></span></label>
+    <div class="row end">
+      <button class="quiet" value="no" id="confirm-no">Cancel</button>
+      <button class="primary small" value="yes" id="confirm-yes">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="mock.js" data-dev></script>
+<script src="app.js"></script>
+</body>
+</html>

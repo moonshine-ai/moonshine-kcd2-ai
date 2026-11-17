@@ -2,10 +2,17 @@
 #
 #   powershell -ExecutionPolicy Bypass -File Collect-Logs.ps1
 #
+# The Moonshine window's Logs screen runs this ("Collect logs for support"), with
+# MOONSHINE_NO_PAUSE set so that it does not wait for Enter; it can be run by hand too.
+#
 # What goes in: the app's logs (logs\), what moonshine_app --where says it finds, the
 # game's own kcd.log (where the BRIDGE lines the app answers are), the machine in a few
 # lines (Windows, CPU, memory, GPU), and the installer's log if it is still in TEMP.
 # Nothing else: no saves, no conversation turns beyond what the logs already quote.
+# moonshine.cfg goes in too, since it says where the game was looked for and whether a
+# model API was in use. The key for such an API is never in that file (Windows keeps it,
+# in Credential Manager), and the copy's api_url has any name:password@ and anything after
+# a ? taken out, in case somebody's address carries a secret of its own.
 $ErrorActionPreference = 'Continue'
 $here = $PSScriptRoot
 Set-Location $here
@@ -25,9 +32,18 @@ if (Test-Path -LiteralPath $app) {
     if ($stt.Count -gt 0) { $common += @('--stt-model', ('models\stt\' + $stt[0].Name)) }
     $cfgPath = Join-Path $here 'moonshine.cfg'
     if (Test-Path -LiteralPath $cfgPath) {
-        Copy-Item -LiteralPath $cfgPath -Destination $work -ErrorAction SilentlyContinue
-        foreach ($raw in Get-Content -LiteralPath $cfgPath) {
+        $cfgLines = @(Get-Content -LiteralPath $cfgPath)
+        $cfgLines | ForEach-Object {
+            if ($_ -match '^\s*api_url\s*=') { ($_ -replace '//[^/@\s]*@', '//') -replace '\?.*$', '?(removed)' } else { $_ }
+        } | Out-File -LiteralPath (Join-Path $work 'moonshine.cfg') -Encoding utf8
+        foreach ($raw in $cfgLines) {
             if ($raw -match '^\s*root\s*=\s*(.+)$') { $common += @('--root', $Matches[1].Trim()) }
+            # The same extra options the launcher gives the app, so this is the same check.
+            if ($raw -match '^\s*args\s*=\s*(.+)$') {
+                foreach ($m in [regex]::Matches($Matches[1], '"([^"]*)"|(\S+)')) {
+                    $common += $(if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value })
+                }
+            }
         }
     }
     & $app --where @common 2>&1 | Out-File -LiteralPath $where -Encoding utf8

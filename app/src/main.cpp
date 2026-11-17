@@ -1,7 +1,10 @@
 // moonshine_app -- a conversation with one NPC, with or without the game.
 //
-// Not the shipping front end, which will be a webview beside the game. This is the
-// same pipeline underneath it, in two modes.
+// The engine, with no window of its own. What a player opens is Moonshine.exe (app/gui),
+// a window that starts this program beside the game, starts it again when it dies, and
+// says in a line what it is doing; the console launcher that came before it
+// (installer/Moonshine.ps1) does the same in a console. This is the pipeline underneath
+// either, in two modes.
 //
 // Without --game, the conversation is entirely on the terminal, so the model side
 // can be exercised with neither the game nor a microphone involved: the world text
@@ -13,8 +16,25 @@
 //
 // With --game, the same pipeline is driven by the game: conversations open and
 // close when the mod says they do, and each reply is written where the mod will
-// read it. The player's words still come from stdin, because the microphone is not
-// wired up yet, and that is the only difference from the finished thing.
+// read it. The player's words come from the microphone while the talk button is
+// held (listen.h), from a line typed into the game, or from a row of the menu; a
+// line typed here on stdin still works, which is how it is driven without a game.
+//
+// What a front end is given to work with, none of it part of the conversation:
+//
+//   --where --json   the check of the installation (every file that will be opened,
+//                    found or missing), as JSON rather than as text to be read
+//   --status FILE    what this is doing, kept in a small JSON file that is replaced
+//                    whole when it changes (status.h): the phase, who is being talked
+//                    to, whether the ear and the voice opened, the last thing that
+//                    went wrong, in a sentence
+//   --log FILE       everything printed here, with the time on each line
+//   /quit on stdin   a clean stop, exit 0; --quit-on-eof makes a closed stdin the same
+//
+// And one choice that is the player's, made in the window's settings: --api-url and
+// --api-model send the conversation to an OpenAI-compatible service instead of the
+// model that ships (openai.h). Its key comes from MOONSHINE_API_KEY in the environment
+// and from nowhere else.
 
 #include <algorithm>
 #include <atomic>
@@ -44,7 +64,9 @@
 #include "knowledge.h"
 #include "lipsync.h"
 #include "llamacpp.h"
+#include "json.hpp"
 #include "ollama.h"
+#include "openai.h"
 #include "personadb.h"
 #include "serve.h"
 #include "memory.h"
@@ -54,6 +76,7 @@
 #include "quest.h"
 #include "sentence.h"
 #include "session.h"
+#include "status.h"
 #include "turnfile.h"
 #include "voice.h"
 #include "listen.h"
@@ -197,6 +220,15 @@ private:
     LogFile& log_;
 };
 
+// What the app is doing, for the window that started it (status.h, --status). One for the
+// process, as the log is: it is written from the poller, from the voice's callbacks and
+// from main. Without --status it has no file and every note is a no-op.
+std::unique_ptr<StatusFile> g_status = std::make_unique<StatusFile>(std::filesystem::path{});
+
+void note_status(const std::function<void(Status&)>& change) {
+    g_status->update(change);
+}
+
 // printf's formatting, through cout, so the tee above sees it.
 template <typename... Args>
 void printed(const char* format, Args... args) {
@@ -238,6 +270,17 @@ struct Args {
     // figure in benchmarks/ was measured against, and a claim that this is faster is worth
     // nothing unless the old one can still be run on the same machine an hour later.
     bool ollama = false;
+    // A model somewhere else, of the player's own choosing (openai.h): the address of an
+    // OpenAI-compatible API and the model to ask it for. Set, it answers in place of the
+    // local model, whose weights are then not loaded at all. The key is not a flag: it
+    // comes from the environment (MOONSHINE_API_KEY), because a command line is something
+    // any process on the machine can read and something the logs repeat.
+    ApiSettings api;
+    // Ask the API one question and stop (--api-test).
+    bool api_test = false;
+    // Whether the API answers, rather than a model on this machine. --canned still wins:
+    // it is how the game side is tested without any model.
+    bool uses_api() const { return !api.base_url.empty() && !canned; }
     // The weights, when llama.cpp is answering. Empty means look for the blob Ollama already
     // downloaded for options.model, which both development machines have.
     std::string gguf;
@@ -319,7 +362,14 @@ struct Args {
     // otherwise be the model's to write when they press (Session::look). Costs nothing
     // they would notice: the model is otherwise idle, and a pick, a typed line or a look
     // at somebody else stops the guess in progress within a token.
+    //
+    // Not by default with a model behind an API (--api-url): there every guess is a whole
+    // prompt paid for, and three of the four are thrown away. --guessing turns it on for a
+    // player who would rather pay than wait.
     bool speculate = true;
+    // What was asked for on the command line, if anything was; `speculate` is settled from
+    // it once the whole line has been read.
+    std::optional<bool> guessing;
     // One soul to inspect. The question "why did that NPC say that" starts with what
     // the model was told about them, and this is how to read it without playing.
     std::string soul;
@@ -362,6 +412,14 @@ struct Args {
     // A copy of the terminal in a file, each line stamped with the time (LogFile). Empty
     // is none.
     std::filesystem::path log;
+    // What the app is doing, as a small JSON file rewritten when it changes (status.h), for
+    // the window that started this app. Empty is none.
+    std::filesystem::path status;
+    // The keyboard closing is being told to stop. Off, a run with nobody at the keyboard
+    // goes on following the log (run_with_game); the window passes this because the
+    // keyboard it holds open is how it stops the app, and one that closes without a /quit
+    // is the window gone, which the app should not outlive.
+    bool quit_on_eof = false;
 };
 
 void usage() {
@@ -370,7 +428,8 @@ void usage() {
         "\n"
         "  --game          follow kcd.log and answer the mod, instead of the terminal\n"
         "  --where         say where the game was found and whether every file the\n"
-        "                  app is about to open is there, and stop; exit 1 if not\n"
+        "                  app is about to open is there, and stop; exit 1 if not.\n"
+        "                  With --json, the same verdicts as JSON\n"
         "  --canned        answer with placeholder turns, for testing without a model\n"
         "  --no-menu       do not offer replies to pick from after each line; the player\n"
         "                  types instead (the menu needs a mod built with it)\n"
@@ -378,6 +437,8 @@ void usage() {
         "                  player reads them, nor the opening line of a soul they are\n"
         "                  looking at; every pick and every unwritten greeting waits\n"
         "                  on the model\n"
+        "  --guessing      do work them out. The default, except with --api-url, where\n"
+        "                  each guess is paid for and most are thrown away\n"
         "  --root DIR      game directory holding kcd.log (default: found)\n"
         "  --user DIR      what the engine calls %USER%, holding profiles and saves\n"
         "  --modid ID      mod id, must match the generator's (default moonshine_names)\n"
@@ -436,6 +497,17 @@ void usage() {
         "                  model answers from the sheet alone\n"
         "  --ollama        ask a running Ollama server instead of loading the model here\n"
         "  --host URL      where Ollama is (default http://127.0.0.1:11434)\n"
+        "  --api-url URL   ask an OpenAI-compatible API instead of loading the model here:\n"
+        "                  the address up to its version, https://api.openai.com/v1. What\n"
+        "                  is said in a conversation then goes to that server. The key is\n"
+        "                  read from the environment, MOONSHINE_API_KEY (none for a\n"
+        "                  server that wants none)\n"
+        "  --api-model M   the model to ask the API for\n"
+        "  --api-extra J   a JSON object merged into every request to the API, for what\n"
+        "                  one server needs and the others do not (a null removes a\n"
+        "                  field); also read from MOONSHINE_API_EXTRA\n"
+        "  --api-test      with --api-url: ask the API one short question, say what came\n"
+        "                  back or what is wrong, and stop; exit 1 if it did not answer\n"
         "  --buffer N      characters to hold before speaking (default 45)\n"
         "  --voice ID      Kokoro voice to speak replies in (default bm_p286, the\n"
         "                  imported Newcastle man). Imported ids are in\n"
@@ -469,6 +541,11 @@ void usage() {
         "                  0 to never (default 120)\n"
         "  --log FILE      keep a copy of everything printed here in FILE, each line\n"
         "                  stamped with the time of day\n"
+        "  --status FILE   keep what the app is doing in FILE as JSON, rewritten when it\n"
+        "                  changes: the phase (loading-model, warming, ready, talking),\n"
+        "                  who is being talked to, and the last thing that went wrong\n"
+        "  --quit-on-eof   stop when the keyboard closes, as on /quit; without it the app\n"
+        "                  goes on following the log with nobody typing\n"
         "  --keep-thinking do not send think=false, for a model that has no switch\n";
 }
 
@@ -499,8 +576,11 @@ Args parse(int argc, char** argv, bool* stop) {
         else if (arg == "--where") args.where = true;
         else if (arg == "--canned") args.canned = true;
         else if (arg == "--log") args.log = value();
+        else if (arg == "--status") args.status = value();
+        else if (arg == "--quit-on-eof") args.quit_on_eof = true;
         else if (arg == "--no-menu") args.menu = false;
-        else if (arg == "--no-guessing") args.speculate = false;
+        else if (arg == "--no-guessing") args.guessing = false;
+        else if (arg == "--guessing") args.guessing = true;
         else if (arg == "--root") args.root = value();
         else if (arg == "--user") args.user = value();
         else if (arg == "--modid") args.modid = value();
@@ -611,6 +691,10 @@ Args parse(int argc, char** argv, bool* stop) {
         }
         else if (arg == "--ollama") args.ollama = true;
         else if (arg == "--host") args.host = value();
+        else if (arg == "--api-url") args.api.base_url = value();
+        else if (arg == "--api-model") args.api.model = value();
+        else if (arg == "--api-extra") args.api.extra_json = value();
+        else if (arg == "--api-test") args.api_test = true;
         else if (arg == "--buffer") args.least_chars = std::stoul(value());
         else if (arg == "--voice") {
             args.voice = value();
@@ -638,6 +722,17 @@ Args parse(int argc, char** argv, bool* stop) {
     if (args.rewarm_after.count() < 0) {
         args.rewarm_after = args.ollama ? std::chrono::seconds{120} : std::chrono::seconds{0};
     }
+    if (args.uses_api()) {
+        // The key, and the extras when they were not on the line, from the environment the
+        // window started this in.
+        if (const char* key = std::getenv("MOONSHINE_API_KEY")) args.api.key = key;
+        if (args.api.extra_json.empty()) {
+            if (const char* extra = std::getenv("MOONSHINE_API_EXTRA")) args.api.extra_json = extra;
+        }
+        // Nothing is asked of an API for the sake of its cache (Llm::wants_warming).
+        args.rewarm_after = std::chrono::seconds{0};
+    }
+    args.speculate = args.guessing.value_or(!args.uses_api());
     return args;
 }
 
@@ -835,6 +930,10 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
 
     if (paths.root.empty()) {
         std::cerr << "moonshine_app: cannot find the game. Pass --root.\n";
+        note_status([](Status& status) {
+            status.phase = "failed";
+            status.error = "The game was not found. Choose its folder in Settings.";
+        });
         return 1;
     }
     std::cout << "game at " << paths.root << "\n";
@@ -885,6 +984,10 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             }
         }
     }
+    note_status([&](Status& status) {
+        status.voice = speaker != nullptr;
+        status.ear = ear != nullptr;
+    });
     // And the heartbeat from the first moment, before the long prefill: a player who
     // walks up to somebody while the model warms is talking to an app that is running.
     auto unix_now = [] {
@@ -919,7 +1022,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     }
 
     Prefiller prefiller(llm, args.options);
-    std::cout << "prefilling the world\n" << std::flush;
+    if (llm.wants_warming()) std::cout << "prefilling the world\n" << std::flush;
     // Only the world, because which soul to warm is not knowable yet: the mod reports a
     // conversation starting, not a player walking near someone. Until it reports the
     // approach, every first line pays for that NPC's sheet.
@@ -931,7 +1034,16 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // tokens in, saving this long, on this machine, today".
     const Warmth warmth = prefiller.prove_world(world);
     const double rate = warmth.prefill_rate();
-    if (rate > 0.0) {
+    const bool metered = !llm.wants_warming();
+    if (metered) {
+        // An API, paid by the token. Said once, with what the app does differently for it,
+        // so that a log of a slow or a dear session explains itself.
+        printed("world:      not prefilled -- the model is an API, and nothing is sent to it"
+                    " before it is needed\n");
+        printed("guessing:   %s\n",
+                    args.speculate ? "ON (--guessing): replies are worked out ahead of the pick, and each is paid for"
+                                   : "off, so every reply is asked for when it is wanted and paid for once");
+    } else if (rate > 0.0) {
         printed("world:      %d tok cached in %.2fs; this machine prefills fresh text at"
                     " %.0f tok/s, so that is %.1fs off every conversation\n",
                     warmth.warm.prompt_tokens, warmth.warm.prefill_seconds, rate,
@@ -942,7 +1054,10 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         printed("world:      %d tok, and the backend reported no timings, so nothing"
                     " below will say what was reused\n", warmth.warm.prompt_tokens);
     }
-    if (args.rewarm_after.count() > 0) {
+    if (metered) {
+        printed("cache:      the server's own, if it keeps one; each reply says how much of"
+                    " its prompt the server reports having had\n");
+    } else if (args.rewarm_after.count() > 0) {
         printed("cache:      the backend's, so it is asked for again every %llds in case it"
                     " was dropped\n",
                     static_cast<long long>(args.rewarm_after.count()));
@@ -1106,6 +1221,11 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     listener.on_status = [](std::string_view text) {
         std::cout << "-- " << text << "\n" << std::flush;
     };
+    // What the window shows in place of a silence (status.h): the backend's own sentence,
+    // until a turn next comes back (on_timing, below).
+    listener.on_model_error = [](std::string_view why) {
+        note_status([&](Status& status) { status.error = std::string(why); });
+    };
     // The greeting, made while the player is still deciding to press, or at the latest as
     // it is written: the mod's voice marker then finds the audio ready instead of starting
     // the synthesis (voice.h, Speaker::prepare). The same clone the marker will name.
@@ -1138,7 +1258,23 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             return false;
         }
     };
-    listener.on_timing = [&args, rate](const Timing& timing) {
+    listener.on_timing = [&args, rate, metered](const Timing& timing) {
+        note_status([](Status& status) { status.error.clear(); });
+        if (metered) {
+            // An API: the first figure is the wait for the first word, not a prefill of
+            // ours, and there is no cache of ours to have lost, so none of the warnings
+            // below apply. What the server says it had cached is worth a line: it is what
+            // the provider charges less for.
+            std::string cached;
+            if (timing.cached_tokens >= 0) {
+                cached = ", " + std::to_string(timing.cached_tokens) + " of them cached by the server";
+            }
+            printed("    [api: first word after %.2fs, %d tok in%s, %d tok out in %.2fs%s]\n",
+                        timing.prefill_seconds, timing.prompt_tokens, cached.c_str(), timing.reply_tokens,
+                        timing.decode_seconds, timing.guessed ? ", paid ahead of the press: guessed" : "");
+            std::fflush(stdout);
+            return;
+        }
         std::string aside;
         if (timing.held_seconds > 0.05) {
             aside = ", stood aside " + std::to_string(timing.held_seconds).substr(0, 4) +
@@ -1490,6 +1626,12 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 if (quit) return;
                 writer.beat(unix_now());
                 held_by(since, "the heartbeat");
+                // And the same for the window (status.h): written only when it differs.
+                note_status([&](Status& status) {
+                    status.phase = session.talking() ? "talking" : "ready";
+                    status.talking_to = session.talking() ? session.npc() : std::string();
+                    status.game_log = tailer.ok();
+                });
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
         }
@@ -1529,6 +1671,13 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // would have the app exit before the player reached anybody. The opening line of
     // every conversation needs no typing anyway, so there is still a use in
     // following the log with nobody at the keyboard.
+    //
+    // Unless told that it is (--quit-on-eof): the window that starts the app holds the
+    // keyboard open for as long as it wants the app, and its going is the stop.
+    if (!asked_to_stop && args.quit_on_eof) {
+        std::cout << "the keyboard closed (--quit-on-eof); stopping\n" << std::flush;
+        asked_to_stop = true;
+    }
     if (!asked_to_stop) {
         std::cout << "no more typed input; still following the log. Stop me to quit.\n"
                   << std::flush;
@@ -1542,6 +1691,10 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         writer.hush(unix_now());
     }
     poller.join();
+    note_status([](Status& status) {
+        status.phase = "stopped";
+        status.talking_to.clear();
+    });
     return 0;
 }
 
@@ -1549,13 +1702,30 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
 //
 // Chosen once here rather than at each use, because nothing downstream -- the prefiller, the
 // session, the terminal loop -- wants to know which of the three it got.
-std::unique_ptr<Llm> open_model(const Args& args) {
+//
+// `trouble` is the reason again, as one sentence for the window (status.h); what is printed
+// is for whoever is at the terminal.
+std::unique_ptr<Llm> open_model(const Args& args, std::string* trouble) {
     if (args.canned) return std::make_unique<CannedLlm>();
+
+    if (args.uses_api()) {
+        // Not asked anything yet: whether it answers is found out by whoever calls this
+        // (check_api), since a server that is down now may be up by the first conversation
+        // and is not a reason to stop. Only settings that could never work are refused.
+        try {
+            return std::make_unique<OpenAiLlm>(args.api);
+        } catch (const std::exception& why) {
+            std::cerr << "moonshine_app: " << why.what() << "\n";
+            *trouble = why.what();
+            return nullptr;
+        }
+    }
 
     if (args.ollama) {
         auto ollama = std::make_unique<OllamaLlm>(args.host);
         if (!ollama->reachable()) {
             std::cerr << "moonshine_app: nothing answering at " << args.host << "\n";
+            *trouble = "Nothing is answering at " + args.host + ".";
             return nullptr;
         }
         return ollama;
@@ -1572,6 +1742,7 @@ std::unique_ptr<Llm> open_model(const Args& args) {
             std::cerr << "moonshine_app: no weights found for " << args.options.model
                       << ".\n  Either --gguf PATH, or `ollama pull " << args.options.model
                       << "` and this will read the blob it stores.\n";
+            *trouble = "The language model's file was not found. Repair the installation.";
             return nullptr;
         }
     }
@@ -1584,14 +1755,72 @@ std::unique_ptr<Llm> open_model(const Args& args) {
     } catch (const std::exception& why) {
         std::cout << "\n";
         std::cerr << "moonshine_app: " << why.what() << "\n";
+        *trouble = std::string("The language model could not be loaded: ") + why.what();
         return nullptr;
     }
 #else
     std::cerr << "moonshine_app: built without the llama.cpp backend. Configure with "
                  "-DMOONSHINE_LLAMA=ON after `git submodule update --init`, or run with "
                  "--ollama or --canned.\n";
+    *trouble = "This build has no local language model.";
     return nullptr;
 #endif
+}
+
+// One short question to the API at start-up, for the sake of knowing now rather than at
+// the first conversation that the key is wrong or the model's name misspelt. What it
+// finds is said and kept for the window (status.h), and is not a reason to stop: a server
+// that is down now may be up by the time anybody is spoken to, and every failed turn
+// says so again.
+void check_api(OpenAiLlm& api) {
+    try {
+        const auto began = Clock::now();
+        const std::string said = api.probe();
+        printed("api:        answered in %.2fs (\"%s\")\n", seconds_since(began), said.substr(0, 40).c_str());
+        if (api.reasons()) {
+            std::cout << "api:        this model reasons before it answers. None of that is said, but every\n"
+                         "            reply waits for it and it is paid for; if the server has a switch for\n"
+                         "            it, the extra request JSON in Settings is where it goes\n";
+        }
+    } catch (const std::exception& why) {
+        std::cout << "api:        NOT ANSWERING -- " << why.what() << "\n" << std::flush;
+        note_status([&](Status& status) { status.error = why.what(); });
+    }
+}
+
+// --api-test: the settings screen's "Test connection". The same question, asked of the
+// API the flags and the environment name, and the answer as a line of prose or (--json)
+// as JSON: {"ok":true,"reply":..,"seconds":..} or {"ok":false,"error":..,"kind":..}.
+// Exit 0 when it answered.
+int test_api(const Args& args) {
+    nlohmann::json result;
+    try {
+        if (args.api.base_url.empty()) throw ApiError(ApiError::Kind::Settings, 0, "No API address is set.");
+        OpenAiLlm api(args.api);
+        const auto began = Clock::now();
+        const std::string said = api.probe();
+        result = {{"ok", true}, {"model", api.describe()}, {"reply", said}, {"seconds", seconds_since(began)},
+                  {"reasons", api.reasons()}};
+    } catch (const ApiError& why) {
+        result = {{"ok", false}, {"error", why.what()}, {"status", why.status()},
+                  {"kind", static_cast<int>(why.kind())}};
+    } catch (const std::exception& why) {
+        result = {{"ok", false}, {"error", why.what()}, {"status", 0}, {"kind", -1}};
+    }
+    const bool ok = result["ok"].get<bool>();
+    if (args.json) {
+        std::cout << result.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) << "\n";
+    } else if (ok) {
+        printed("%s answered in %.2fs: %s\n", result["model"].get<std::string>().c_str(),
+                result["seconds"].get<double>(), result["reply"].get<std::string>().c_str());
+        if (result["reasons"].get<bool>()) {
+            std::cout << "It reasons before it answers: slower, and the reasoning is paid for.\n";
+        }
+    } else {
+        std::cout << result["error"].get<std::string>() << "\n";
+    }
+    std::cout << std::flush;
+    return ok ? 0 : 1;
 }
 
 // --where: where the game is, and whether everything the app is about to open is there.
@@ -1609,15 +1838,12 @@ std::unique_ptr<Llm> open_model(const Args& args) {
 int preflight(const Args& args) {
     namespace fs = std::filesystem;
     std::error_code bad;
-    bool ok = true;
-    // Every line is "name:  path (verdict)", the name padded to one column.
-    auto say = [](std::string_view name, const std::string& text) {
-        std::cout << std::left << std::setw(11) << std::string(name) + ":" << text << "\n";
-    };
-    auto missing = [&](std::string_view name, const std::string& text) {
-        say(name, text + " -- MISSING");
-        ok = false;
-    };
+    // Collected, and said at the end as prose or (--json) as JSON (status.h). Three
+    // verdicts: there, required and not there, and not there but done without.
+    CheckReport report;
+    auto say = [&](std::string_view name, const std::string& text) { report.ok(name, text); };
+    auto missing = [&](std::string_view name, const std::string& text) { report.missing(name, text); };
+    auto absent = [&](std::string_view name, const std::string& text) { report.optional(name, text); };
     auto megabytes = [&](const fs::path& path) {
         const auto size = fs::file_size(path, bad);
         if (bad) return std::string();
@@ -1642,14 +1868,17 @@ int preflight(const Args& args) {
         missing("game root", "not found under Steam's library folders; pass --root");
     } else {
         say("game root", paths.root.string());
+        report.game_root = paths.root.string();
     }
     say("log", log_path(paths).string() + " (" +
                    (fs::exists(log_path(paths), bad) ? "present" : "not there yet") + ")");
     say("%USER%", (paths.user.empty() ? std::string("NOT FOUND") : paths.user.string()) + " (" +
                       (fs::is_directory(paths.user, bad) ? "present" : "not there yet") + ")");
-    std::cout << "turns will be written to:\n";
+    report.note("turns will be written to:");
     for (const fs::path& path : turn_paths(paths, 1)) {
-        std::cout << "  " << path << "\n";
+        std::ostringstream quoted;
+        quoted << "  " << path;
+        report.note(quoted.str());
     }
 
     // The words: the world text every prompt opens with, and who everybody is.
@@ -1667,6 +1896,22 @@ int preflight(const Args& args) {
     // The model, as open_model would find it.
     if (args.canned) {
         say("model", "canned placeholder turns; no weights needed");
+    } else if (args.uses_api()) {
+        // As open_model would take it: the address and the model's name have to be usable.
+        // Whether the server answers, and takes the key, is not asked here -- this check
+        // runs before every start and should cost nobody a token (--api-test asks).
+        try {
+            const ApiAddress address = parse_api_url(args.api.base_url);
+            if (args.api.model.empty()) {
+                missing("model", "the API at " + address.host + ", and no model named for it (--api-model)");
+            } else {
+                say("model", "the API at " + address.host + ", model " + args.api.model +
+                                 (args.api.key.empty() ? ", no key" : ", with a key") +
+                                 (address.encrypted ? "" : ", NOT ENCRYPTED") + " (not asked)");
+            }
+        } catch (const std::exception& why) {
+            missing("model", why.what());
+        }
     } else if (args.ollama) {
         say("model", "Ollama at " + args.host + ", model " + args.options.model + " (not probed)");
     } else {
@@ -1700,15 +1945,15 @@ int preflight(const Args& args) {
         } else if (!args.embed_gguf.empty()) {
             missing("embedder", args.embed_gguf);
         } else {
-            say("embedder", "none found (models/embeddinggemma-*.gguf); souls answer from the sheet alone");
+            absent("embedder", "none found (models/embeddinggemma-*.gguf); souls answer from the sheet alone");
         }
     }
 
     // The voice: the clones' model and the voices beside it. Speaker opens both.
     if (args.voice_off) {
-        say("voice", "off (--no-voice)");
+        absent("voice", "off (--no-voice)");
     } else if (!tts_built()) {
-        say("voice", "this build has no voice; words stay on the screen");
+        absent("voice", "this build has no voice; words stay on the screen");
     } else {
         const bool phonon = clone_engine_name() == "Phonon";
         fs::path model;
@@ -1749,13 +1994,13 @@ int preflight(const Args& args) {
             if (fs::is_regular_file(file, bad)) {
                 say(name, file.string() + megabytes(file));
             } else {
-                say(name, std::string("no ") + file_name + " beside the voices; " + without);
+                absent(name, std::string("no ") + file_name + " beside the voices; " + without);
             }
         };
         beside("facials", "facials.txt", "the mod's own jaw beats stand in for the mouth");
         beside("lexicon", "lexicon.tsv", "the mouth's shapes are read from the words' letters");
         if (args.phrase_cache_off) {
-            say("phrases", "off (--no-phrase-cache); every line is spoken live");
+            absent("phrases", "off (--no-phrase-cache); every line is spoken live");
         } else {
             const fs::path dir = args.phrase_cache.empty() ? voices / "phrases" : args.phrase_cache;
             const std::size_t lines = count_in(dir, ".opus");
@@ -1766,9 +2011,9 @@ int preflight(const Args& args) {
 
     // The ear: optional, unless a model was named.
     if (!args.mic) {
-        say("ear", "off (--no-mic); the say row is typed into");
+        absent("ear", "off (--no-mic); the say row is typed into");
     } else if (!listen_built()) {
-        say("ear", "this build cannot hear; the say row is typed into");
+        absent("ear", "this build cannot hear; the say row is typed into");
     } else {
         const fs::path model = find_stt_model(args.stt_model);
         if (!model.empty()) {
@@ -1776,13 +2021,13 @@ int preflight(const Args& args) {
         } else if (!args.stt_model.empty()) {
             missing("ear", args.stt_model.string());
         } else {
-            say("ear", std::string("no ") + std::string(kDefaultSttModel) +
-                           " in the moonshine_voice cache; the say row is typed into");
+            absent("ear", std::string("no ") + std::string(kDefaultSttModel) +
+                              " in the moonshine_voice cache; the say row is typed into");
         }
     }
 
-    std::cout << (ok ? "ready" : "NOT READY: something required is missing, see above") << "\n";
-    return ok ? 0 : 1;
+    std::cout << (args.json ? report.json() : report.text()) << std::flush;
+    return report.ready() ? 0 : 1;
 }
 
 }  // namespace
@@ -1808,6 +2053,7 @@ int main(int argc, char** argv) try {
         std::cerr.rdbuf(new LogTee(std::cerr.rdbuf(), *log));
         std::cerr << "log:        " << args.log.string() << "\n";
     }
+    if (!args.status.empty()) g_status = std::make_unique<StatusFile>(args.status);
 
     if (args.list_voices) {
         const std::vector<ImportedVoice> voices = imported_voices(args.voices_path);
@@ -2266,7 +2512,10 @@ int main(int argc, char** argv) try {
     }
 
     if (args.where) return preflight(args);
+    if (args.api_test) return test_api(args);
 
+    // From here the run is one that loads a model and talks; the first snapshot says so.
+    note_status([](Status& status) { status.phase = "starting"; });
     const std::string world = read_file(args.world_path);
     Persona persona{
         "Cross-eyed Adam",
@@ -2276,13 +2525,30 @@ int main(int argc, char** argv) try {
     // speaks in the Kokoro voice, where that is built in, and otherwise stays quiet.
     persona.actor = args.actor;
 
-    const std::unique_ptr<Llm> model = open_model(args);
-    if (!model) return 1;
+    note_status([](Status& status) { status.phase = "loading-model"; });
+    std::string trouble;
+    const std::unique_ptr<Llm> model = open_model(args, &trouble);
+    if (!model) {
+        note_status([&](Status& status) {
+            status.phase = "failed";
+            status.error = trouble;
+        });
+        return 1;
+    }
     Llm& llm = *model;
+    note_status([&](Status& status) {
+        status.phase = "warming";
+        status.model = llm.describe();
+        status.remote_model = args.uses_api();
+    });
     std::cout << llm.describe();
     // llama.cpp names the weights file itself, and the canned backend has no model at all.
     if (args.ollama) std::cout << ", model " << args.options.model;
     std::cout << "\n";
+    if (args.uses_api()) {
+        std::cout << "the model is an API: what is said in a conversation is sent to it; the local model is not loaded\n";
+        check_api(static_cast<OpenAiLlm&>(llm));
+    }
     std::cout << "world " << world.size() << " chars\n";
 
     // Neither the game nor the terminal: the playground brings its own souls, through the
@@ -2317,15 +2583,21 @@ int main(int argc, char** argv) try {
     // Start-up. On the machine this was measured on, the first of these is about
     // 6s and the second about 4s, and both would otherwise land on the player's
     // opening line while they stood waiting for an answer.
+    //
+    // Not of a model behind an API, which is asked nothing until it is needed.
     auto began = Clock::now();
-    const Timing world_warm = prefiller.warm_world(world);
-    std::cout << "prefilled the world in " << seconds_since(began) << "s ("
-              << world_warm.prompt_tokens << " tokens)\n";
+    if (llm.wants_warming()) {
+        const Timing world_warm = prefiller.warm_world(world);
+        std::cout << "prefilled the world in " << seconds_since(began) << "s ("
+                  << world_warm.prompt_tokens << " tokens)\n";
 
-    began = Clock::now();
-    const Timing persona_warm = prefiller.warm_persona(world, persona);
-    std::cout << "prefilled " << persona.name << " in " << seconds_since(began) << "s ("
-              << persona_warm.prompt_tokens << " tokens)\n\n";
+        began = Clock::now();
+        const Timing persona_warm = prefiller.warm_persona(world, persona);
+        std::cout << "prefilled " << persona.name << " in " << seconds_since(began) << "s ("
+                  << persona_warm.prompt_tokens << " tokens)\n\n";
+    } else {
+        std::cout << "nothing prefilled: the model is an API\n\n";
+    }
 
     std::vector<Message> history;
     std::string said;
@@ -2340,15 +2612,23 @@ int main(int argc, char** argv) try {
 
         began = Clock::now();
         double first_audio = -1.0;
-        const Timing timing = llm.chat(messages, args.options, [&](std::string_view delta) {
-            for (const std::string& chunk : buffer.push(delta)) {
-                // Where the voice would start. Printed as it happens so the order
-                // and the wait are both visible.
-                if (first_audio < 0.0) first_audio = seconds_since(began);
-                std::cout << persona.name << "> " << chunk << "\n";
-                if (speaker) speaker->say(chunk, persona.actor);
-            }
-        });
+        Timing timing;
+        try {
+            timing = llm.chat(messages, args.options, [&](std::string_view delta) {
+                for (const std::string& chunk : buffer.push(delta)) {
+                    // Where the voice would start. Printed as it happens so the order
+                    // and the wait are both visible.
+                    if (first_audio < 0.0) first_audio = seconds_since(began);
+                    std::cout << persona.name << "> " << chunk << "\n";
+                    if (speaker) speaker->say(chunk, persona.actor);
+                }
+            });
+        } catch (const ApiError& why) {
+            // A turn an API would not answer is not the end of the session: the line is
+            // not kept, and the next one is asked as if this had not been said.
+            std::cout << "    [no reply: " << why.what() << "]\nyou> " << std::flush;
+            continue;
+        }
         if (auto last = buffer.flush()) {
             if (first_audio < 0.0) first_audio = seconds_since(began);
             std::cout << persona.name << "> " << *last << "\n";
@@ -2381,7 +2661,7 @@ int main(int argc, char** argv) try {
         // does: reusing a prefix the player's words branch away from needs the
         // cache rolled back to the branch point, and a recurrent state cannot be.
         // On any later line it means prefix reuse has stopped working altogether.
-        if (timing.prefill_seconds > args.warn_prefill_seconds) {
+        if (llm.wants_warming() && timing.prefill_seconds > args.warn_prefill_seconds) {
             std::cout << (history.empty()
                     ? "    [the pre-warm was not reused, so this model pays for the "
                       "character sheet on the opening line]\n"
@@ -2396,5 +2676,9 @@ int main(int argc, char** argv) try {
     return 0;
 } catch (const std::exception& e) {
     std::cerr << "moonshine_app: " << e.what() << "\n";
+    note_status([&](Status& status) {
+        status.phase = "failed";
+        status.error = e.what();
+    });
     return 1;
 }

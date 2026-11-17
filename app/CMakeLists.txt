@@ -15,6 +15,45 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(vendor INTERFACE)
 target_include_directories(vendor INTERFACE vendor)
 
+# Mbed TLS, vendored for the same reason (3.6.8, the long-term-support line; library/ and
+# include/ of the release archive and nothing else, Apache-2.0): it is what cpp-httplib
+# speaks HTTPS through, to a model API the player has named (src/openai.cpp) and to the
+# download server (gui/fetch.cpp). cpp-httplib's other backends are OpenSSL and wolfSSL,
+# neither of which is on a player's Windows machine or small enough to carry.
+#
+# Built here from the sources rather than through its own CMake project, which wants the
+# test framework's tree beside it: the library is every .c file under library/, compiled
+# against include/. vendor/mbedtls-config/moonshine_mbedtls_config.h is what this app changes in
+# the default configuration, and why (TLS 1.2, client only).
+#
+# The define that turns HTTPS on in httplib.h is on `vendor`, PUBLIC to everything that
+# includes the header: it changes the classes the header declares, so two files that
+# disagreed about it would be two different programs linked into one.
+file(GLOB MBEDTLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/vendor/mbedtls/library/*.c)
+add_library(mbedtls STATIC ${MBEDTLS_SOURCES})
+target_include_directories(mbedtls
+    PUBLIC vendor/mbedtls/include vendor/mbedtls-config
+    PRIVATE vendor/mbedtls/library)
+target_compile_definitions(mbedtls PUBLIC MBEDTLS_USER_CONFIG_FILE="moonshine_mbedtls_config.h")
+if(MSVC)
+    target_compile_options(mbedtls PRIVATE /w)
+else()
+    target_compile_options(mbedtls PRIVATE -w)
+endif()
+if(WIN32)
+    # The entropy source (BCryptGenRandom) and the sockets of net_sockets.c.
+    target_link_libraries(mbedtls PUBLIC bcrypt ws2_32)
+endif()
+target_compile_definitions(vendor INTERFACE CPPHTTPLIB_MBEDTLS_SUPPORT)
+target_link_libraries(vendor INTERFACE mbedtls)
+if(WIN32)
+    # The certificate chain is checked by Windows itself, against the machine's own roots.
+    target_link_libraries(vendor INTERFACE crypt32)
+elseif(APPLE)
+    # The roots come from the Keychain.
+    target_link_libraries(vendor INTERFACE "-framework CoreFoundation" "-framework Security")
+endif()
+
 # SQLite is the one amalgamation at the root, shared with the mod generator (mod/):
 # tools/assemble_db.py writes npcs.sqlite, the generator and the app both read it, so one
 # copy between them is one version of the file format.
@@ -166,6 +205,8 @@ add_library(moonshine_core STATIC
     src/word_align.cpp
     src/visemes.cpp
     src/phrase_cache.cpp
+    src/status.cpp
+    src/openai.cpp
 )
 target_include_directories(moonshine_core PUBLIC src)
 target_link_libraries(moonshine_core PUBLIC vendor sqlite3 opus)
@@ -352,6 +393,70 @@ if(MOONSHINE_PHONON OR MOONSHINE_TTS OR MOONSHINE_STT)
     endif()
 endif()
 
+# --- the window ------------------------------------------------------------------------------
+# Moonshine.exe: what a player opens (gui/main_gui.cpp). Two targets, because what the
+# window does and what it is drawn with are different kinds of thing:
+#
+#   moonshine_gui_core  everything it does -- keeping the engine running, the settings
+#                       file, the downloads, the calls the page can make -- with no window
+#                       in it, so that moonshine_tests links it and drives it.
+#   moonshine_gui       a native frame around a web page, through the vendored webview
+#                       header (MIT; WebView2 on Windows, whose WebView2.h is vendored
+#                       beside it under Microsoft's BSD licence, and WKWebView on the Mac).
+#
+# It does not link moonshine_core: it starts moonshine_app and talks to it, and has no
+# model, voice or database of its own. That keeps it a megabyte or two.
+add_library(moonshine_gui_core STATIC
+    gui/settings.cpp
+    gui/child.cpp
+    gui/supervisor.cpp
+    gui/secrets.cpp
+    gui/fetch.cpp
+    gui/bridge.cpp
+    gui/page.cpp
+)
+target_include_directories(moonshine_gui_core PUBLIC gui)
+target_link_libraries(moonshine_gui_core PUBLIC vendor Threads::Threads)
+if(WIN32)
+    # Credential Manager, the shell's "open this", and httplib's sockets.
+    target_link_libraries(moonshine_gui_core PUBLIC advapi32 shell32 ws2_32)
+endif()
+
+option(MOONSHINE_GUI "build the window, Moonshine.exe" ON)
+if(MOONSHINE_GUI AND (WIN32 OR APPLE))
+    # The page is three files under gui/ui while it is worked on and bytes inside the
+    # program when it ships; gui/embed.cmake turns the one into the other, again whenever
+    # one of the files changes.
+    set(_ui ${CMAKE_CURRENT_SOURCE_DIR}/gui/ui)
+    set(_assets ${CMAKE_CURRENT_BINARY_DIR}/ui_assets.cpp)
+    add_custom_command(
+        OUTPUT ${_assets}
+        COMMAND ${CMAKE_COMMAND} -DUI_DIR=${_ui} -DOUT=${_assets} -P ${CMAKE_CURRENT_SOURCE_DIR}/gui/embed.cmake
+        DEPENDS ${_ui}/index.html ${_ui}/app.css ${_ui}/app.js ${CMAKE_CURRENT_SOURCE_DIR}/gui/embed.cmake
+        VERBATIM)
+    # WIN32: a program with a window and no console.
+    add_executable(moonshine_gui WIN32 gui/main_gui.cpp ${_assets})
+    set_target_properties(moonshine_gui PROPERTIES OUTPUT_NAME Moonshine)
+    target_include_directories(moonshine_gui PRIVATE vendor/webview vendor/webview2)
+    target_link_libraries(moonshine_gui PRIVATE moonshine_gui_core)
+    if(WIN32)
+        # The icon and the name Windows shows for the program, with the version from the
+        # file at the top of the repository (its first four numbers; a resource has four).
+        file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/../VERSION MOONSHINE_VERSION LIMIT_COUNT 1)
+        string(STRIP "${MOONSHINE_VERSION}" MOONSHINE_VERSION)
+        string(REGEX MATCHALL "[0-9]+" _numbers "${MOONSHINE_VERSION}")
+        list(APPEND _numbers 0 0 0 0)
+        list(SUBLIST _numbers 0 4 _numbers)
+        list(JOIN _numbers "," MOONSHINE_VERSION_COMMAS)
+        set(MOONSHINE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../installer/moonshine.ico")
+        configure_file(gui/moonshine.rc.in ${CMAKE_CURRENT_BINARY_DIR}/moonshine.rc @ONLY)
+        target_sources(moonshine_gui PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/moonshine.rc)
+        target_link_libraries(moonshine_gui PRIVATE ole32 shlwapi version user32)
+    elseif(APPLE)
+        target_link_libraries(moonshine_gui PRIVATE "-framework WebKit" dl)
+    endif()
+endif()
+
 # The logic worth testing is all reachable without a model and without the game:
 # what gets sent, and what is done with what comes back. tests/stub_llm.h stands
 # in for the model, tests/fake_game.h for the game.
@@ -382,11 +487,17 @@ add_executable(moonshine_tests
     tests/test_visemes.cpp
     tests/test_listen.cpp
     tests/test_schema.cpp
+    tests/test_status.cpp
+    tests/test_openai.cpp
+    tests/test_gui_settings.cpp
+    tests/test_gui_supervisor.cpp
+    tests/test_gui_fetch.cpp
+    tests/test_gui_bridge.cpp
     src/voice.cpp
     src/listen.cpp
 )
 target_include_directories(moonshine_tests PRIVATE tests vendor/doctest)
-target_link_libraries(moonshine_tests PRIVATE moonshine_core)
+target_link_libraries(moonshine_tests PRIVATE moonshine_core moonshine_gui_core)
 # The shipped database's schema, which tests/test_schema.cpp runs and reads back through the
 # app's own loaders: the one file tools/assemble_db.py builds npcs.sqlite from, so a column
 # moved there and not here (or here and not there) fails a unit test.

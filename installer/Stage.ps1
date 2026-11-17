@@ -11,6 +11,7 @@
 # tester's disk, whole:
 #
 #   Moonshine\
+#     Moonshine.exe                 the window (app\gui), from the same build
 #     moonshine_app.exe + DLLs      app\build-release\RelWithDebInfo\ (CPU-only build)
 #     Moonshine.ps1, Fetch-Package.ps1, Collect-Logs.ps1, VERSION.txt, LICENSES\
 #     README.txt                    the player's guide: README.md up to "## The repository"
@@ -26,6 +27,7 @@
 #                                   (only if its inputs.sha256 says it was built from the
 #                                   generator in this checkout; a stale folder is refused)
 #   extra\vc_redist.x64.exe         run by the installer, not installed
+#   extra\MicrosoftEdgeWebview2Setup.exe   likewise, where Windows has no WebView2 for the window
 #
 # The installer carries only the program, the scripts and manifest.json; the rest (data\,
 # models\, mod\, about 3 GB) Setup downloads itself on the tester's machine, from [Files]
@@ -36,13 +38,14 @@
 # is the same URL and is never uploaded twice, and one that has changed lands beside the
 # old one rather than over it: every installer ever handed out keeps finding exactly the
 # bytes its manifest names. Fetch-Package.ps1 reads the same manifest afterwards, for
-# repairs and for Moonshine.ps1 -Update. Under <Repo>\release\publish\<Version>\ go the
+# repairs and updates, as Moonshine.exe does itself (app\gui\fetch.cpp). Under <Repo>\release\publish\<Version>\ go the
 # manifest (with the installer's hash added) and the installer; installer\publish.py (or
 # scripts/release.sh, which runs all of this from the repository) puts those and the
 # blobs the manifest names up at <DownloadBase>, then <DownloadBase>/latest/manifest.json,
-# which is what an installed Moonshine.ps1 -Update reads.
+# which is what an installed Moonshine.exe reads when it looks for an update (and
+# Moonshine.ps1 -Update, from a console).
 #
-# The installer, its uninstaller and moonshine_app.exe are Authenticode-signed through Azure
+# The installer, its uninstaller, Moonshine.exe and moonshine_app.exe are Authenticode-signed through Azure
 # Artifact Signing when installer\signing.json is present (the account, certificate profile
 # and endpoint; nothing secret) and the client tools are installed (winget install -e --id
 # Microsoft.Azure.ArtifactSigningClientTools); the credential is this machine's `az login`.
@@ -178,8 +181,13 @@ if ($cuda.Count -gt 0) { Fail ("the release build has CUDA DLLs beside it: " + (
 foreach ($need in @('onnxruntime.dll')) {
     if (-not ($dlls | Where-Object Name -eq $need)) { Fail "the release build is missing $need" }
 }
+# The window, from the same build: what the Start Menu opens, and what starts the app.
+$gui = Join-Path $build 'Moonshine.exe'
+if (-not (Test-Path -LiteralPath $gui)) { Fail "no window at $gui -- scripts\build_windows.bat release builds it with the app" }
 Copy-Same $exe (Join-Path $pkg 'moonshine_app.exe')
 Sign-File (Join-Path $pkg 'moonshine_app.exe')
+Copy-Same $gui (Join-Path $pkg 'Moonshine.exe')
+Sign-File (Join-Path $pkg 'Moonshine.exe')
 foreach ($dll in $dlls) { Copy-Same $dll.FullName (Join-Path $pkg $dll.Name) }
 # Anything else left in the package root from an earlier build.
 Get-ChildItem -LiteralPath $pkg -File | Where-Object { $_.Extension -in '.dll', '.exe', '.pdb' -and -not (Test-Path -LiteralPath (Join-Path $build $_.Name)) } |
@@ -345,6 +353,16 @@ if (-not (Test-Path -LiteralPath $redist) -or (Get-Item -LiteralPath $redist).Le
 }
 $sig = Get-AuthenticodeSignature -LiteralPath $redist
 if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { Fail "vc_redist.x64.exe is not signed by Microsoft ($($sig.Status))" }
+# The Evergreen bootstrapper for Microsoft Edge WebView2, which Moonshine.exe's window is
+# drawn with. Under 2 MB; it downloads and installs the runtime on the few machines that
+# have none (Windows 11 comes with it). The link is Microsoft's permanent one.
+$webview2 = Join-Path $extra 'MicrosoftEdgeWebview2Setup.exe'
+if (-not (Test-Path -LiteralPath $webview2) -or (Get-Item -LiteralPath $webview2).Length -lt 1MB) {
+    Write-Output '  downloading MicrosoftEdgeWebview2Setup.exe'
+    Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $webview2 -UseBasicParsing
+}
+$sig = Get-AuthenticodeSignature -LiteralPath $webview2
+if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { Fail "MicrosoftEdgeWebview2Setup.exe is not signed by Microsoft ($($sig.Status))" }
 }
 
 # --- the mod -------------------------------------------------------------------------------
@@ -583,7 +601,8 @@ Write-Output "installer: $out"
 
 # The installer into the publish tree, and its hash into the published manifest. The same
 # bytes become <DownloadBase>/latest/manifest.json when publish.py has put up everything
-# they name; that is what an installed Moonshine.ps1 -Update compares itself against.
+# they name; that is what an installed Moonshine.exe compares itself against when it
+# looks for an update.
 $setupOut = Join-Path $out $setupName
 if (-not (Test-Path -LiteralPath $setupOut)) { Fail "ISCC did not write $setupOut" }
 Copy-Same $setupOut (Join-Path $publish $setupName)

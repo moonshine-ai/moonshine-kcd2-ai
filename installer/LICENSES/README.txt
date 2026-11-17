@@ -4,7 +4,8 @@ This is an early tester build and not for redistribution. The pieces below are o
 people's work, shipped here under the licences named; the text of each is in this folder.
 
 Program
-  moonshine_app.exe       this project
+  Moonshine.exe           this project (the window)
+  moonshine_app.exe       this project (the app the window starts)
   llama.cpp               MIT                 llama.cpp.txt        https://github.com/ggml-org/llama.cpp
   Moonshine Voice         MIT                 moonshine-voice.txt  https://github.com/moonshine-ai/moonshine
                           (linked into moonshine_app.exe; the speech-to-text library, and the
@@ -14,6 +15,18 @@ Program
   xn-ptts (Gradium)       MIT or Apache 2.0   xn-ptts.txt          https://github.com/gradium-ai/xn-ptts
                           (the Phonon runtime Moonshine's engine follows; the text is kept here)
   Opus                    BSD 3-clause        opus.txt             https://opus-codec.org
+  Mbed TLS                Apache 2.0          Apache-2.0.txt       https://github.com/Mbed-TLS/mbedtls
+                          (3.6, taken under the Apache licence of its two; unmodified, built
+                          for TLS 1.2 as a client; no NOTICE file accompanied it. It is what
+                          the downloads, and a model API of your own if you set one, are
+                          encrypted with)
+  webview                 MIT                 webview.txt          https://github.com/webview/webview
+                          (in Moonshine.exe: the window is a web page in a native frame)
+  WebView2 SDK            BSD 3-clause        webview2.txt         https://aka.ms/webview2
+                          (Microsoft's header for the browser part of Windows that draws that
+                          page. The WebView2 runtime itself is Microsoft's, part of Windows 11;
+                          where it is missing the installer runs Microsoft's own installer for
+                          it, under Microsoft's terms)
   cpp-httplib, nlohmann/json, doctest, miniz
                           MIT                 (headers carry their own notices)
   SQLite                  public domain

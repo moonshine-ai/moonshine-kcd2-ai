@@ -21,7 +21,8 @@ What goes where under the bucket, with <prefix> the path of --download-base (kcd
     <prefix>/<version>/manifest.json      this release's manifest, with the installer's hash
     <prefix>/<version>/Moonshine-<version>-setup.exe
     <prefix>/latest/manifest.json         the same manifest, cached five minutes: what an
-                                          installed Moonshine.ps1 -Update reads. Goes up
+                                          installed Moonshine reads to find an update (the
+                                          window when it opens; Moonshine.ps1 -Update). Goes up
                                           last, once everything it names is reachable.
 
 Every file is hashed against the manifest before anything moves, and nothing is ever

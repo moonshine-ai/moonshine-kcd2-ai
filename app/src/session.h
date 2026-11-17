@@ -65,6 +65,10 @@ struct Listener {
     // A whole turn, once finished, for the transcript.
     std::function<void(const Message&)> on_turn;
     std::function<void(std::string_view)> on_status;
+    // The model could not be asked: what the backend said of why. Said on the status line
+    // as well, in the session's own words; this is the backend's sentence alone, for
+    // whoever shows the player what to do about it (status.h) -- a wrong key, no network.
+    std::function<void(std::string_view why)> on_model_error;
     // Every turn's cost, because prefill time regresses silently.
     std::function<void(const Timing&)> on_timing;
     // A quest command the session has just owed the game -- "accept", "handover",
@@ -285,6 +289,9 @@ private:
     // model takes. `remember` sends the player's words to the save first.
     void answer(std::string_view said, bool remember = false);
     void status(std::string_view text);
+    // The model threw: `what` on the status line with the reason after it, and the reason
+    // to Listener::on_model_error.
+    void model_failed(std::string_view what, const std::exception& why);
     // Asks the model the plan's one question about what the player just said, and if the
     // answer is yes owes the game the command and returns the direction to add to the
     // player's words. Empty when nothing was asked or the answer was not yes.

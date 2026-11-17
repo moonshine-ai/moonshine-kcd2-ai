@@ -1,5 +1,11 @@
-# Start the Moonshine app and Kingdom Come: Deliverance 2 together. The desktop shortcut
-# the installer writes runs this; so does the Start Menu entry.
+# Start the Moonshine app and Kingdom Come: Deliverance 2 together, in a console.
+#
+# This was what the desktop shortcut ran, to 0.9.102. The shortcut now opens a window,
+# Moonshine.exe (app/gui), which does everything here itself -- the check, the game, the
+# app kept running, the update -- and reads the same moonshine.cfg. This script stays in
+# the installation as the way without a window: Moonshine.exe offers it when Microsoft
+# Edge WebView2 is missing and it cannot draw one, and the verify and deploy scripts,
+# which have no desktop, run its -Check and -Stop.
 #
 #   powershell -NoExit -ExecutionPolicy Bypass -File Moonshine.ps1          play
 #   powershell -ExecutionPolicy Bypass -File Moonshine.ps1 -Check           say what is found, and stop
@@ -12,8 +18,8 @@
 # published (its `latest`). A newer version there: its installer is downloaded, checked
 # against the hash the manifest gives, and started; it keeps every model and data file
 # that has not changed and downloads the rest. The same version: Fetch-Package.ps1 is run
-# over the installed manifest instead, which puts back anything missing or damaged. This
-# is the shape the in-app Update will take; the app will do the same over the same files.
+# over the installed manifest instead, which puts back anything missing or damaged. The
+# window's Update and Repair do the same over the same files (app/gui/bridge.cpp).
 #
 # What it does, in order: makes sure every file the app will open is there
 # (moonshine_app --where), asks Steam to start the game, and then runs the app in this
@@ -32,6 +38,9 @@
 #                                                                        not under a Steam
 #                                                                        folder the app knows
 #   args = --no-mic                                                      anything else for the app
+# The window's Settings write the same file, with keys of its own that this script does
+# not read (launch_game, autostart, mic, and api_url and the rest for a model API: a
+# console start always uses the model on this PC).
 param(
     [switch]$Check,
     [switch]$Stop,
@@ -94,6 +103,14 @@ if ($cfg['args']) { $common += $cfg['args'] }
 $stopMarker = Join-Path $logDir 'stop'
 function Stop-App {
     Set-Content -LiteralPath $stopMarker -Value (Get-Date -Format 'o') -ErrorAction SilentlyContinue
+    # The window (Moonshine.exe) first, where one is open: it is what runs the app now, an
+    # installer will not run over it, and two launchers cannot both keep one app. The app
+    # it started goes with it.
+    $windows = @(Get-Process Moonshine -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ((Split-Path -Parent $_.Path) -eq $here) })
+    foreach ($row in $windows) {
+        Write-Line ("closing the Moonshine window, pid " + $row.Id)
+        Stop-Process -Id $row.Id -Force -ErrorAction SilentlyContinue
+    }
     $rows = @(Get-Process moonshine_app -ErrorAction SilentlyContinue)
     foreach ($row in $rows) {
         Write-Line ("stopping moonshine_app.exe, pid " + $row.Id)
