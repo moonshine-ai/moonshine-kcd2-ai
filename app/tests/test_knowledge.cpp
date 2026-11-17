@@ -177,6 +177,52 @@ TEST_CASE("a gated item is withheld with the price and the written deflection") 
     CHECK(told.direction.find("forty groschen") != std::string::npos);
 }
 
+TEST_CASE("the price of what is withheld is named once in a conversation, and a deflection said once") {
+    KbItem money = item("life:money", "confided", "fact", "I have forty groschen buried.");
+    money.withheld = "Bring me a jug of ale and I might tell you.";
+    money.price_what = "a jug of ale";
+    KbItem wife = item("life:wife", "friendly", "fact", "My wife left me for a charcoal burner.");
+    wife.withheld = "Bring me a jug of ale and I might tell you why I sleep alone.";
+    wife.price_what = "a jug of ale";
+    KbItem king = item("view:king", "friendly", "opinion", "Wenceslas is a drunk and Sigismund a thief.");
+    king.withheld = "I don't speak of kings to strangers.";
+    const KbHit on_money = hit(money, 0.7f), on_wife = hit(wife, 0.7f), on_king = hit(king, 0.7f);
+
+    // What the session keeps, as it keeps it: the price and the line of each withholding.
+    std::vector<std::string> put;
+    const auto ask = [&](const KbHit& h) {
+        const Advice first = direction_for_hit(&h, Trust::Open);
+        const Advice out = withhold_once(first, put);
+        if (!first.price.empty()) put.push_back(first.price);
+        if (!first.deflection.empty()) put.push_back(first.deflection);
+        return out;
+    };
+
+    // The first time, the price and the line as written.
+    const Advice first = ask(on_money);
+    CHECK(first.direction.find("a jug of ale") != std::string::npos);
+    CHECK(first.direction.find("Bring me a jug of ale and I might tell you.") != std::string::npos);
+    // Another thing she will not say, at the same price: refused, with no ale in it.
+    const Advice second = ask(on_wife);
+    CHECK(second.direction.find("will not tell them yet") != std::string::npos);
+    CHECK(second.direction.find("ale") == std::string::npos);
+    CHECK(second.direction.find("do not name a price") != std::string::npos);
+    CHECK(second.direction.find("left me") == std::string::npos);
+    CHECK(second.note == "withheld life:wife (friendly), put off before, so no price or line this time");
+    // The same thing asked again, likewise.
+    CHECK(ask(on_money).direction.find("ale") == std::string::npos);
+    // A deflection with no price in it is new, and said as written; asked twice, not.
+    const Advice kings = ask(on_king);
+    CHECK(kings.direction.find("I don't speak of kings to strangers.") != std::string::npos);
+    CHECK(ask(on_king).direction.find("kings") == std::string::npos);
+
+    // What is not a withholding passes through, whatever has been put.
+    const Advice told = direction_for_hit(&on_money, Trust::Confided);
+    CHECK(withhold_once(told, put).direction == told.direction);
+    const Advice nothing = direction_for_hit(nullptr, Trust::Open);
+    CHECK(withhold_once(nothing, put).direction == nothing.direction);
+}
+
 TEST_CASE("a giver's knowledge is held back until the favour is done: asked, owed, or shut") {
     const KbItem fact = item("town:smith", "open", "fact", "The smith is by the Kourim gate.");
     const KbHit h = hit(fact, 0.7f);

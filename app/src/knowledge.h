@@ -169,6 +169,11 @@ struct Advice {
     // a giver's gate (KbGate) holds back until their favour is done. A taboo's shock and
     // honest ignorance are not knowledge given, and go out whatever the gate.
     bool knows = false;
+    // Of a direction that withholds: what it says would loosen her tongue (the item's
+    // price_what) and the line it deflects with (its withheld), each empty when the item
+    // has none. For the session to see what has been put to the player already.
+    std::string price;
+    std::string deflection;
 };
 
 // The direction for a hit, or for no hit, at the player's standing (section 6b: what she
@@ -176,6 +181,14 @@ struct Advice {
 // with the gesture stripped; the follow-up's "more" or "chose"). `followup` is empty, "more"
 // or "chose". Written to the character in the second person, as the quest director's are.
 Advice direction_for_hit(const KbHit* hit, Trust tier, std::string_view followup = {});
+
+// A withholding direction, when its price or its very line has been put to them in this
+// conversation already (`put`: the prices and lines of the withholdings before it). A soul
+// has a few dozen things she will not say yet and one price for most of them, written into
+// each one's line, so every other question was answered "Bring me a jug of ale and I might
+// tell you" in the same words (17 Nov 2026). She still will not say, but the price is named
+// once: after that she refuses without it, in other words. Anything else passes through.
+Advice withhold_once(Advice advice, const std::vector<std::string>& put);
 
 // Where the giver's favour stands when the player offers to help: there is none; it is there
 // to be asked; it has been put to them this conversation already; or it is no longer there

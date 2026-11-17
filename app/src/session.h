@@ -436,6 +436,9 @@ private:
     // an item of the knowledge base, the quest's ask, or nothing. For reading "please do"
     // against the offer it answers.
     std::vector<Drew> drew_;
+    // The prices and the lines of what she would not say yet, as put to the player in this
+    // conversation (withhold_once, knowledge.h).
+    std::vector<std::string> put_off_;
     int played_ = 0;
     int written_ = 0;
     // The hooks, counted the same two ways: the highest the game reports having run and the

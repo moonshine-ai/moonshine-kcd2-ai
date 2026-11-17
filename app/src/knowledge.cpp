@@ -262,6 +262,8 @@ Advice direction_for_hit(const KbHit* hit, Trust tier, std::string_view followup
         }
         out.direction += "]";
         out.note = "withheld " + item.item_id + " (" + item.trust + ")";
+        out.price = item.price_what;
+        out.deflection = item.withheld;
         return out;
     }
     if (item.is_taboo()) {
@@ -297,6 +299,20 @@ Advice direction_for_hit(const KbHit* hit, Trust tier, std::string_view followup
     }
     out.note = std::string(chose ? "chose " : "used ") + item.item_id;
     return out;
+}
+
+Advice withhold_once(Advice advice, const std::vector<std::string>& put) {
+    const auto was_put = [&](const std::string& what) {
+        return !what.empty() && std::find(put.begin(), put.end(), what) != put.end();
+    };
+    if (!was_put(advice.price) && !was_put(advice.deflection)) return advice;
+    advice.direction =
+        "[You know something about this but will not tell them yet; they are not trusted "
+        "enough. You have put them off once already in this conversation, and said then what "
+        "it would take: do not name a price or ask them for anything again, and do not say "
+        "that line again. Refuse in a few plain words of your own, different from before.]";
+    advice.note += ", put off before, so no price or line this time";
+    return advice;
 }
 
 Advice quest_ask_direction(std::string_view quest_id, std::string_view ask, int reward_groschen,

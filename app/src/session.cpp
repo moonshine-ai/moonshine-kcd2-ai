@@ -254,6 +254,7 @@ void Session::open(std::string_view soul, const Approach& approach,
     fill_offset_ = 0;
     picked_intent_.clear();
     drew_.clear();
+    put_off_.clear();
     heard_.clear();
     soul_ = std::string(soul);
     alms_ = approach.alms;
@@ -731,6 +732,7 @@ void Session::close() {
     fill_offset_ = 0;
     picked_intent_.clear();
     drew_.clear();
+    put_off_.clear();
     status("conversation over");
     // Planned now, with the player walking away, and done between looks at the log rather
     // than here, where it would hold the next begin. The record it judges is the one
@@ -1118,9 +1120,18 @@ Advice Session::advise(std::string_view said, bool offering) {
     // reminds the player of the one taken up.
     const Scripted& written = persona_.scripted;
     const bool giver = quest.exists() && quest.role == QuestRole::Giver;
-    return gate_knowledge(knowledge_->advise(soul_, said, written.tier, drew_), written.kb_gate,
-                          giver ? quest.id : std::string(), giver ? quest.offer : std::string(),
-                          ask_state() == AskState::Again, written.remind);
+    Advice advice =
+        gate_knowledge(knowledge_->advise(soul_, said, written.tier, drew_), written.kb_gate,
+                       giver ? quest.id : std::string(), giver ? quest.offer : std::string(),
+                       ask_state() == AskState::Again, written.remind);
+    // Her price for what she will not say yet is named once in a conversation, and a line
+    // she put them off with is not said twice (withhold_once).
+    const std::string price = advice.price;
+    const std::string deflection = advice.deflection;
+    advice = withhold_once(std::move(advice), put_off_);
+    if (!price.empty()) put_off_.push_back(price);
+    if (!deflection.empty()) put_off_.push_back(deflection);
+    return advice;
 }
 
 void Session::answer(std::string_view said, bool remember) {

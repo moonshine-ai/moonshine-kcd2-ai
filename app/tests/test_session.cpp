@@ -919,6 +919,73 @@ TEST_CASE("what the model writes of what the person does never reaches the scree
     CHECK(f.session.history()[f.session.history().size() - 2].content == "Is the road to Kuttenberg open?");
 }
 
+namespace {
+
+// Lines about his wife on one axis and about his money on another; everything else,
+// the ways of offering help among it, far from both.
+class WifeAndMoney : public Embedder {
+public:
+    std::vector<float> embed(std::string_view text, bool) override {
+        std::vector<float> v(4, 0.0f);
+        const std::string line(text);
+        v[line.find("wife") != std::string::npos ? 0 : line.find("money") != std::string::npos ? 1 : 3] = 1.0f;
+        return v;
+    }
+    int dim() const override { return 4; }
+    std::string describe() const override { return "stub"; }
+};
+
+}  // namespace
+
+TEST_CASE("the price of what he will not say is named once in a conversation, and again in the next") {
+    Fixture f;
+    WifeAndMoney embedder;
+    KnowledgeBase base{"/nonexistent/npcs.sqlite"};
+    KnowledgeDirector director{embedder, base};
+    SoulIndex index;
+    const auto kept = [](std::string id, std::string answer, std::string withheld) {
+        KbItem item;
+        item.owner = kBartel;
+        item.item_id = std::move(id);
+        item.trust = "confided";
+        item.kind = "fact";
+        item.answer = std::move(answer);
+        item.withheld = std::move(withheld);
+        item.price_what = "a jug of ale";
+        return item;
+    };
+    index.add(kept("life:wife", "My wife left me for a charcoal burner.",
+                   "Bring me a jug of ale and I might tell you why I sleep alone."),
+              {{1.0f, 0.0f, 0.0f, 0.0f}}, {"his wife"});
+    index.add(kept("life:money", "I have forty groschen buried.", "Bring me a jug of ale and I might tell you."),
+              {{0.0f, 1.0f, 0.0f, 0.0f}}, {"his money"});
+    director.hold(kBartel, std::move(index));
+    f.session.set_knowledge(&director);
+
+    const auto asked = [&](const std::string& line) {
+        f.llm.replies.push_back("That is no business of yours.");
+        f.session.say(line);
+        return f.llm.last().messages.back().content;
+    };
+    f.with_greeting("What do you want?");
+    f.session.handle({Marker::Begin, 0, kBartel});
+    const std::string first = asked("Have you a wife at home?");
+    CHECK(first.find("a jug of ale") != std::string::npos);
+    CHECK(first.find("why I sleep alone") != std::string::npos);
+    // Another thing he keeps, at the same price, and then the first thing again.
+    for (const char* line : {"Where do you keep your money?", "But your wife, where is she?"}) {
+        const std::string later = asked(line);
+        CHECK(later.find("will not tell them yet") != std::string::npos);
+        CHECK(later.find("ale") == std::string::npos);
+        CHECK(later.find("do not name a price") != std::string::npos);
+    }
+
+    // The next conversation is a new one: the price is his to name again.
+    f.session.handle({Marker::Left, 0, kBartel});
+    f.session.handle({Marker::Begin, 0, kBartel});
+    CHECK(asked("Where do you keep your money?").find("a jug of ale") != std::string::npos);
+}
+
 TEST_CASE("a reply that opens with the tail of the last line, from a sentence on, loses that too") {
     Fixture f;
     f.session.set_stream_interval(std::chrono::milliseconds(0));
