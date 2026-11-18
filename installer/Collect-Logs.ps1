@@ -5,7 +5,7 @@
 # The Moonshine window's Logs screen runs this ("Collect logs for support"), with
 # MOONSHINE_NO_PAUSE set so that it does not wait for Enter; it can be run by hand too.
 #
-# "Send bug report" on the About screen runs it as well, and then sends the zip. For that:
+# "Send bug report" (the Home and About screens) runs it as well, and then sends the zip. For that:
 #   MOONSHINE_LOGS_OUT     a folder to write the zip into, instead of the desktop
 #   MOONSHINE_REPORT_NOTE  a text file (what the player wrote) to put in as report.txt
 #

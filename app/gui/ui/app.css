@@ -276,6 +276,16 @@ button.link:hover { text-decoration: underline; }
 
 .grow { flex: 1; }
 
+/* The way to tell us something is wrong, where it is seen without being looked for: a
+   real button, in the text's own colour, in a strip that is otherwise quiet. */
+.strip button.quiet { color: var(--text); padding: 5px 12px; }
+/* In a narrow window the strip gives up room from the model's name (the longest thing in
+   it, and the least urgent), not from the button or from a warning. */
+.strip .pip, .strip button { flex: none; white-space: nowrap; }
+.strip .pip i { flex: none; }
+.strip #pip-model { flex: 0 1 auto; min-width: 0; }
+.strip #pip-model span { overflow: hidden; text-overflow: ellipsis; }
+
 .pip { display: inline-flex; align-items: center; gap: 7px; }
 .pip i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .pip[data-on="yes"] i { background: var(--good); }

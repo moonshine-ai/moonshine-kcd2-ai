@@ -186,7 +186,7 @@ Verdict RestartPolicy::after(int code, int life_seconds, bool asked) {
     if (fast_ >= 5) {
         verdict.gave_up = true;
         verdict.line = died + ", " + std::to_string(fast_) +
-                       " times within 20s of starting. Not starting it again; send a bug report from the About tab, which sends these logs.";
+                       " times within 20s of starting. Not starting it again; press Send bug report on the Home screen, which sends these logs.";
         return verdict;
     }
     verdict.restart = true;

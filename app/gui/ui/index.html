@@ -32,7 +32,7 @@
         <button class="primary" id="home-button" hidden></button>
         <button class="quiet" id="home-fix" hidden></button>
       </div>
-      <p class="notice" id="home-notice" hidden><span></span><button class="link" data-call="dismissTask">Dismiss</button></p>
+      <p class="notice" id="home-notice" hidden><span></span><button class="link" id="home-notice-cancel" data-call="cancelTask" hidden>Cancel</button><button class="link" id="home-notice-show" hidden>Show</button><button class="link" id="home-notice-dismiss" data-call="dismissTask">Dismiss</button></p>
     </div>
     <footer class="strip">
       <span class="pip" id="pip-mic"><i></i><span>Microphone</span></span>
@@ -40,7 +40,7 @@
       <span class="pip" id="pip-model"><i></i><span>Model on this PC</span></span>
       <span class="grow"></span>
       <button class="link" id="update-link" data-view="about" hidden></button>
-      <span class="version" id="version"></span>
+      <button class="quiet" id="home-report">Send bug report…</button>
     </footer>
   </section>
 

@@ -105,7 +105,16 @@
 
     const ended = !task.running && (task.error || task.result);
     const about = ended && (task.kind === 'update' || task.kind === 'repair' || task.kind === 'uninstall');
-    setNotice($('home-notice'), about ? (task.error || task.result) : '', task.error ? 'error' : '');
+    // A bug report can be sent from here too (the button in the corner), so how it is
+    // going and how it went are said here as well as on the About screen.
+    const report = task.kind === 'report';
+    const reporting = report && task.running;
+    let said = about || (report && ended) ? (task.error || task.result) : '';
+    if (reporting) said = task.title + (task.detail ? ': ' + task.detail : '\u2026');
+    setNotice($('home-notice'), said, task.error ? 'error' : '');
+    $('home-notice-cancel').hidden = !reporting;
+    $('home-notice-show').hidden = !(report && ended && task.path);
+    $('home-notice-dismiss').hidden = reporting;
     setNotice($('about-notice'), about ? (task.error || task.result) : '', task.error ? 'error' : '');
     const collected = task.kind === 'collect';
     setNotice($('logs-notice'), collected ? (task.running ? 'Collecting the logs…' : (task.error || task.result)) : '',
@@ -124,7 +133,6 @@
     pip($('pip-model'), up ? 'yes' : 'no', s.settings.api ? 'Model: ' + (s.settings.api_model || 'custom API') : 'Model on this PC');
     $('pip-model').title = engine.model || '';
 
-    $('version').textContent = s.version;
     const available = s.update.state === 'available';
     $('update-link').hidden = !available;
     $('update-link').textContent = available ? 'Update to ' + s.update.latest : '';
@@ -435,6 +443,7 @@
     const task = s.task;
     const mine = task.kind === 'report';
     $('report-button').disabled = task.running;
+    $('home-report').disabled = task.running;
     $('report-task').hidden = !(mine && task.running);
     $('report-task-title').textContent = task.title;
     $('report-task-detail').textContent = task.detail;
@@ -449,7 +458,8 @@
     }
   }
 
-  $('report-button').addEventListener('click', () => {
+  // The form, from either of its two buttons: the corner of the home screen and About.
+  function openReport() {
     if (!state) return;
     const report = state.report || {};
     $('report-name').value = report.name || '';
@@ -461,10 +471,13 @@
     $('report-send').disabled = false;
     $('report').showModal();
     $('report-description').focus();
-  });
+  }
 
+  $('report-button').addEventListener('click', openReport);
+  $('home-report').addEventListener('click', openReport);
   $('report-cancel').addEventListener('click', () => $('report').close());
   $('report-show').addEventListener('click', () => call('open', { what: 'task' }));
+  $('home-notice-show').addEventListener('click', () => call('open', { what: 'task' }));
 
   $('report-form').addEventListener('submit', async (event) => {
     event.preventDefault();

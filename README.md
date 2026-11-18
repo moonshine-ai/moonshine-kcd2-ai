@@ -230,11 +230,12 @@ The model is running on your CPU, and some are slower than others. Send a bug re
 
 #### Sending a bug report
 
-In the Moonshine window, open the **About** tab and press **Send bug report…**. Say what
-you were doing and what went wrong, press **Send**, and that is all: Moonshine gathers
-its logs and sends them to us with what you wrote. It answers with a reference, eight
-letters and digits such as `AB12CD34`, to quote if you write to us about it. Your name
-and an email address are optional; give the address if you would like a reply.
+In the Moonshine window, press **Send bug report…** in the bottom right corner of the
+Home screen (it is on the **About** tab as well). Say what you were doing and what went
+wrong, press **Send**, and that is all: Moonshine gathers its logs and sends them to us
+with what you wrote. It answers with a reference, eight letters and digits such as
+`AB12CD34`, to quote if you write to us about it. Your name and an email address are
+optional; give the address if you would like a reply.
 
 What is sent: the app's logs, the game's `kcd.log`, what the app found of the
 installation, your Moonshine settings and a few lines about your PC (Windows version,
@@ -617,7 +618,7 @@ up after two minutes having removed nothing).
 
 ### The bug report service
 
-**Send bug report** (About tab) runs `Collect-Logs.ps1` into a temporary folder and posts
+**Send bug report** (Home screen and About tab) runs `Collect-Logs.ps1` into a temporary folder and posts
 the zip to a Cloudflare Worker, `cloud/bug-reports/`, which keeps it in a private R2
 bucket and sends an email about it. There is no database, no dashboard and no build
 step: one JavaScript file with no dependencies, one bucket, and the email is the inbox.
