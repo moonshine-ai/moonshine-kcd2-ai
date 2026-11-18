@@ -45,6 +45,12 @@ struct Settings {
     // API each guess is paid for, so it is the player's to turn on.
     bool api_guessing = false;
 
+    // Who the last bug report was from, as they typed it, so that the next one does not
+    // ask again. Both optional. Collect-Logs.ps1 leaves these two lines out of the copy of
+    // this file it puts in a zip: a zip made by hand may be posted anywhere.
+    std::string report_name;
+    std::string report_email;
+
     bool operator==(const Settings& other) const;
     bool operator!=(const Settings& other) const { return !(*this == other); }
 };

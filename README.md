@@ -221,22 +221,40 @@ something else)**.
 
 **The Moonshine window says *Moonshine could not start*, or keeps saying *Starting
 again*.**
-It restarts its engine automatically and gives up after five quick failures. Collect the
-logs (below) and send them.
+It restarts its engine automatically and gives up after five quick failures. Send a bug
+report (below).
 
 **The voice lags far behind the text, or the game stutters while people speak.**
-The model is running on your CPU, and some are slower than others. Collect the logs,
-which record your CPU, and send them.
+The model is running on your CPU, and some are slower than others. Send a bug report
+(below); the logs that go with it record your CPU.
+
+#### Sending a bug report
+
+In the Moonshine window, open the **About** tab and press **Send bug report…**. Say what
+you were doing and what went wrong, press **Send**, and that is all: Moonshine gathers
+its logs and sends them to us with what you wrote. It answers with a reference, eight
+letters and digits such as `AB12CD34`, to quote if you write to us about it. Your name
+and an email address are optional; give the address if you would like a reply.
+
+What is sent: the app's logs, the game's `kcd.log`, what the app found of the
+installation, your Moonshine settings and a few lines about your PC (Windows version,
+CPU, memory, graphics card). No saves, no API key, and nothing personal beyond what you
+wrote in the form and what you said or typed in conversations, which the logs quote.
+Reports go to a private store only we can read and are deleted after 90 days. Nothing
+is ever sent unless you press that button.
+
+If the report cannot be sent (no connection, or more than 25 MB of logs), the same zip
+is left on your desktop as `Moonshine-logs-<date>.zip` instead and the window says so.
+You can try again later, or attach that file to
+[an issue on GitHub](https://github.com/moonshine-ai/moonshine-kcd2-ai/issues), bearing
+in mind that issues are public and the logs quote your conversations.
 
 #### Collecting logs
 
-In the Moonshine window, open the **Logs** tab and press **Collect logs** (or run
-`Collect-Logs.ps1` in the Moonshine folder). It writes `Moonshine-logs-<date>.zip` to
-your desktop: the app's logs, the game's `kcd.log`, what the app found of the
-installation and a few lines about your PC. No saves, no API key, and nothing personal
-beyond what you said or typed in conversations. Send that zip with a sentence about what
-you were doing when it went wrong. The Logs tab also shows the log itself, if you are
-curious or somebody asks what it says.
+To look at the logs yourself, or to send them some other way: on the **Logs** tab press
+**Collect logs** (or run `Collect-Logs.ps1` in the Moonshine folder). It writes the same
+`Moonshine-logs-<date>.zip` to your desktop and sends nothing. The Logs tab also shows
+the log itself, if you are curious or somebody asks what it says.
 
 ### Updating
 
@@ -283,7 +301,8 @@ What changes when you do:
   15,000 tokens and receive about 500.
 - The model on your PC is not loaded, which frees about 2.4 GB of memory for the game.
 - Your key is kept in Windows Credential Manager, not in Moonshine's folder, and it is
-  never written to a log or to the zip **Collect logs** makes.
+  never written to a log, so it is not in a bug report or in the zip **Collect logs**
+  makes.
 
 This part is new and has been tried far less than the rest: characters may be wordier,
 or less in character, with a model the prompts were not written for. Switch back to **On
@@ -426,6 +445,7 @@ conversation with that engine as the game would (`--canned` needs no model).
 | `MOONSHINE_UI_DEBUG` | allow the browser's developer tools |
 | `MOONSHINE_UI_SCRIPT` | JavaScript to run in the page once it has loaded |
 | `MOONSHINE_UI_TRACE` | a file for what that script reports (a Windows program with a window has no stderr) |
+| `MOONSHINE_REPORT_URL` | where **Send bug report** posts, when it is not the published service (a copy under `wrangler dev`, say) |
 
 The window keeps the engine at arm's length, through things the engine already did or
 that were added for it: `--where --json` (the installation check as JSON), `--status FILE`
@@ -434,6 +454,9 @@ talking with whom, the last error), `--log`, `--quit-on-eof`, and `/quit` on std
 clean stop. Settings are `moonshine.cfg` beside the programs, the file the installer and
 the console launcher already used; the window adds `model`, `api_url`, `api_model`,
 `api_extra`, `api_guessing`, `launch_game`, `autostart` and `mic` to it, and never the key.
+It also keeps `report_name` and `report_email` there, who the last bug report was from,
+to fill the form in next time; `Collect-Logs.ps1` leaves those two lines out of the copy
+of the file it puts in a zip.
 
 #### A model somewhere else
 
@@ -592,6 +615,77 @@ that the install was made by an administrator, and the uninstaller then asks for
 elevation (a consent prompt on the desktop that nobody over ssh can see, and that gives
 up after two minutes having removed nothing).
 
+### The bug report service
+
+**Send bug report** (About tab) runs `Collect-Logs.ps1` into a temporary folder and posts
+the zip to a Cloudflare Worker, `cloud/bug-reports/`, which keeps it in a private R2
+bucket and sends an email about it. There is no database, no dashboard and no build
+step: one JavaScript file with no dependencies, one bucket, and the email is the inbox.
+
+```
+POST https://reports.moonshine.ai/kcd2/report
+  body                  the zip (Content-Length required; it is streamed into R2, never held in memory)
+  X-Moonshine-Report    base64 of UTF-8 JSON: {"name", "email", "description", "version"}, all optional
+  -> 200 {"ref": "AB12CD34", "emailed": true}
+  -> 4xx/5xx {"error": "too-big", "message": "a sentence the app shows as it is"}
+```
+
+Each report is two objects, `kcd2/<day>/<ref>-<secret>/logs.zip` and `report.json` (the
+form, the size, the country Cloudflare saw, the time; not the IP address). The secret is
+128 random bits and is the only thing that opens a report:
+`GET /kcd2/r/<day>/<ref>-<secret>/logs.zip` serves the zip, and that link is in the email
+and nowhere else. The player is given only the reference.
+
+**Reading a report.** The email's subject is the reference and the first words of what
+the player wrote; its body has the rest, and **Download the logs**. Replying to it
+writes to the player, if they gave an address. Treat the zip as what it is, a file from
+the internet: read what is in it and run nothing from it. Without the email, the report
+is in the bucket (R2 > `moonshine-bug-reports` in the Cloudflare dashboard, or
+`wrangler r2 object get moonshine-bug-reports/kcd2/<day>/<ref>-<secret>/logs.zip --remote`).
+
+**Limits.** Anybody can read this repository and post to that address, so everything is
+bounded, generously: the point is to cap the bill, not to keep anybody out. The numbers
+are constants at the top of `cloud/bug-reports/src/index.js`.
+
+| | |
+|---|---|
+| one report | 25 MB (the app checks before it sends) |
+| reports from one address | 6 a minute (`ratelimits` in `wrangler.jsonc`; Cloudflare's limiter is approximate and lets a short burst through) |
+| reports a day, everybody | 200, and 2 GB; past either the app is told to try tomorrow |
+| emails a day | 50; reports after that are still kept, and one more email says the cap was reached |
+| kept for | 90 days (a lifecycle rule on the bucket) |
+
+The day's totals are counted by listing the day's folder, so there is no counter to
+drift. At the limits that is 2 GB a day for 90 days, 180 GB, about $2.70 a month of R2;
+real use is megabytes. Requests are within what the Workers plan includes.
+
+**Setting it up**, once, with `wrangler` logged in to the account that has `moonshine.ai`:
+
+```sh
+cd cloud/bug-reports
+wrangler r2 bucket create moonshine-bug-reports
+wrangler r2 bucket lifecycle add moonshine-bug-reports delete-after-90-days --expire-days 90
+wrangler email sending enable moonshine.ai      # adds DNS records under cf-bounce.moonshine.ai only
+wrangler deploy                                 # the Worker, and reports.moonshine.ai as its custom domain
+wrangler secret put REPORT_TO                   # the address the emails go to; not in this repository
+```
+
+The token `wrangler` uses needs Workers Scripts, Workers R2 Storage and Email Sending
+on the account, and Workers Routes and DNS on the `moonshine.ai` zone (for the custom
+domain). Sending to an address that is not a verified destination of the account needs
+the Workers Paid plan.
+
+**Changing it** is editing `src/index.js` and `wrangler deploy`. To try a change first:
+
+```sh
+wrangler dev --port 8787                        # local R2, and the email written to a file instead of sent
+./smoke.sh http://localhost:8787                # a report in, the refusals, no listing
+./smoke.sh                                      # the same against the live service: sends ONE real report
+./smoke.sh --link '<the link in the email>'     # the zip comes back, a wrong secret gets nothing
+./smoke.sh --rate                               # the per-minute limit (stores nothing)
+MOONSHINE_REPORT_URL=http://localhost:8787/kcd2/report app/build/Moonshine    # the app against the local copy
+```
+
 ## Installing the mod by hand
 
 The whole of the build output belongs in `<game>\mods\moonshine_names\`, and nothing else
@@ -644,6 +738,7 @@ app/            the companion app: src/ (the engine), gui/ (the window; ui/ is i
                 vendor/ (llama.cpp submodule, qwen3-tts, opus, mbedtls, webview, WebView2.h, headers)
 mod/            kcd2modgen: src/, vendor/miniz, harness/ (the Lua engine stub and its cases), assets/
 installer/      Stage.ps1, publish.py, moonshine.iss, the console launcher (Moonshine.ps1), the verifiers, LICENSES/
+cloud/          bug-reports/: the Cloudflare Worker that receives what "Send bug report" sends
 scripts/        release.sh, fetch_*, build_*, release_version.sh, the scheduler and mouth-pak builders, fake_game.py,
                 gui-walk.js, gui-tour.js and gui_conversation.py (the window, driven by a script)
 tools/          assemble_db.py, fetch_drop.py, s3_sign.py, kitten_textures.py (the kitten coats under mod/assets)

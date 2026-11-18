@@ -141,6 +141,8 @@ std::vector<Entry> entries_of(const Settings& s) {
         {"api_model", one_line(s.api_model), one_line(s.api_model).empty()},
         {"api_extra", one_line(s.api_extra), one_line(s.api_extra).empty()},
         {"api_guessing", word(s.api_guessing), s.api_guessing == d.api_guessing},
+        {"report_name", one_line(s.report_name), one_line(s.report_name).empty()},
+        {"report_email", one_line(s.report_email), one_line(s.report_email).empty()},
     };
 }
 
@@ -149,7 +151,8 @@ std::vector<Entry> entries_of(const Settings& s) {
 bool Settings::operator==(const Settings& o) const {
     return root == o.root && args == o.args && mic == o.mic && launch_game == o.launch_game &&
            autostart == o.autostart && api == o.api && api_url == o.api_url && api_model == o.api_model &&
-           api_extra == o.api_extra && api_guessing == o.api_guessing;
+           api_extra == o.api_extra && api_guessing == o.api_guessing && report_name == o.report_name &&
+           report_email == o.report_email;
 }
 
 Settings parse_settings(std::string_view text) {
@@ -180,6 +183,8 @@ Settings parse_settings(std::string_view text) {
     s.api_model = text_of("api_model");
     s.api_extra = text_of("api_extra");
     s.api_guessing = flag("api_guessing", s.api_guessing);
+    s.report_name = text_of("report_name");
+    s.report_email = text_of("report_email");
     return s;
 }
 

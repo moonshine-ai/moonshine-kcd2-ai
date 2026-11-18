@@ -42,6 +42,7 @@
       has_key: false,
       task: { kind: '', running: false, title: '', detail: '', done: 0, total: 0, error: '', result: '', path: '' },
       update: { state: 'current', latest: '0.9.102.28', error: '' },
+      report: { name: '', email: '', name_limit: 200, email_limit: 254, description_limit: 4000 },
     };
   }
 
@@ -104,6 +105,25 @@
       const s = base();
       s.task = { kind: 'repair', running: false, title: 'Repairing files', detail: '', done: 0, total: 0, error: '',
                  result: '1 file was downloaded again. Everything is now in place.', path: '' };
+      return s;
+    },
+    reporting: () => {
+      const s = base();
+      s.task = { kind: 'report', running: true, title: 'Sending the report', detail: '1.3 of 3.4 MB',
+                 done: 13, total: 34, error: '', result: '', path: '' };
+      return s;
+    },
+    reported: () => {
+      const s = base();
+      s.task = { kind: 'report', running: false, title: 'Sending the report', detail: '', done: 0, total: 0, error: '',
+                 result: 'Sent, thank you. Reference AB12CD34.', path: '' };
+      return s;
+    },
+    unreported: () => {
+      const s = base();
+      s.task = { kind: 'report', running: false, title: 'Sending the report', detail: '', done: 0, total: 0,
+                 error: 'The report could not be sent (could not reach the server). The logs are saved on your desktop as Moonshine-logs-20261116-201455.zip. Try again later, or send that file.',
+                 result: '', path: 'C:\\Users\\henry\\Desktop\\Moonshine-logs-20261116-201455.zip' };
       return s;
     },
     api: () => {
@@ -204,6 +224,30 @@
           push();
         }, 1500));
         return later(ok);
+      case 'sendReport': {
+        if (state.task.running) return later({ ok: false, error: 'Moonshine is in the middle of something else. Send the report when that has finished.' });
+        state.report = Object.assign(state.report, { name: args.name, email: args.email });
+        state.task = { kind: 'report', running: true, title: 'Collecting logs', detail: '', done: 0, total: 0, error: '', result: '', path: '' };
+        push();
+        const total = 3.4 * 1024 * 1024;
+        for (let step = 1; step <= 5; step += 1) {
+          timers.push(setTimeout(() => {
+            state.task = Object.assign(state.task, { title: 'Sending the report', done: total * step / 5, total: total,
+                                                     detail: (3.4 * step / 5).toFixed(1) + ' of 3.4 MB' });
+            push();
+          }, 1200 + step * 350));
+        }
+        timers.push(setTimeout(() => {
+          // A description with "fail" in it is a report that does not arrive.
+          const failed = (args.description || '').indexOf('fail') >= 0;
+          state.task = Object.assign(state.task, { running: false, detail: '' }, failed
+            ? { error: 'The report could not be sent (could not reach the server). The logs are saved on your desktop as Moonshine-logs-20261116-201455.zip. Try again later, or send that file.',
+                path: 'C:\\Users\\henry\\Desktop\\Moonshine-logs-20261116-201455.zip' }
+            : { result: 'Sent, thank you. Reference AB12CD34.' });
+          push();
+        }, 3400));
+        return later(ok);
+      }
       case 'uninstall': return later({ ok: false, error: 'This is the mock: nothing was uninstalled.' });
       default: return later(ok);
     }

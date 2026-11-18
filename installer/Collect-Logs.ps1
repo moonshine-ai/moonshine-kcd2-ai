@@ -5,6 +5,10 @@
 # The Moonshine window's Logs screen runs this ("Collect logs for support"), with
 # MOONSHINE_NO_PAUSE set so that it does not wait for Enter; it can be run by hand too.
 #
+# "Send bug report" on the About screen runs it as well, and then sends the zip. For that:
+#   MOONSHINE_LOGS_OUT     a folder to write the zip into, instead of the desktop
+#   MOONSHINE_REPORT_NOTE  a text file (what the player wrote) to put in as report.txt
+#
 # What goes in: the app's logs (logs\), what moonshine_app --where says it finds, the
 # game's own kcd.log (where the BRIDGE lines the app answers are), the machine in a few
 # lines (Windows, CPU, memory, GPU), and the installer's log if it is still in TEMP.
@@ -12,7 +16,8 @@
 # moonshine.cfg goes in too, since it says where the game was looked for and whether a
 # model API was in use. The key for such an API is never in that file (Windows keeps it,
 # in Credential Manager), and the copy's api_url has any name:password@ and anything after
-# a ? taken out, in case somebody's address carries a secret of its own.
+# a ? taken out, in case somebody's address carries a secret of its own. The name and email
+# address a bug report was last sent with are left out of the copy as well.
 $ErrorActionPreference = 'Continue'
 $here = $PSScriptRoot
 Set-Location $here
@@ -33,7 +38,10 @@ if (Test-Path -LiteralPath $app) {
     $cfgPath = Join-Path $here 'moonshine.cfg'
     if (Test-Path -LiteralPath $cfgPath) {
         $cfgLines = @(Get-Content -LiteralPath $cfgPath)
-        $cfgLines | ForEach-Object {
+        # Without the name and address the last bug report was sent with, either: they are
+        # kept in this file to fill the form in next time, and a zip made by hand can end
+        # up anywhere. A report that is sent says who it is from in report.txt.
+        $cfgLines | Where-Object { $_ -notmatch '^\s*report_(name|email)\s*=' } | ForEach-Object {
             if ($_ -match '^\s*api_url\s*=') { ($_ -replace '//[^/@\s]*@', '//') -replace '\?.*$', '?(removed)' } else { $_ }
         } | Out-File -LiteralPath (Join-Path $work 'moonshine.cfg') -Encoding utf8
         foreach ($raw in $cfgLines) {
@@ -96,11 +104,26 @@ Get-ChildItem -Path $env:TEMP -Filter 'Setup Log*.txt' -ErrorAction SilentlyCont
     Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
     Copy-Item -Destination (Join-Path $work 'installer.log') -ErrorAction SilentlyContinue
 
-$desktop = [Environment]::GetFolderPath('Desktop')
-if (-not $desktop) { $desktop = $here }
-$zip = Join-Path $desktop "Moonshine-logs-$stamp.zip"
+# What the player wrote in the bug report form, so the zip says it too if it ends up
+# being sent some other way.
+if ($env:MOONSHINE_REPORT_NOTE -and (Test-Path -LiteralPath $env:MOONSHINE_REPORT_NOTE)) {
+    Copy-Item -LiteralPath $env:MOONSHINE_REPORT_NOTE -Destination (Join-Path $work 'report.txt') -ErrorAction SilentlyContinue
+}
+
+$out = $env:MOONSHINE_LOGS_OUT
+if ($out) {
+    New-Item -ItemType Directory -Force -Path $out -ErrorAction SilentlyContinue | Out-Null
+    if (-not (Test-Path -LiteralPath $out)) { $out = $null }
+}
+if (-not $out) { $out = [Environment]::GetFolderPath('Desktop') }
+if (-not $out) { $out = $here }
+$zip = Join-Path $out "Moonshine-logs-$stamp.zip"
 Compress-Archive -Path (Join-Path $work '*') -DestinationPath $zip -Force
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 Write-Output "written: $zip"
-Write-Output 'Send that file along with a sentence or two about what you were doing.'
+# Where the zip is moved to if it turns out it cannot be sent.
+if ($env:MOONSHINE_LOGS_OUT) { Write-Output "desktop: $([Environment]::GetFolderPath('Desktop'))" }
+if (-not $env:MOONSHINE_LOGS_OUT) {
+    Write-Output 'Send that file along with a sentence or two about what you were doing.'
+}
 if (-not $env:MOONSHINE_NO_PAUSE) { Read-Host 'Press Enter to close' | Out-Null }

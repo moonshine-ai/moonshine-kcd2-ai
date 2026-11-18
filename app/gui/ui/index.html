@@ -153,6 +153,19 @@
     </div>
     <p class="notice inline" id="about-notice" hidden><span></span><button class="link" data-call="dismissTask">Dismiss</button></p>
 
+    <h2>Something wrong?</h2>
+    <p class="plain muted">Send us Moonshine's logs with a note about what happened. It takes a few seconds.</p>
+    <div class="row wrap">
+      <button class="quiet" id="report-button">Send bug report…</button>
+    </div>
+    <div class="task" id="report-task" hidden>
+      <p class="plain" id="report-task-title"></p>
+      <div class="progress"><div id="report-task-bar"></div></div>
+      <p class="plain muted" id="report-task-detail"></p>
+      <button class="quiet" data-call="cancelTask">Cancel</button>
+    </div>
+    <p class="notice inline" id="report-notice" hidden><span></span><button class="link" id="report-show" hidden>Show</button><button class="link" data-call="dismissTask">Dismiss</button></p>
+
     <h2>The installation</h2>
     <ul class="checklist" id="checklist"></ul>
     <div class="row wrap">
@@ -183,6 +196,31 @@
     <div class="row end">
       <button class="quiet" value="no" id="confirm-no">Cancel</button>
       <button class="primary small" value="yes" id="confirm-yes">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="report">
+  <form id="report-form" autocomplete="off" novalidate>
+    <h3>Send a bug report</h3>
+    <label class="field">
+      <span>Name <em>optional</em></span>
+      <input type="text" id="report-name" spellcheck="false">
+    </label>
+    <label class="field">
+      <span>Email <em>optional</em></span>
+      <input type="text" id="report-email" spellcheck="false" inputmode="email">
+      <small>Only if you would like a reply.</small>
+    </label>
+    <label class="field">
+      <span>What happened? <em>optional</em></span>
+      <textarea id="report-description" rows="5" placeholder="What you were doing, and what went wrong."></textarea>
+    </label>
+    <p class="privacy">This sends Moonshine's logs, the game's log, and a few lines about this PC and your settings (never an API key). The logs quote your recent conversations with characters. Reports are kept for 90 days, then deleted.</p>
+    <div class="row end">
+      <span class="result grow" id="report-result"></span>
+      <button type="button" class="quiet" id="report-cancel">Cancel</button>
+      <button type="submit" class="primary small" id="report-send">Send</button>
     </div>
   </form>
 </dialog>

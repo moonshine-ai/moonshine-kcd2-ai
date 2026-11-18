@@ -25,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace moonshine::gui {
@@ -111,6 +112,32 @@ FetchResult fetch_files(const Manifest& manifest, const FetchOptions& options);
 // when it could not be had.
 std::optional<std::string> fetch_text(const std::string& url, std::string* trouble = nullptr,
                                       const std::function<bool()>& cancelled = {});
+
+// A file sent whole, as the body of one POST: the zip of a bug report, to the service in
+// cloud/bug-reports. Read from the disk a piece at a time, so a report of megabytes is
+// never held in memory, and not tried twice: a report that did not go is left for the
+// player to send again, or another way.
+struct Upload {
+    // The server took it: it answered, and with a 2xx.
+    bool ok = false;
+    // `cancelled` said to stop before it had all gone.
+    bool cancelled = false;
+    // What the server answered, when it did: the status, and the start of the body.
+    int status = 0;
+    std::string body;
+    // Why it did not go, in words; empty when it did, or was cancelled.
+    std::string trouble;
+};
+
+// `headers` go with it as they are. `progress` is told the bytes sent so far, of how many.
+Upload upload_file(const std::string& url, const std::filesystem::path& file,
+                   const std::vector<std::pair<std::string, std::string>>& headers,
+                   const std::function<void(std::uint64_t done, std::uint64_t total)>& progress = {},
+                   const std::function<bool()>& cancelled = {});
+
+// Text as base64, on one line: how a header carries what a player typed, whatever
+// characters are in it.
+std::string base64(std::string_view text);
 
 // `to` made the same as `from`: every file copied that differs, anything else there
 // removed. How the mod in the installation is put into the game's mods folder.

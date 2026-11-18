@@ -64,6 +64,25 @@ std::string env_of(const Command& command, const std::string& name, const std::s
     return otherwise;
 }
 
+// What a header carried, back as it was written.
+std::string from_base64(const std::string& text) {
+    static const std::string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    unsigned held = 0;
+    int bits = 0;
+    for (const char c : text) {
+        const std::size_t at = letters.find(c);
+        if (at == std::string::npos) continue;
+        held = (held << 6) | static_cast<unsigned>(at);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out += static_cast<char>((held >> bits) & 0xFF);
+        }
+    }
+    return out;
+}
+
 bool eventually(const std::function<bool()>& reached) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (std::chrono::steady_clock::now() < deadline) {
@@ -90,6 +109,28 @@ struct Machine {
     json where = where_report();
     std::string api_answer = R"({"ok":true,"model":"m","reply":"ready","seconds":0.4,"reasons":false})";
     std::string collect_output = "written: C:\\Users\\henry\\Desktop\\Moonshine-logs-1.zip\nSend that file along.\n";
+    // A bug report: what the collector put in the zip it was asked to write somewhere
+    // other than the desktop, what the service answers, and what it was sent.
+    std::string report_zip = "PK the logs";
+    Upload upload_answer = [] {
+        Upload taken;
+        taken.ok = true;
+        taken.status = 200;
+        taken.body = "{\"ref\":\"AB12CD34\",\"emailed\":true}\n";
+        return taken;
+    }();
+    std::atomic<bool> hold_upload{false};
+    struct Sent {
+        std::string url;
+        std::string file;
+        std::string bytes;
+        json form;
+    };
+    std::vector<Sent> sent;
+    std::string note;
+    // What the upload was told the progress callback said, as the state showed it.
+    json during_upload;
+    std::function<json()> state_now;
     // What the download server publishes, and whether it can be reached.
     std::string published;
     bool online = true;
@@ -134,6 +175,7 @@ struct Machine {
     };
 
     explicit Machine(const char* name) : paths(Paths::at(fresh_install(name))) {
+        fs::create_directories(desktop());
         put(paths.engine, "not really a program");
         put(paths.home / "VERSION.txt", "0.9.100");
     }
@@ -169,10 +211,43 @@ struct Machine {
                 result.output = "log: somewhere\n" + where.dump(2) + "\n";
             } else if (has_arg(command, "--api-test")) {
                 result.output = api_answer;
+            } else if (const std::string out = env_of(command, "MOONSHINE_LOGS_OUT", ""); !out.empty() && !report_zip.empty()) {
+                // The collector, asked for a report's zip: in the folder it was given,
+                // with the player's note in it, and saying where the desktop is.
+                note = get(env_of(command, "MOONSHINE_REPORT_NOTE"));
+                const fs::path zip = fs::path(out) / "Moonshine-logs-1.zip";
+                put(zip, report_zip);
+                result.output = "written: " + zip.string() + "\ndesktop: " + desktop().string() + "\n";
             } else {
                 result.output = collect_output;
             }
             return result;
+        };
+        parts.upload = [this](const std::string& url, const fs::path& file,
+                              const std::vector<std::pair<std::string, std::string>>& headers,
+                              const std::function<void(std::uint64_t, std::uint64_t)>& progress,
+                              const std::function<bool()>& cancelled) {
+            while (hold_upload) {
+                if (cancelled && cancelled()) {
+                    Upload stopped;
+                    stopped.cancelled = true;
+                    return stopped;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            Sent one;
+            one.url = url;
+            one.file = file.filename().string();
+            one.bytes = get(file);
+            for (const auto& [name, value] : headers) {
+                if (name == "X-Moonshine-Report") one.form = json::parse(from_base64(value), nullptr, false);
+            }
+            if (progress) progress(one.bytes.size() / 2, one.bytes.size());
+            const json seen = state_now ? state_now() : json();
+            std::lock_guard<std::mutex> held(lock);
+            during_upload = seen;
+            sent.push_back(one);
+            return upload_answer;
         };
         parts.launch = [this](const Command& command, std::string*) {
             std::lock_guard<std::mutex> held(lock);
@@ -227,6 +302,8 @@ struct Machine {
         };
         return parts;
     }
+
+    fs::path desktop() const { return paths.home / "desktop"; }
 
     int engine_count() {
         std::lock_guard<std::mutex> held(lock);
@@ -796,6 +873,219 @@ TEST_CASE("bridge: a collector that wrote nothing is an error with its last word
     controller.call("collectLogs", json::object());
     REQUIRE(task_over(controller));
     CHECK(controller.state()["task"]["error"].get<std::string>().find("Access to the path is denied") != std::string::npos);
+}
+
+// --- a bug report ------------------------------------------------------------------------------------
+
+TEST_CASE("bridge: a bug report is the collected logs, sent with what was written, and gone from this PC") {
+    Machine machine("report");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    Controller controller(machine.parts());
+    machine.state_now = [&] { return controller.state(); };
+
+    const json answer = controller.call("sendReport", {{"name", "  Jind\xC5\x99ich ze Skalice "},
+                                                       {"email", "henry@skalitz.example"},
+                                                       {"description", "The innkeeper answered in Latin.\nTwice."}});
+    CHECK(answer["ok"] == true);
+    REQUIRE(task_over(controller));
+    const json task = controller.state()["task"];
+    CHECK(task["kind"] == "report");
+    CHECK(task["error"] == "");
+    CHECK(task["result"] == "Sent, thank you. Reference AB12CD34.");
+    // Nothing is left for the player to do anything with.
+    CHECK(task["path"] == "");
+
+    // The collector was asked for its zip in a folder of the app's, not on the desktop.
+    const Command asked = machine.last_run();
+    CHECK(asked.exe.filename() == "powershell.exe");
+    CHECK(env_of(asked, "MOONSHINE_NO_PAUSE") == "1");
+    const fs::path folder = env_of(asked, "MOONSHINE_LOGS_OUT");
+    CHECK(folder == machine.paths.home / "temp" / "moonshine-report");
+    // And given what the player wrote, to put in the zip.
+    CHECK(machine.note.find("version: 0.9.100") != std::string::npos);
+    CHECK(machine.note.find("name: Jind\xC5\x99ich ze Skalice\r\n") != std::string::npos);
+    CHECK(machine.note.find("email: henry@skalitz.example") != std::string::npos);
+    CHECK(machine.note.find("The innkeeper answered in Latin.\nTwice.") != std::string::npos);
+
+    REQUIRE(machine.sent.size() == 1);
+    const Machine::Sent& sent = machine.sent[0];
+    CHECK(sent.url == "https://reports.moonshine.ai/kcd2/report");
+    CHECK(sent.file == "Moonshine-logs-1.zip");
+    CHECK(sent.bytes == machine.report_zip);
+    CHECK(sent.form == json{{"name", "Jind\xC5\x99ich ze Skalice"},
+                            {"email", "henry@skalitz.example"},
+                            {"description", "The innkeeper answered in Latin.\nTwice."},
+                            {"version", "0.9.100"}});
+    // While it was going, the state said so and how far.
+    CHECK(machine.during_upload["task"]["title"] == "Sending the report");
+    CHECK(machine.during_upload["task"]["running"] == true);
+    CHECK(machine.during_upload["task"]["done"] == machine.report_zip.size() / 2);
+    CHECK(machine.during_upload["task"]["total"] == machine.report_zip.size());
+    // Not the home screen's business, as collecting is not.
+    CHECK(machine.during_upload["home"]["button"] != "Cancel");
+
+    // Once it has arrived it is not kept here, and never was on the desktop.
+    CHECK_FALSE(fs::exists(folder));
+    CHECK(fs::is_empty(machine.desktop()));
+}
+
+TEST_CASE("bridge: who a report was from is remembered for the next one, and not in a zip made by hand") {
+    Machine machine("report-remembered");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    put(machine.paths.config, "# by hand\nmic = off\n");
+    {
+        Controller controller(machine.parts());
+        CHECK(controller.state()["report"]["name"] == "");
+        CHECK(controller.state()["report"]["description_limit"] == 4000);
+        controller.call("sendReport", {{"name", "Henry"}, {"email", "henry@skalitz.example"}, {"description", "x"}});
+        // At once: it is what was typed, whether or not the report arrives.
+        CHECK(controller.state()["report"]["name"] == "Henry");
+        CHECK(controller.state()["report"]["email"] == "henry@skalitz.example");
+        REQUIRE(task_over(controller));
+        // It is not a setting the engine is started with: nothing was started again.
+        CHECK(machine.engine_count() == 0);
+    }
+    const std::string text = get(machine.paths.config);
+    CHECK(text.find("# by hand") == 0);
+    CHECK(text.find("mic = off") != std::string::npos);
+    CHECK(text.find("report_name = Henry") != std::string::npos);
+    CHECK(text.find("report_email = henry@skalitz.example") != std::string::npos);
+    // What was written is never kept: it is about one evening.
+    CHECK(text.find("description") == std::string::npos);
+
+    // The next window opens the form with them, and a report sent with the boxes emptied
+    // forgets them.
+    Controller again(machine.parts());
+    CHECK(again.state()["report"]["name"] == "Henry");
+    CHECK(again.state()["report"]["email"] == "henry@skalitz.example");
+    again.call("sendReport", {{"name", ""}, {"email", ""}, {"description", ""}});
+    REQUIRE(task_over(again));
+    CHECK(again.state()["report"]["name"] == "");
+    CHECK(get(machine.paths.config).find("report_") == std::string::npos);
+    // Nothing written is still a report: the logs are what is wanted.
+    REQUIRE(machine.sent.size() == 2);
+    CHECK(machine.sent[1].form["description"] == "");
+    CHECK(again.state()["task"]["result"] == "Sent, thank you. Reference AB12CD34.");
+}
+
+TEST_CASE("bridge: a report that cannot be sent leaves the zip on the desktop and says so") {
+    Machine machine("report-offline");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    machine.upload_answer = Upload{};
+    machine.upload_answer.trouble = "could not reach the server";
+    Controller controller(machine.parts());
+    controller.call("sendReport", {{"description", "Nothing happens when I hold the key."}});
+    REQUIRE(task_over(controller));
+    const json task = controller.state()["task"];
+    CHECK(task["kind"] == "report");
+    CHECK(task["result"] == "");
+    CHECK(task["error"] ==
+          "The report could not be sent (could not reach the server). The logs are saved on your desktop as "
+          "Moonshine-logs-1.zip. Try again later, or send that file.");
+    // Where Collect logs would have put it, whole, and what "Show" opens.
+    const fs::path kept = machine.desktop() / "Moonshine-logs-1.zip";
+    CHECK(get(kept) == machine.report_zip);
+    CHECK(fs::path(task["path"].get<std::string>()) == kept);
+    // Nothing of it is left where it was collected.
+    CHECK_FALSE(fs::exists(machine.paths.home / "temp" / "moonshine-report"));
+    controller.call("open", {{"what", "task"}});
+    REQUIRE_FALSE(machine.opened.empty());
+}
+
+TEST_CASE("bridge: a report the service refuses is refused in the service's words") {
+    Machine machine("report-refused");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    machine.upload_answer = Upload{};
+    machine.upload_answer.status = 503;
+    machine.upload_answer.trouble = "HTTP 503";
+    machine.upload_answer.body =
+        R"({"error":"day-full","message":"Too many reports have come in today. Please send it again tomorrow."})";
+    Controller controller(machine.parts());
+    controller.call("sendReport", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(controller.state()["task"]["error"] ==
+          "The report was not taken. Too many reports have come in today. Please send it again tomorrow. "
+          "The logs are saved on your desktop as Moonshine-logs-1.zip.");
+    CHECK(fs::exists(machine.desktop() / "Moonshine-logs-1.zip"));
+
+    // A server that answers with something that is not the service's is said as that.
+    controller.call("dismissTask", json::object());
+    machine.upload_answer.status = 502;
+    machine.upload_answer.trouble = "HTTP 502";
+    machine.upload_answer.body = "<html>Bad gateway</html>";
+    controller.call("sendReport", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(controller.state()["task"]["error"].get<std::string>().find("The report could not be sent (HTTP 502).") == 0);
+}
+
+TEST_CASE("bridge: logs too big to send are not sent, and are on the desktop") {
+    Machine machine("report-big");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    machine.report_zip = std::string(25 * 1024 * 1024 + 1, 'z');
+    Controller controller(machine.parts());
+    controller.call("sendReport", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(machine.sent.empty());
+    CHECK(controller.state()["task"]["error"] ==
+          "The logs are too big to send as a report: 25 MB, and the most is 25. The logs are saved on your desktop as "
+          "Moonshine-logs-1.zip. Send that file instead.");
+    CHECK(fs::file_size(machine.desktop() / "Moonshine-logs-1.zip") == machine.report_zip.size());
+}
+
+TEST_CASE("bridge: what is written in a report is held to what the service keeps") {
+    Machine machine("report-long");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    Controller controller(machine.parts());
+    // 5000 characters of two bytes each, and a name with a line break in it.
+    std::string essay;
+    for (int i = 0; i < 5000; ++i) essay += "\xC5\x99";
+    controller.call("sendReport", {{"name", "Henry\nof Skalitz"}, {"email", 7}, {"description", essay}});
+    REQUIRE(task_over(controller));
+    REQUIRE(machine.sent.size() == 1);
+    const json form = machine.sent[0].form;
+    REQUIRE(form.is_object());
+    CHECK(form["name"] == "Henry of Skalitz");
+    CHECK(form["email"] == "");
+    // Cut between characters, not through one.
+    CHECK(form["description"].get<std::string>().size() == 8000);
+    CHECK(form["description"].get<std::string>() == essay.substr(0, 8000));
+}
+
+TEST_CASE("bridge: a report stopped while it is going is not sent, and nothing is left") {
+    Machine machine("report-cancel");
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    Controller controller(machine.parts());
+    machine.hold_upload = true;
+    controller.call("sendReport", {{"description", "x"}});
+    REQUIRE(eventually([&] { return controller.state()["task"]["title"] == "Sending the report"; }));
+    // One long job at a time: a second is refused with a sentence.
+    const json second = controller.call("sendReport", {{"description", "y"}});
+    CHECK(second["ok"] == false);
+    CHECK(second["error"].get<std::string>().find("in the middle of something else") != std::string::npos);
+    controller.call("cancelTask", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(controller.state()["task"]["result"] == "Stopped. Nothing was sent.");
+    CHECK(controller.state()["task"]["error"] == "");
+    CHECK(machine.sent.empty());
+    CHECK_FALSE(fs::exists(machine.paths.home / "temp" / "moonshine-report"));
+    CHECK(fs::is_empty(machine.desktop()));
+}
+
+TEST_CASE("bridge: a report with no collector, or one that wrote nothing, is an error and sends nothing") {
+    Machine machine("report-nothing");
+    Controller controller(machine.parts());
+    controller.call("sendReport", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(controller.state()["task"]["error"].get<std::string>().find("Collect-Logs.ps1") != std::string::npos);
+
+    controller.call("dismissTask", json::object());
+    put(machine.paths.home / "Collect-Logs.ps1", "# the script");
+    machine.report_zip.clear();
+    machine.collect_output = "Compress-Archive : Access to the path is denied.\n";
+    controller.call("sendReport", json::object());
+    REQUIRE(task_over(controller));
+    CHECK(controller.state()["task"]["error"].get<std::string>().find("Access to the path is denied") != std::string::npos);
+    CHECK(machine.sent.empty());
 }
 
 // --- updating, repairing, removing -------------------------------------------------------------------

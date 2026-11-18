@@ -123,6 +123,84 @@ fs::path powershell() {
     return path_from_utf8(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe";
 }
 
+// Where a bug report is sent: the Worker in cloud/bug-reports. MOONSHINE_REPORT_URL in the
+// environment names another, for trying a copy of the service.
+constexpr const char* kReportUrl = "https://reports.moonshine.ai/kcd2/report";
+// The service's own limits (the top of cloud/bug-reports/src/index.js). Held to here as
+// well, so that what is sent is what is kept and a report too big to take is not sent to
+// be refused.
+constexpr std::uint64_t kReportBytes = 25ull * 1024 * 1024;
+constexpr std::size_t kReportName = 200;
+constexpr std::size_t kReportEmail = 254;
+constexpr std::size_t kReportDescription = 4000;
+
+// At most `limit` characters of UTF-8 text, cut between characters and not through one.
+std::string clipped(std::string text, std::size_t limit) {
+    std::size_t characters = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) continue;
+        if (characters == limit) {
+            text.resize(i);
+            break;
+        }
+        characters += 1;
+    }
+    return trimmed(text);
+}
+
+std::string one_line(std::string text) {
+    for (char& c : text) {
+        if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    }
+    return trimmed(text);
+}
+
+// A size as a person says one: "0.4", "3.2", "25".
+std::string megabytes_fine(std::uint64_t bytes) {
+    char text[32];
+    const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
+    std::snprintf(text, sizeof text, mb >= 10 ? "%.0f" : "%.1f", mb);
+    return text;
+}
+
+// What the log collector (installer/Collect-Logs.ps1) did.
+struct Collected {
+    // The zip it wrote; empty when it did not, and then `trouble` says why.
+    std::string zip;
+    // The desktop, which it says when it was told to write somewhere else.
+    std::string desktop;
+    std::string trouble;
+};
+
+Collected run_collector(const Controller::Parts& parts, std::vector<std::pair<std::string, std::string>> env,
+                        const std::function<bool()>& cancelled) {
+    Collected out;
+    const fs::path script = parts.paths.home / "Collect-Logs.ps1";
+    std::error_code ec;
+    if (!fs::exists(script, ec)) {
+        out.trouble = "The log collector (Collect-Logs.ps1) is not in this installation. The logs themselves are in the logs folder.";
+        return out;
+    }
+    Command command;
+    command.exe = powershell();
+    command.cwd = parts.paths.home;
+    command.args = {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", utf8_of(script)};
+    // Without this it waits at the end for an Enter nobody can press.
+    env.emplace_back("MOONSHINE_NO_PAUSE", "1");
+    command.env = std::move(env);
+    const Ran ran = parts.run(command, std::chrono::seconds(300), cancelled);
+    std::istringstream lines(ran.output);
+    for (std::string line; std::getline(lines, line);) {
+        line = trimmed(line);
+        if (line.rfind("written: ", 0) == 0) out.zip = trimmed(line.substr(9));
+        if (line.rfind("desktop: ", 0) == 0) out.desktop = trimmed(line.substr(9));
+    }
+    if (out.zip.empty()) {
+        out.trouble = "The logs could not be collected. " + (ran.started ? last_line(ran.output) : ran.trouble);
+    }
+    return out;
+}
+
 bool missing_item(const CheckState& check, const std::string& name) {
     for (const json& item : check.items) {
         if (item.value("name", "") == name && item.value("state", "") == "missing") return true;
@@ -267,6 +345,12 @@ Controller::Parts Controller::Parts::system(const Paths& paths) {
     parts.fetch_text = [](const std::string& url, std::string* trouble) { return gui::fetch_text(url, trouble); };
     parts.fetch_files = [](const Manifest& manifest, const FetchOptions& options) {
         return gui::fetch_files(manifest, options);
+    };
+    parts.upload = [](const std::string& url, const fs::path& file,
+                      const std::vector<std::pair<std::string, std::string>>& headers,
+                      const std::function<void(std::uint64_t, std::uint64_t)>& progress,
+                      const std::function<bool()>& cancelled) {
+        return gui::upload_file(url, file, headers, progress, cancelled);
     };
     parts.uninstaller = [paths] { return installed_uninstaller(paths.home); };
     std::error_code ec;
@@ -850,35 +934,165 @@ void Controller::apply_update(bool reinstall) {
 void Controller::collect_logs() {
     if (!begin_task("collect", "Collecting logs")) return;
     background([this] {
-        const fs::path script = parts_.paths.home / "Collect-Logs.ps1";
-        std::error_code ec;
-        if (!fs::exists(script, ec)) {
-            end_task("The log collector (Collect-Logs.ps1) is not in this installation. The logs themselves are in the logs folder.", "");
-            return;
-        }
-        Command command;
-        command.exe = powershell();
-        command.cwd = parts_.paths.home;
-        command.args = {"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", utf8_of(script)};
-        // Without this it waits at the end for an Enter nobody can press.
-        command.env = {{"MOONSHINE_NO_PAUSE", "1"}};
-        const Ran ran = parts_.run(command, std::chrono::seconds(300), [this] { return closing_.load(); });
-        std::string written;
-        std::istringstream lines(ran.output);
-        for (std::string line; std::getline(lines, line);) {
-            line = trimmed(line);
-            if (line.rfind("written: ", 0) == 0) written = trimmed(line.substr(9));
-        }
-        if (written.empty()) {
-            end_task("The logs could not be collected. " + (ran.started ? last_line(ran.output) : ran.trouble), "");
+        const Collected got = run_collector(parts_, {}, [this] { return closing_.load(); });
+        if (got.zip.empty()) {
+            end_task(got.trouble, "");
             return;
         }
         {
             std::lock_guard<std::mutex> held(lock_);
-            task_.path = written;
+            task_.path = got.zip;
         }
-        end_task("", "Saved to your desktop as " + leaf(written) + ". Send that file with a sentence or two about what you were doing.");
+        end_task("", "Saved to your desktop as " + leaf(got.zip) + ". Send that file with a sentence or two about what you were doing.");
     });
+}
+
+// The same zip, sent: collected into a folder of our own, posted to the report service
+// with what the player wrote, and gone from this PC once it has arrived. If it does not
+// arrive it is put on the desktop, where Collect logs would have left it, so that what
+// was collected is never lost to a line that was down.
+json Controller::send_report(const json& args) {
+    const auto text = [&](const char* key) {
+        const auto it = args.find(key);
+        return it != args.end() && it->is_string() ? it->get<std::string>() : std::string();
+    };
+    const std::string name = clipped(one_line(text("name")), kReportName);
+    const std::string email = clipped(one_line(text("email")), kReportEmail);
+    const std::string description = clipped(text("description"), kReportDescription);
+    if (!begin_task("report", "Collecting logs")) {
+        return {{"ok", false}, {"error", "Moonshine is in the middle of something else. Send the report when that has finished."}};
+    }
+    // Who it is from is kept for the next one, as typed: an empty box is kept as that.
+    // Not being able to write it down is no reason not to send the report.
+    {
+        Settings next;
+        {
+            std::lock_guard<std::mutex> held(lock_);
+            settings_.report_name = name;
+            settings_.report_email = email;
+            next = settings_;
+        }
+        config_.save(next, nullptr);
+    }
+    background([this, name, email, description] {
+        const auto stopping = [this] { return cancel_task_.load() || closing_.load(); };
+        const fs::path folder = parts_.temp / "moonshine-report";
+        std::error_code ec;
+        // Whatever an earlier one left: a report that was being sent when the window closed.
+        fs::remove_all(folder, ec);
+        fs::create_directories(folder, ec);
+        // In the zip as well as beside it, so that a zip sent some other way still says
+        // what it is about.
+        const fs::path note = folder / "report.txt";
+        {
+            std::ofstream out(note, std::ios::binary | std::ios::trunc);
+            out << "Moonshine bug report\r\nversion: " << version_ << "\r\nname: " << name << "\r\nemail: " << email
+                << "\r\n\r\n" << description << "\r\n";
+        }
+        const Collected got = run_collector(
+            parts_, {{"MOONSHINE_LOGS_OUT", utf8_of(folder)}, {"MOONSHINE_REPORT_NOTE", utf8_of(note)}}, stopping);
+        fs::remove(note, ec);
+        if (stopping()) {
+            fs::remove_all(folder, ec);
+            end_task("", "Stopped. Nothing was sent.");
+            return;
+        }
+        if (got.zip.empty()) {
+            end_task(got.trouble, "");
+            return;
+        }
+        const fs::path zip = path_from_utf8(got.zip);
+        // The zip moved to the desktop, and a sentence saying so.
+        const auto kept = [&] {
+            fs::path to = zip;
+            if (!got.desktop.empty()) {
+                const fs::path wanted = path_from_utf8(got.desktop) / zip.filename();
+                std::error_code moved;
+                fs::rename(zip, wanted, moved);
+                if (moved) {
+                    // Another drive, where a rename is not a move.
+                    moved.clear();
+                    fs::copy_file(zip, wanted, fs::copy_options::overwrite_existing, moved);
+                    if (!moved) fs::remove(zip, ec);
+                }
+                if (!moved) to = wanted;
+            }
+            // The folder too, now that it is empty; it stays if the zip is still in it.
+            fs::remove(folder, ec);
+            {
+                std::lock_guard<std::mutex> held(lock_);
+                task_.path = utf8_of(to);
+            }
+            return to == zip ? "The logs are saved as " + utf8_of(zip) + "."
+                             : "The logs are saved on your desktop as " + utf8_of(to.filename()) + ".";
+        };
+        const std::uintmax_t size = fs::file_size(zip, ec);
+        if (ec || size == 0) {
+            end_task("The logs could not be collected: " + leaf(got.zip) + " is not there.", "");
+            return;
+        }
+        if (size > kReportBytes) {
+            end_task("The logs are too big to send as a report: " + megabytes_fine(size) + " MB, and the most is " +
+                         megabytes_fine(kReportBytes) + ". " + kept() + " Send that file instead.",
+                     "");
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> held(lock_);
+            task_.title = "Sending the report";
+            task_.detail.clear();
+            task_.done = 0;
+            task_.total = size;
+        }
+        changed();
+        const json form = {{"name", name}, {"email", email}, {"description", description}, {"version", version_}};
+        std::string url = environment("MOONSHINE_REPORT_URL");
+        if (url.empty()) url = kReportUrl;
+        const Upload sent = parts_.upload(
+            url, zip, {{"X-Moonshine-Report", base64(form.dump(-1, ' ', false, json::error_handler_t::replace))}},
+            [this](std::uint64_t done, std::uint64_t total) {
+                {
+                    std::lock_guard<std::mutex> held(lock_);
+                    task_.done = done;
+                    task_.total = total;
+                    task_.detail = megabytes_fine(done) + " of " + megabytes_fine(total) + " MB";
+                }
+                changed();
+            },
+            stopping);
+        if (sent.cancelled) {
+            fs::remove_all(folder, ec);
+            end_task("", "Stopped. Nothing was sent.");
+            return;
+        }
+        const json answer = object_in(sent.body);
+        const auto word = [&](const char* key) {
+            const auto it = answer.is_object() ? answer.find(key) : answer.end();
+            return answer.is_object() && it != answer.end() && it->is_string() ? clipped(one_line(it->get<std::string>()), 300)
+                                                                              : std::string();
+        };
+        if (!sent.ok) {
+            // The service's refusals are sentences written for the player (too many today,
+            // too fast); anything else is the line or the server, and is said as that.
+            const std::string said = word("message");
+            fetch_log("bug report not sent: " + (sent.trouble.empty() ? "no answer" : sent.trouble) +
+                      (said.empty() ? "" : " (" + said + ")"));
+            end_task(said.empty() ? "The report could not be sent (" + sent.trouble + "). " + kept() +
+                                        " Try again later, or send that file."
+                                  : "The report was not taken. " + said + " " + kept(),
+                     "");
+            return;
+        }
+        fs::remove_all(folder, ec);
+        // The reference is what the player quotes if they write to us about it; it is
+        // shown as the service gave it, if what it gave is one.
+        const std::string ref = word("ref");
+        const bool plain = !ref.empty() && ref.size() <= 16 &&
+                           std::all_of(ref.begin(), ref.end(), [](unsigned char c) { return std::isalnum(c); });
+        fetch_log("bug report sent" + (plain ? ", reference " + ref : std::string()));
+        end_task("", plain ? "Sent, thank you. Reference " + ref + "." : "Sent, thank you.");
+    });
+    return {{"ok", true}};
 }
 
 json Controller::uninstall(const json& args) {
@@ -962,6 +1176,7 @@ json Controller::call(const std::string& method, const json& args) {
         collect_logs();
         return ok;
     }
+    if (method == "sendReport") return send_report(args);
     if (method == "cancelTask") {
         cancel_task_ = true;
         return ok;
@@ -1005,6 +1220,10 @@ json Controller::state() {
                    {"detail", task_.detail}, {"done", task_.done},     {"total", task_.total},
                    {"error", task_.error}, {"result", task_.result},   {"path", task_.path}};
     out["update"] = {{"state", update_.state}, {"latest", update_.latest}, {"error", update_.error}};
+    // What the bug report form opens with, and how much it may take.
+    out["report"] = {{"name", settings_.report_name}, {"email", settings_.report_email},
+                     {"name_limit", kReportName}, {"email_limit", kReportEmail},
+                     {"description_limit", kReportDescription}};
     return out;
 }
 

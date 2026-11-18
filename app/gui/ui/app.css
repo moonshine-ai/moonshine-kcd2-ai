@@ -348,7 +348,7 @@ h2 {
 
 small { display: block; margin-top: 4px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 
-input[type="text"], input[type="password"] {
+input[type="text"], input[type="password"], textarea {
   width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--line);
@@ -358,13 +358,15 @@ input[type="text"], input[type="password"] {
   -webkit-user-select: text;
 }
 
-input[type="text"]:focus, input[type="password"]:focus {
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
   outline: none;
   border-color: var(--accent-fill);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-fill) 25%, transparent);
 }
 
-input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+
+textarea { display: block; min-height: 96px; max-height: 40vh; resize: vertical; line-height: 1.45; cursor: text; }
 
 input[type="checkbox"], input[type="radio"] {
   accent-color: var(--accent-fill);
@@ -457,6 +459,11 @@ dialog {
 }
 
 dialog::backdrop { background: rgba(10, 8, 4, 0.38); }
+
+/* The bug report form: a little wider than a question, and it scrolls in a short window. */
+dialog#report { width: 480px; max-height: calc(100% - 32px); overflow-y: auto; }
+dialog#report .privacy { margin: 4px 0 0; padding-top: 12px; }
+dialog#report .row.end { margin-top: 16px; }
 dialog h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
 dialog p { margin: 0 0 14px; color: var(--muted); }
 

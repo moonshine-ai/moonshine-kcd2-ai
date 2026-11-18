@@ -1,0 +1,34 @@
+// The service behind "Send bug report" in the Moonshine window (About tab).
+//
+// One Worker, one private R2 bucket, one email per report. Nothing to build and
+// nothing to install: `wrangler deploy` from this folder is the whole release.
+// README.md at the top of the repository ("The bug report service") says how to
+// set it up from nothing, what the limits are and how to read a report.
+{
+  "name": "moonshine-bug-reports",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-17",
+
+  // One address only. The app has it compiled in (app/gui/bridge.cpp).
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "reports.moonshine.ai", "custom_domain": true }],
+
+  // Private: nothing reads it but this Worker. A lifecycle rule on the bucket
+  // deletes every object after 90 days (see the README for the command).
+  "r2_buckets": [{ "binding": "REPORTS", "bucket_name": "moonshine-bug-reports" }],
+
+  // Cloudflare Email Service. moonshine.ai is onboarded for sending; the Worker
+  // may send only from this one address.
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["bug-reports@moonshine.ai"] }],
+
+  // Reports per minute from one address. The daily limits are constants at the
+  // top of src/index.js.
+  "ratelimits": [{ "name": "PER_IP", "namespace_id": "2601", "simple": { "limit": 6, "period": 60 } }],
+
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+
+  // REPORT_TO, the address the emails go to, is set with
+  // `wrangler secret put REPORT_TO` and never written here: this repository is
+  // public and the address would be harvested.
+}

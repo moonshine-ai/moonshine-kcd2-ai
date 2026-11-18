@@ -511,6 +511,104 @@ std::optional<std::string> fetch_text(const std::string& url, std::string* troub
     return body;
 }
 
+Upload upload_file(const std::string& url, const fs::path& file,
+                   const std::vector<std::pair<std::string, std::string>>& headers,
+                   const std::function<void(std::uint64_t, std::uint64_t)>& progress,
+                   const std::function<bool()>& cancelled) {
+    Upload out;
+    const std::optional<Address> address = address_of(url);
+    if (!address) {
+        out.trouble = "not an http(s) address: " + url;
+        return out;
+    }
+    std::ifstream in(file, std::ios::binary);
+    const std::uint64_t total = size_of(file);
+    if (!in || total == 0) {
+        out.trouble = "could not read " + utf8_of(file);
+        return out;
+    }
+    std::unique_ptr<httplib::Client> client = client_for(*address, 60);
+    // A redirect is followed with a GET, which would lose the body and report success.
+    client->set_follow_location(false);
+    httplib::Headers sent;
+    for (const auto& [name, value] : headers) sent.emplace(name, value);
+
+    std::vector<char> buffer(64 * 1024);
+    bool stopped = false;
+    bool unreadable = false;
+    const httplib::Result result = client->Post(
+        address->path, sent, static_cast<std::size_t>(total),
+        [&](std::size_t offset, std::size_t length, httplib::DataSink& sink) {
+            if (cancelled && cancelled()) {
+                stopped = true;
+                return false;
+            }
+            in.clear();
+            in.seekg(static_cast<std::streamoff>(offset));
+            in.read(buffer.data(), static_cast<std::streamsize>(std::min(length, buffer.size())));
+            const std::streamsize got = in.gcount();
+            if (got <= 0) {
+                // Shorter than it was when it was measured: something else has it.
+                unreadable = true;
+                return false;
+            }
+            if (!sink.write(buffer.data(), static_cast<std::size_t>(got))) return false;
+            if (progress) progress(offset + static_cast<std::uint64_t>(got), total);
+            return true;
+        },
+        "application/zip");
+    if (stopped) {
+        out.cancelled = true;
+        return out;
+    }
+    if (unreadable) {
+        out.trouble = "could not read " + utf8_of(file);
+        return out;
+    }
+    if (!result) {
+        switch (result.error()) {
+            case httplib::Error::Connection:
+            case httplib::Error::ConnectionTimeout:
+                out.trouble = "could not reach the server";
+                break;
+            case httplib::Error::Read:
+            case httplib::Error::Timeout:
+                out.trouble = "the server did not answer";
+                break;
+            case httplib::Error::Write:
+            case httplib::Error::Canceled:
+                out.trouble = "the connection was lost part of the way";
+                break;
+            default:
+                out.trouble = "the transfer failed (" + httplib::to_string(result.error()) + ")";
+        }
+        return out;
+    }
+    out.status = result->status;
+    // An answer is a line of JSON; whatever else comes back is not kept by the megabyte.
+    out.body = result->body.substr(0, 16 * 1024);
+    out.ok = out.status >= 200 && out.status < 300;
+    if (!out.ok) out.trouble = "HTTP " + std::to_string(out.status);
+    return out;
+}
+
+std::string base64(std::string_view text) {
+    static const char* kLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((text.size() + 2) / 3 * 4);
+    for (std::size_t i = 0; i < text.size(); i += 3) {
+        const std::size_t have = std::min<std::size_t>(3, text.size() - i);
+        std::uint32_t three = static_cast<unsigned char>(text[i]) << 16;
+        if (have > 1) three |= static_cast<unsigned char>(text[i + 1]) << 8;
+        if (have > 2) three |= static_cast<unsigned char>(text[i + 2]);
+        out += kLetters[(three >> 18) & 63];
+        out += kLetters[(three >> 12) & 63];
+        out += have > 1 ? kLetters[(three >> 6) & 63] : '=';
+        out += have > 2 ? kLetters[three & 63] : '=';
+    }
+    return out;
+}
+
 bool mirror_folder(const fs::path& from, const fs::path& to, std::string* trouble) {
     const auto fail = [&](const std::string& why) {
         if (trouble) *trouble = why;

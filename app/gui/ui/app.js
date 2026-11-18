@@ -425,6 +425,69 @@
 
   $('repair-button').addEventListener('click', () => call('repair', {}));
 
+  // --- a bug report ------------------------------------------------------------------------
+
+  // What was written stays in the box until a report with it has arrived: one that did not
+  // go can be sent again without typing it again.
+  let reportWritten = false;
+
+  function renderReport(s) {
+    const task = s.task;
+    const mine = task.kind === 'report';
+    $('report-button').disabled = task.running;
+    $('report-task').hidden = !(mine && task.running);
+    $('report-task-title').textContent = task.title;
+    $('report-task-detail').textContent = task.detail;
+    $('report-task-bar').style.width = task.total > 0 ? (100 * task.done / task.total).toFixed(1) + '%' : '0';
+    const ended = mine && !task.running && (task.error || task.result);
+    setNotice($('report-notice'), ended ? (task.error || task.result) : '', task.error ? 'error' : '');
+    // The zip, when it is still here: it only is when it could not be sent.
+    $('report-show').hidden = !(ended && task.path);
+    if (ended && !task.error && !task.path && reportWritten && task.result.indexOf('Sent') === 0) {
+      $('report-description').value = '';
+      reportWritten = false;
+    }
+  }
+
+  $('report-button').addEventListener('click', () => {
+    if (!state) return;
+    const report = state.report || {};
+    $('report-name').value = report.name || '';
+    $('report-email').value = report.email || '';
+    $('report-name').maxLength = report.name_limit || 200;
+    $('report-email').maxLength = report.email_limit || 254;
+    $('report-description').maxLength = report.description_limit || 4000;
+    setResult($('report-result'), '', '');
+    $('report-send').disabled = false;
+    $('report').showModal();
+    $('report-description').focus();
+  });
+
+  $('report-cancel').addEventListener('click', () => $('report').close());
+  $('report-show').addEventListener('click', () => call('open', { what: 'task' }));
+
+  $('report-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('report-send').disabled = true;
+    let answer;
+    try {
+      answer = await call('sendReport', {
+        name: $('report-name').value.trim(),
+        email: $('report-email').value.trim(),
+        description: $('report-description').value.trim(),
+      });
+    } catch (error) {
+      answer = { ok: false, error: 'The report could not be started.' };
+    }
+    if (answer.ok) {
+      reportWritten = true;
+      $('report').close();
+    } else {
+      setResult($('report-result'), answer.error || 'The report could not be started.', 'error');
+      $('report-send').disabled = false;
+    }
+  });
+
   $('uninstall-button').addEventListener('click', async () => {
     const answer = await ask({
       title: 'Uninstall Moonshine?',
@@ -445,6 +508,7 @@
     state = s;
     renderHome(s);
     renderAbout(s);
+    renderReport(s);
     $('key-kept').textContent = s.windows
       ? 'Kept in Windows Credential Manager, not in Moonshine\u2019s files or logs.'
       : 'Kept in a file only you can read (this is a development build).';
@@ -472,7 +536,7 @@
 
   // Selecting is for text that is worth copying; a right-click anywhere else is nothing.
   document.addEventListener('contextmenu', (event) => {
-    if (!event.target.closest('input, .log, .plain, .checklist, .notice, .result')) event.preventDefault();
+    if (!event.target.closest('input, textarea, .log, .plain, .checklist, .notice, .result')) event.preventDefault();
   });
 
   call('getState', {}).then(render, () => {

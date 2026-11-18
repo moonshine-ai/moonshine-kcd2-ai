@@ -19,12 +19,14 @@
 //                                    store); restarts a running engine
 //   testApi {api_url, ..}            ask the API in the form one small question (slow)
 //   checkUpdate, applyUpdate, repair, cancelTask, dismissTask
-//   collectLogs                      the zip for a bug report, on the desktop
+//   collectLogs                      the zip of logs, on the desktop
+//   sendReport {name, email,         the same zip, sent to us with what the player wrote
+//               description}         (cloud/bug-reports); on the desktop if it will not go
 //   uninstall {remove_mod}
 //   open {what}                      the logs folder, the read me, the licences
 //
-// Long work (a download, the log collector) is a task: one at a time, with its progress
-// in the state.
+// Long work (a download, the log collector, a report on its way) is a task: one at a
+// time, with its progress in the state.
 
 #ifndef MOONSHINE_GUI_BRIDGE_H
 #define MOONSHINE_GUI_BRIDGE_H
@@ -77,7 +79,7 @@ struct CheckState {
 };
 
 struct TaskState {
-    // "", "update", "repair", "collect".
+    // "", "update", "repair", "collect", "report".
     std::string kind;
     bool running = false;
     std::string title;
@@ -87,7 +89,7 @@ struct TaskState {
     // How it ended: one of these is set once it is no longer running.
     std::string error;
     std::string result;
-    // A file it left for the player (the zip of logs).
+    // A file it left for the player (the zip of logs; a report's, only when it did not go).
     std::string path;
 };
 
@@ -115,6 +117,12 @@ public:
         std::function<bool(const std::string&)> open;
         std::function<std::optional<std::string>(const std::string& url, std::string* trouble)> fetch_text;
         std::function<FetchResult(const Manifest&, const FetchOptions&)> fetch_files;
+        // A bug report's zip, to the service that takes them (fetch.h, upload_file).
+        std::function<Upload(const std::string& url, const std::filesystem::path& file,
+                             const std::vector<std::pair<std::string, std::string>>& headers,
+                             const std::function<void(std::uint64_t, std::uint64_t)>& progress,
+                             const std::function<bool()>& cancelled)>
+            upload;
         // The uninstaller this installation was given; empty when it has none.
         std::function<std::filesystem::path()> uninstaller;
         // Where an installer is downloaded to.
@@ -172,6 +180,7 @@ private:
     void apply_update(bool reinstall);
     void repair();
     void collect_logs();
+    nlohmann::json send_report(const nlohmann::json& args);
     nlohmann::json uninstall(const nlohmann::json& args);
     std::optional<Manifest> published(std::string* trouble);
     FetchResult fetch_with_progress(const Manifest& manifest, const std::filesystem::path& dest,

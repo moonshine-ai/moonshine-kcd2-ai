@@ -497,6 +497,178 @@ TEST_CASE("fetch: the published manifest, read as text") {
     CHECK(trouble.find("not an http(s) address") != std::string::npos);
 }
 
+// --- a bug report, up ----------------------------------------------------------------------------
+
+namespace {
+
+// What the report service is to the app: one address that takes a POST. What it answers
+// is the test's.
+class ReportServer {
+public:
+    struct Got {
+        std::string body;
+        std::string form;
+        std::string type;
+        std::string length;
+        std::string agent;
+    };
+
+    ReportServer() {
+        server_.Post("/kcd2/report", [this](const httplib::Request& request, httplib::Response& response) {
+            std::lock_guard<std::mutex> held(lock_);
+            got_.push_back({request.body, request.get_header_value("X-Moonshine-Report"),
+                            request.get_header_value("Content-Type"), request.get_header_value("Content-Length"),
+                            request.get_header_value("User-Agent")});
+            response.status = status_;
+            if (status_ >= 300 && status_ < 400) response.set_header("Location", "/elsewhere");
+            response.set_content(answer_, "application/json");
+        });
+        server_.Get("/elsewhere", [this](const httplib::Request&, httplib::Response& response) {
+            std::lock_guard<std::mutex> held(lock_);
+            followed_ = true;
+            response.set_content("{\"ref\":\"WRONG\"}", "application/json");
+        });
+        port_ = server_.bind_to_any_port("127.0.0.1");
+        thread_ = std::thread([this] { server_.listen_after_bind(); });
+        server_.wait_until_ready();
+    }
+    ~ReportServer() {
+        server_.stop();
+        if (thread_.joinable()) thread_.join();
+    }
+
+    std::string url() const { return "http://127.0.0.1:" + std::to_string(port_) + "/kcd2/report"; }
+    void answer(int status, const std::string& body) {
+        std::lock_guard<std::mutex> held(lock_);
+        status_ = status;
+        answer_ = body;
+    }
+    std::vector<Got> got() {
+        std::lock_guard<std::mutex> held(lock_);
+        return got_;
+    }
+    bool followed() {
+        std::lock_guard<std::mutex> held(lock_);
+        return followed_;
+    }
+
+private:
+    httplib::Server server_;
+    std::thread thread_;
+    int port_ = 0;
+    std::mutex lock_;
+    int status_ = 200;
+    std::string answer_ = "{\"ref\":\"AB12CD34\",\"emailed\":true}\n";
+    std::vector<Got> got_;
+    bool followed_ = false;
+};
+
+}  // namespace
+
+TEST_CASE("upload: the file is the body, whole, and the headers go with it") {
+    ReportServer server;
+    const fs::path dir = fresh_folder("upload");
+    // More than one piece of it, and not a whole number of them.
+    const std::string zip = content(300001, 21);
+    write_file(dir / "logs.zip", zip);
+
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> seen;
+    const Upload sent = upload_file(server.url(), dir / "logs.zip", {{"X-Moonshine-Report", base64("{\"name\":\"Jind\xC5\x99ich\"}")}},
+                                    [&](std::uint64_t done, std::uint64_t total) { seen.emplace_back(done, total); });
+    CHECK(sent.ok);
+    CHECK(sent.status == 200);
+    CHECK(sent.trouble.empty());
+    CHECK(sent.body.find("\"ref\":\"AB12CD34\"") != std::string::npos);
+
+    const std::vector<ReportServer::Got> got = server.got();
+    REQUIRE(got.size() == 1);
+    CHECK(got[0].body == zip);
+    CHECK(got[0].length == "300001");
+    CHECK(got[0].type == "application/zip");
+    CHECK(got[0].form == "eyJuYW1lIjoiSmluZMWZaWNoIn0=");
+    CHECK(got[0].agent == "Moonshine-Fetch/1.0");
+    // Told as it goes, in order, and at the end all of it.
+    REQUIRE(seen.size() >= 2);
+    CHECK(std::is_sorted(seen.begin(), seen.end()));
+    CHECK(seen.back() == std::make_pair<std::uint64_t, std::uint64_t>(300001, 300001));
+}
+
+TEST_CASE("upload: a refusal is the server's status and what it said") {
+    ReportServer server;
+    server.answer(429, R"({"error":"too-fast","message":"Too many reports in a minute."})");
+    const fs::path dir = fresh_folder("upload-refused");
+    write_file(dir / "logs.zip", content(5000, 22));
+    const Upload sent = upload_file(server.url(), dir / "logs.zip", {});
+    CHECK_FALSE(sent.ok);
+    CHECK_FALSE(sent.cancelled);
+    CHECK(sent.status == 429);
+    CHECK(sent.trouble == "HTTP 429");
+    CHECK(sent.body.find("Too many reports in a minute.") != std::string::npos);
+}
+
+TEST_CASE("upload: a redirect is not followed, since what follows one is not the report") {
+    ReportServer server;
+    server.answer(302, "");
+    const fs::path dir = fresh_folder("upload-redirect");
+    write_file(dir / "logs.zip", content(5000, 23));
+    const Upload sent = upload_file(server.url(), dir / "logs.zip", {});
+    CHECK_FALSE(sent.ok);
+    CHECK(sent.status == 302);
+    CHECK_FALSE(server.followed());
+}
+
+TEST_CASE("upload: stopped part of the way, the server is never given a report") {
+    ReportServer server;
+    const fs::path dir = fresh_folder("upload-cancel");
+    write_file(dir / "logs.zip", content(2000000, 24));
+    std::uint64_t gone = 0;
+    const Upload sent = upload_file(server.url(), dir / "logs.zip", {},
+                                    [&](std::uint64_t done, std::uint64_t) { gone = done; },
+                                    [&] { return gone >= 500000; });
+    CHECK(sent.cancelled);
+    CHECK_FALSE(sent.ok);
+    CHECK(sent.trouble.empty());
+    CHECK(gone < 2000000);
+    CHECK(server.got().empty());
+}
+
+TEST_CASE("upload: nothing to send, nowhere to send it, and nothing listening") {
+    ReportServer server;
+    const fs::path dir = fresh_folder("upload-nothing");
+    Upload sent = upload_file(server.url(), dir / "no-such.zip", {});
+    CHECK_FALSE(sent.ok);
+    CHECK(sent.trouble.find("could not read") != std::string::npos);
+    write_file(dir / "empty.zip", "");
+    sent = upload_file(server.url(), dir / "empty.zip", {});
+    CHECK(sent.trouble.find("could not read") != std::string::npos);
+    CHECK(server.got().empty());
+
+    write_file(dir / "logs.zip", content(1000, 25));
+    sent = upload_file("ftp://example.com/report", dir / "logs.zip", {});
+    CHECK(sent.trouble.find("not an http(s) address") != std::string::npos);
+
+    std::string gone;
+    {
+        ReportServer closed;
+        gone = closed.url();
+    }
+    sent = upload_file(gone, dir / "logs.zip", {});
+    CHECK_FALSE(sent.ok);
+    CHECK(sent.status == 0);
+    CHECK(sent.trouble.find("could not reach the server") != std::string::npos);
+}
+
+TEST_CASE("base64: the standard's examples") {
+    CHECK(base64("") == "");
+    CHECK(base64("f") == "Zg==");
+    CHECK(base64("fo") == "Zm8=");
+    CHECK(base64("foo") == "Zm9v");
+    CHECK(base64("foob") == "Zm9vYg==");
+    CHECK(base64("fooba") == "Zm9vYmE=");
+    CHECK(base64("foobar") == "Zm9vYmFy");
+    CHECK(base64(std::string("\xFF\xFE\x00", 3)) == "//4A");
+}
+
 // --- the mod, into the game ----------------------------------------------------------------------
 
 TEST_CASE("mirror: the game's copy of the mod is made the installation's") {
