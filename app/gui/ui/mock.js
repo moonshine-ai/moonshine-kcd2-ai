@@ -63,6 +63,12 @@
     waiting: () => running('ready', { title: 'Waiting for the game', detail: 'Moonshine is ready and joins in when the game is up.' }, { game_log: false }),
     listening: () => running('ready', { title: 'Listening', detail: 'Walk up to someone in the game and talk to them.' }),
     talking: () => running('talking', { title: 'Talking with Innkeeper Betty' }, { talking_to: 'Innkeeper Betty' }),
+    // The game was quit and Moonshine left running: Play starts the game again.
+    gone: () => running('ready', { title: 'Waiting for the game',
+                                   detail: 'Kingdom Come: Deliverance 2 is not running. Press Play to start it; Moonshine is ready and joins in.',
+                                   button: 'Play', action: 'startGame', fix_label: 'Stop', fix: 'stop' }, { game: 'down' }),
+    gamestarting: () => running('ready', { tone: 'busy', title: 'Starting the game',
+                                           detail: 'Moonshine is ready and joins in when Kingdom Come: Deliverance 2 is up.' }, { game: 'starting' }),
     nogame: () => {
       const s = base();
       s.check.ready = false; s.check.game_root = '';
@@ -182,6 +188,10 @@
                     setTimeout(() => go('talking', true), 10000));
         return later(ok);
       case 'stop': go('ready', true); return later(ok);
+      case 'startGame':
+        go('gamestarting', true);
+        timers.push(setTimeout(() => go('listening', true), 3000));
+        return later(ok);
       case 'readLog': {
         if (args.from < 0) logAt = 0;
         const line = logLines[logAt % logLines.length];

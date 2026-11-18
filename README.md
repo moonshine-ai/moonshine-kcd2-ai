@@ -162,6 +162,10 @@ the lips moving roughly rather than exactly.
 
 To stop: press **Stop** in the Moonshine window, or close it. The game is not affected.
 
+If you quit the game and leave Moonshine open, the window says **Waiting for the game**
+and **Play** is there again: press it and Steam starts the game, with Moonshine already
+up and ready to join in.
+
 The **Settings** tab has the few things there are to choose: where the game is, whether
 Play also starts the game, whether Moonshine presses Play by itself when it opens, and
 whether the microphone is listened to.

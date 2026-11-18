@@ -226,7 +226,11 @@ bool read_status(const fs::path& file, EngineState* state) {
 Supervisor::Hooks Supervisor::Hooks::system(const Paths& paths) {
     Hooks hooks;
     hooks.spawn = [](const Command& command, std::string* trouble) { return gui::spawn(command, trouble); };
+#ifdef _WIN32
+    // Only where it can be known: the game is a Windows program, and with no way of
+    // telling, the window says what the engine says rather than "not running".
     hooks.game_running = [] { return program_running("KingdomCome.exe"); };
+#endif
     // Through Steam, which is the only start the Steam build accepts, and which also
     // brings the client up when it is not.
     hooks.start_game = [] { open_target("steam://rungameid/1771300"); };
@@ -313,6 +317,53 @@ bool Supervisor::active() const {
     return running_;
 }
 
+namespace {
+// How often the game is looked for while the engine runs, and how long after Steam was
+// asked for it "not running yet" still means "on its way": Steam may have to start
+// itself first, and says so in its own window if it cannot.
+constexpr double kGameLook = 2.0;
+constexpr double kGameGrace = 90.0;
+}  // namespace
+
+void Supervisor::look_for_game() {
+    if (!hooks_.game_running) return;
+    const bool up = hooks_.game_running();
+    const double now = hooks_.seconds();
+    bool differs = false;
+    {
+        std::lock_guard<std::mutex> held(lock_);
+        std::string game = "down";
+        if (up) {
+            game = "up";
+        } else if (game_asked_ >= 0 && now - game_asked_ < kGameGrace) {
+            game = "starting";
+        }
+        if (game != "starting") game_asked_ = -1;
+        differs = state_.game != game;
+        state_.game = game;
+    }
+    if (differs && hooks_.changed) hooks_.changed();
+}
+
+void Supervisor::start_game() {
+    {
+        std::lock_guard<std::mutex> held(lock_);
+        if (!running_ || stop_asked_ || !hooks_.start_game) return;
+    }
+    if (hooks_.game_running && hooks_.game_running()) {
+        look_for_game();
+        return;
+    }
+    note("asking Steam to start Kingdom Come: Deliverance 2 again; the app is still running");
+    hooks_.start_game();
+    {
+        std::lock_guard<std::mutex> held(lock_);
+        game_asked_ = hooks_.seconds();
+        if (hooks_.game_running) state_.game = "starting";
+    }
+    if (hooks_.changed) hooks_.changed();
+}
+
 EngineState Supervisor::state() const {
     EngineState now;
     {
@@ -335,6 +386,7 @@ void Supervisor::play(const Settings& settings, const std::string& api_key) {
         std::lock_guard<std::mutex> held(lock_);
         running_ = true;
         stop_asked_ = false;
+        game_asked_ = -1;
         state_ = EngineState{};
         state_.state = "starting";
     }
@@ -371,6 +423,7 @@ void Supervisor::loop(Settings settings, std::string api_key) {
             now.message = message;
             now.restarts = restarts;
             running_ = false;
+            game_asked_ = -1;
         });
     };
     std::error_code ec;
@@ -393,6 +446,10 @@ void Supervisor::loop(Settings settings, std::string api_key) {
     } else {
         note("asking Steam to start Kingdom Come: Deliverance 2");
         if (hooks_.start_game) hooks_.start_game();
+        // On its way, for the window, until it is seen running or has had long enough.
+        std::lock_guard<std::mutex> held(lock_);
+        game_asked_ = hooks_.seconds();
+        if (hooks_.game_running) state_.game = "starting";
     }
 
     RestartPolicy policy;
@@ -414,12 +471,22 @@ void Supervisor::loop(Settings settings, std::string api_key) {
                 if (now.state != "stopping") now.state = "running";
                 now.message.clear();
             });
+            // Long enough ago that the first look is at once.
+            double looked = hooks_.seconds() - kGameLook;
             while (true) {
                 if (const std::optional<int> exited = child->wait_for(std::chrono::milliseconds(200))) {
                     code = *exited;
                     break;
                 }
-                if (!stop_asked()) continue;
+                if (!stop_asked()) {
+                    // The game comes and goes while the engine stays: a player quits it
+                    // and leaves Moonshine open, and the window offers to start it again.
+                    if (const double now = hooks_.seconds(); now - looked >= kGameLook) {
+                        looked = now;
+                        look_for_game();
+                    }
+                    continue;
+                }
                 asked = true;
                 // /quit is read once the engine is following the game, where it tells the
                 // game nobody is listening before it goes. An engine still loading its

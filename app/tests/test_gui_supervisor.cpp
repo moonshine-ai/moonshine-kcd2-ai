@@ -74,8 +74,10 @@ struct World {
     std::vector<double> waits;
     std::vector<std::string> said;
     int kills = 0;
-    int games_started = 0;
-    bool game_running = false;
+    std::atomic<int> games_started{0};
+    std::atomic<bool> game_running{false};
+    // A machine where nothing can say whether the game is running (a Mac).
+    bool can_see_game = true;
     bool strays_stop = true;
     std::atomic<double> clock{1000.0};
 
@@ -139,7 +141,7 @@ struct World {
             if (!run.status.empty()) touch(paths.status, run.status);
             return std::make_unique<Engine>(*this, run);
         };
-        hooks.game_running = [this] { return game_running; };
+        if (can_see_game) hooks.game_running = [this] { return game_running.load(); };
         hooks.start_game = [this] { games_started += 1; };
         hooks.stop_strays = [this] { return strays_stop; };
         hooks.seconds = [this] { return clock.load(); };
@@ -524,6 +526,87 @@ TEST_CASE("supervisor: what the engine says it is doing is in the state while it
     supervisor.stop();
     // And not after: the file of a run that is over says nothing about now.
     CHECK(supervisor.state().phase.empty());
+}
+
+TEST_CASE("supervisor: the game is looked for while the engine runs, and can be asked for again") {
+    World world("game-again");
+    world.script = {{.life = -1, .status = R"({"phase":"ready","game_log":true})"}};
+    Supervisor supervisor(world.paths, world.hooks());
+    // Before Play there is no engine for a game to be started beside.
+    supervisor.start_game();
+    CHECK(world.games_started == 0);
+
+    supervisor.play(Settings{}, "");
+    // Steam has been asked, and the game is not up yet: on its way.
+    REQUIRE(eventually([&] { return supervisor.state().state == "running" && supervisor.state().game == "starting"; }));
+    CHECK(world.games_started == 1);
+    world.game_running = true;
+    world.clock = world.clock + 3;
+    REQUIRE(eventually([&] { return supervisor.state().game == "up"; }));
+    // Asked for while it is up: nothing to do.
+    supervisor.start_game();
+    CHECK(world.games_started == 1);
+
+    // The player quits the game and leaves Moonshine open. The engine's own status still
+    // says it has the game's log, which is why that is not what is asked.
+    world.game_running = false;
+    world.clock = world.clock + 3;
+    REQUIRE(eventually([&] { return supervisor.state().game == "down"; }));
+    CHECK(supervisor.state().game_log);
+    CHECK(supervisor.state().phase == "ready");
+
+    // Play, from the window: Steam is asked again, and the engine is the one that was running.
+    supervisor.start_game();
+    CHECK(world.games_started == 2);
+    CHECK(supervisor.state().game == "starting");
+    CHECK(world.starts() == 1);
+    CHECK(slurp(world.paths.launcher_log).find("asking Steam to start Kingdom Come: Deliverance 2 again") != std::string::npos);
+    // Still on its way a minute later ...
+    world.clock = world.clock + 60;
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(supervisor.state().game == "starting");
+    // ... and after long enough without it, it is not coming, and can be asked for again.
+    world.clock = world.clock + 60;
+    REQUIRE(eventually([&] { return supervisor.state().game == "down"; }));
+    supervisor.start_game();
+    CHECK(world.games_started == 3);
+    world.game_running = true;
+    world.clock = world.clock + 3;
+    REQUIRE(eventually([&] { return supervisor.state().game == "up"; }));
+
+    supervisor.stop();
+    CHECK(supervisor.state().game.empty());
+    supervisor.start_game();
+    CHECK(world.games_started == 3);
+}
+
+TEST_CASE("supervisor: a game the player starts themselves is seen too, and where it cannot be seen nothing is said") {
+    {
+        World world("game-own");
+        world.script = {{.life = -1, .status = R"({"phase":"ready"})"}};
+        Settings settings;
+        settings.launch_game = false;
+        Supervisor supervisor(world.paths, world.hooks());
+        supervisor.play(settings, "");
+        REQUIRE(eventually([&] { return supervisor.state().game == "down"; }));
+        world.game_running = true;
+        world.clock = world.clock + 3;
+        REQUIRE(eventually([&] { return supervisor.state().game == "up"; }));
+        CHECK(world.games_started == 0);
+        supervisor.stop();
+    }
+    {
+        World world("game-unseen");
+        world.can_see_game = false;
+        world.script = {{.life = -1, .status = R"({"phase":"ready"})"}};
+        Supervisor supervisor(world.paths, world.hooks());
+        supervisor.play(Settings{}, "");
+        REQUIRE(eventually([&] { return supervisor.state().phase == "ready"; }));
+        world.clock = world.clock + 3;
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(supervisor.state().game.empty());
+        supervisor.stop();
+    }
 }
 
 TEST_CASE("supervisor: each start puts the last run's log aside and clears its status") {

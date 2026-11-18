@@ -130,6 +130,15 @@ struct EngineState {
     bool ear = false;
     bool game_log = false;
     std::string error;
+
+    // The game itself, looked for every couple of seconds while the engine runs:
+    //   ""          not known (nothing here can tell: a Mac, a test without the hook)
+    //   "up"        running
+    //   "starting"  Steam has been asked for it, and it is not up yet
+    //   "down"      not running, and not on its way
+    // What the engine says of the game's log cannot tell these apart: the log of a game
+    // that has been quit is still there, and still the log it was following.
+    std::string game;
 };
 
 class Supervisor {
@@ -163,6 +172,9 @@ public:
     void play(const Settings& settings, const std::string& api_key);
     // Stop it and wait until it has gone.
     void stop();
+    // Ask Steam for the game while the engine is running: for a player who quit the game
+    // and left Moonshine up. Nothing happens if the engine is not running or the game is.
+    void start_game();
     // Whether the loop is going (starting, running or between restarts).
     bool active() const;
     EngineState state() const;
@@ -174,6 +186,8 @@ private:
     void loop(Settings settings, std::string api_key);
     void set(const std::function<void(EngineState&)>& change);
     bool pause(double seconds);
+    // Whether the game is running, into the state.
+    void look_for_game();
 
     const Paths paths_;
     Hooks hooks_;
@@ -185,6 +199,9 @@ private:
     EngineState state_;
     bool stop_asked_ = false;
     bool running_ = false;
+    // When Steam was last asked for the game (hooks_.seconds()), until it is seen running
+    // or has had long enough; negative otherwise.
+    double game_asked_ = -1;
     std::thread thread_;
     std::mutex log_lock_;
 };

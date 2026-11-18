@@ -304,6 +304,26 @@ HomeView home_view(const CheckState& check, const EngineState& engine, const Tas
         view.tone = "live";
         if (engine.phase == "talking") {
             view.title = engine.talking_to.empty() ? "In conversation" : "Talking with " + engine.talking_to;
+        } else if (engine.game == "starting") {
+            view.tone = "busy";
+            view.title = "Starting the game";
+            view.detail = "Moonshine is ready and joins in when Kingdom Come: Deliverance 2 is up.";
+            return view;
+        } else if (engine.game == "down") {
+            // The game was quit, or never came up, and Moonshine was left running: nobody
+            // is there to listen to. Play starts the game again, where Moonshine is asked
+            // to start it at all; Stop moves beside it.
+            view.title = "Waiting for the game";
+            if (settings.launch_game) {
+                view.detail = "Kingdom Come: Deliverance 2 is not running. Press Play to start it; Moonshine is ready and joins in.";
+                view.button = "Play";
+                view.action = "startGame";
+                view.fix_label = "Stop";
+                view.fix = "stop";
+            } else {
+                view.detail = "Kingdom Come: Deliverance 2 is not running. Start it yourself; Moonshine is ready and joins in.";
+            }
+            return view;
         } else if (!engine.game_log) {
             view.title = "Waiting for the game";
             view.detail = "Moonshine is ready and joins in when the game is up.";
@@ -1152,6 +1172,12 @@ json Controller::call(const std::string& method, const json& args) {
         });
         return ok;
     }
+    if (method == "startGame") {
+        // The game only: the engine is up already and stays as it is.
+        supervisor_.start_game();
+        changed();
+        return ok;
+    }
     if (method == "recheck") {
         run_check(false);
         return ok;
@@ -1211,7 +1237,7 @@ json Controller::state() {
     out["engine"] = {{"state", engine.state},       {"message", engine.message}, {"restarts", engine.restarts},
                      {"phase", engine.phase},       {"talking_to", engine.talking_to}, {"model", engine.model},
                      {"remote_model", engine.remote_model}, {"voice", engine.voice},   {"ear", engine.ear},
-                     {"game_log", engine.game_log}, {"error", engine.error}};
+                     {"game_log", engine.game_log}, {"game", engine.game}, {"error", engine.error}};
     out["check"] = {{"state", check_.state}, {"ready", check_.ready}, {"game_root", check_.game_root},
                     {"error", check_.error}, {"items", check_.items}};
     out["settings"] = settings_json(settings_);

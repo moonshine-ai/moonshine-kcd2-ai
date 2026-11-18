@@ -141,6 +141,9 @@ struct Machine {
 
     std::vector<Command> ran;
     std::vector<Command> engines;
+    // The game: whether it is running, and how many times Steam was asked for it.
+    std::atomic<bool> game_up{false};
+    std::atomic<int> games_asked{0};
     std::vector<Command> launched;
     std::vector<std::string> opened;
     std::vector<std::pair<Manifest, fs::path>> fetched;
@@ -189,11 +192,17 @@ struct Machine {
             put(paths.status, R"({"phase":"ready","voice":true,"ear":true,"game_log":true})");
             return std::make_unique<Engine>(*this);
         };
-        parts.hooks.game_running = [] { return false; };
-        parts.hooks.start_game = [] {};
+        // Steam, asked for the game, starts it; a test quits it by saying it is not up.
+        parts.hooks.game_running = [this] { return game_up.load(); };
+        parts.hooks.start_game = [this] {
+            games_asked += 1;
+            game_up = true;
+        };
         parts.hooks.stop_strays = [] { return true; };
+        // Twenty times as fast as the real one, so that the look for the game every two
+        // seconds is one every tenth of a second here.
         parts.hooks.seconds = [] {
-            return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            return 20 * std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
         };
         parts.hooks.wall = [] { return static_cast<std::time_t>(1794000000); };
         parts.hooks.wait = [](double) {};
@@ -458,6 +467,63 @@ TEST_CASE("home: the engine coming up, listening, talking and going") {
     CHECK(view.button.empty());
 }
 
+TEST_CASE("home: a game that is not running is offered, with Stop still to hand") {
+    const TaskState no_task;
+    const CheckState check = check_done(where_report());
+    Settings settings;
+    EngineState ready = engine("running", "ready");
+    // The engine still has the log of the game that was quit; that is not the game.
+    ready.game_log = true;
+
+    ready.game = "up";
+    HomeView view = home_view(check, ready, no_task, settings);
+    CHECK(view.title == "Listening");
+    CHECK(view.button == "Stop");
+
+    ready.game = "down";
+    view = home_view(check, ready, no_task, settings);
+    CHECK(view.tone == "live");
+    CHECK(view.title == "Waiting for the game");
+    CHECK(view.detail == "Kingdom Come: Deliverance 2 is not running. Press Play to start it; Moonshine is ready and joins in.");
+    CHECK(view.button == "Play");
+    CHECK(view.action == "startGame");
+    CHECK(view.fix_label == "Stop");
+    CHECK(view.fix == "stop");
+    // Something the model said went wrong before the game was quit does not take Stop away.
+    ready.error = "The model API refused the key.";
+    view = home_view(check, ready, no_task, settings);
+    CHECK(view.button == "Play");
+    CHECK(view.fix == "stop");
+    ready.error.clear();
+
+    // A player who starts the game themselves is not offered Steam.
+    settings.launch_game = false;
+    view = home_view(check, ready, no_task, settings);
+    CHECK(view.title == "Waiting for the game");
+    CHECK(view.detail == "Kingdom Come: Deliverance 2 is not running. Start it yourself; Moonshine is ready and joins in.");
+    CHECK(view.button == "Stop");
+    CHECK(view.action == "stop");
+    CHECK(view.fix.empty());
+    settings.launch_game = true;
+
+    // Asked for and on its way: no second Play to press.
+    ready.game = "starting";
+    view = home_view(check, ready, no_task, settings);
+    CHECK(view.tone == "busy");
+    CHECK(view.title == "Starting the game");
+    CHECK(view.button == "Stop");
+    CHECK(view.action == "stop");
+
+    // While the engine is still coming up, that is what is said, whatever the game is doing.
+    EngineState loading = engine("running", "loading-model");
+    loading.game = "down";
+    CHECK(home_view(check, loading, no_task, settings).title == "Starting");
+    // And a conversation is a conversation.
+    EngineState talking = engine("running", "talking");
+    talking.game = "down";
+    CHECK(home_view(check, talking, no_task, settings).title == "In conversation");
+}
+
 TEST_CASE("home: what went wrong while running is a sentence and a way out") {
     const Settings settings;
     const TaskState no_task;
@@ -539,11 +605,28 @@ TEST_CASE("bridge: opening checks the installation, and Play starts what was che
     CHECK(machine.engine_count() == 1);
     CHECK(has_arg(machine.last_engine(), "--game"));
     CHECK(arg_after(machine.last_engine(), "--root") == "D:\\Games\\KCD2");
+    // The game Steam was asked for is up, and that is who is being listened to.
+    REQUIRE(eventually([&] { return controller.state()["home"]["title"] == "Listening"; }));
     state = controller.state();
-    CHECK(state["home"]["title"] == "Listening");
     CHECK(state["home"]["button"] == "Stop");
     CHECK(state["engine"]["voice"] == true);
+    CHECK(state["engine"]["game"] == "up");
+    CHECK(machine.games_asked == 1);
     CHECK(controller.engine_active());
+
+    // The player quits the game and leaves Moonshine open: Play is there again, and it
+    // starts the game beside the engine that is already running, not another engine.
+    machine.game_up = false;
+    REQUIRE(eventually([&] { return controller.state()["home"]["button"] == "Play"; }));
+    state = controller.state();
+    CHECK(state["home"]["title"] == "Waiting for the game");
+    CHECK(state["home"]["action"] == "startGame");
+    CHECK(state["home"]["fix_label"] == "Stop");
+    CHECK(state["home"]["fix"] == "stop");
+    CHECK(controller.call("startGame", json::object())["ok"] == true);
+    CHECK(machine.games_asked == 2);
+    REQUIRE(eventually([&] { return controller.state()["home"]["title"] == "Listening"; }));
+    CHECK(machine.engine_count() == 1);
 
     controller.call("stop", json::object());
     REQUIRE(eventually([&] { return controller.state()["engine"]["state"] == "idle"; }));

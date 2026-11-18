@@ -92,8 +92,9 @@
     button.hidden = !home.button;
     button.textContent = home.button;
     button.dataset.action = home.action;
-    // Play is the invitation; Stop and Cancel are there when wanted and do not shout.
-    button.classList.toggle('plain', home.action !== 'play');
+    // Play is the invitation, whether it starts everything or only the game again; Stop
+    // and Cancel are there when wanted and do not shout.
+    button.classList.toggle('plain', home.action !== 'play' && home.action !== 'startGame');
 
     const fix = $('home-fix');
     fix.hidden = !home.fix_label;
@@ -150,6 +151,7 @@
     else if (fix === 'reinstall') call('applyUpdate', { reinstall: true });
     else if (fix === 'settings') show('settings');
     else if (fix === 'logs') show('logs');
+    else if (fix === 'stop') call('stop', {});
     else if (fix === 'folder') {
       const picked = await call('chooseFolder', {});
       if (picked && picked.path) call('saveSettings', { root: picked.path });
