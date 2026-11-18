@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -82,9 +83,10 @@ enum class Marker {
     // it and sends the answer back as a hook that writes it into the game's log, which the
     // console shows (main.cpp, Console::game_lua).
     ConsoleLine,
-    // Which quests are off, as the save has them: "BRIDGE switches off=<id>,<id>" (empty when
-    // none is). Said when a save loads, when one is thrown at the console and before each
-    // command typed there. `said` is the list after `off=`. What /quests marks on and off.
+    // Which quests are off, as the save has them: "BRIDGE switches off=<id>,<id> all=0" (empty
+    // after off= when none is). Said when a save loads (or a new game starts), when one is
+    // thrown at the console and before each command typed there. `said` is the list after
+    // `off=`; `all_quests` is the all= flag. What /quests marks on and off.
     Switches,
     // A line is on the screen and should be spoken. `intent` is who: henry, male,
     // female, or npc (whoever the conversation is open with). `said` is the words.
@@ -106,6 +108,11 @@ enum class Marker {
     // hushes the voice, and a reply still being written for that turn ends where it was
     // (Session::answer, Listener::skipped).
     Skipped,
+    // The same tap in a Talk of the game's own that the app is voicing (the mod's
+    // voicedTalk): "BRIDGE skipped line". The game's skip is of one Response, and a row
+    // of such a Talk is Henry's line and then theirs, so only the line being heard goes
+    // (Speaker::hush_line); the rest of the row still plays. No turn: there is no session.
+    SkippedLine,
 };
 
 struct Event {
@@ -149,6 +156,11 @@ struct Event {
     SoulRecord state;
     MemoryLine memory;
     KnownLine known;
+
+    // On a Switches marker: whether the mod has every quest on regardless of the switches
+    // (all=1, the app's "Enable experimental quests" setting asserted) or not (all=0);
+    // unset from a mod too old to say, which cannot be asked for it.
+    std::optional<bool> all_quests;
 };
 
 // One log line. Anything that is not one of the mod's markers is not ours.

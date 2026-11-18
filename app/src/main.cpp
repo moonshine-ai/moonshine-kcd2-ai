@@ -370,6 +370,11 @@ struct Args {
     // What was asked for on the command line, if anything was; `speculate` is settled from
     // it once the whole line has been read.
     std::optional<bool> guessing;
+    // --all-quests, the window's "Enable experimental quests": every quest on, not only the
+    // stories the generator switched on for a new game. Asserted in the game (QuestAll) each
+    // time the mod says where its switches stand, for this run of the game only: the
+    // switches in the save are left as they are, so turning the setting off is enough.
+    bool all_quests = false;
     // One soul to inspect. The question "why did that NPC say that" starts with what
     // the model was told about them, and this is how to read it without playing.
     std::string soul;
@@ -439,6 +444,9 @@ void usage() {
         "                  on the model\n"
         "  --guessing      do work them out. The default, except with --api-url, where\n"
         "                  each guess is paid for and most are thrown away\n"
+        "  --all-quests    every quest on, not only the stories switched on for a new game\n"
+        "                  (the window's \"Enable experimental quests\"); for this run of\n"
+        "                  the game, the save's own switches left alone\n"
         "  --root DIR      game directory holding kcd.log (default: found)\n"
         "  --user DIR      what the engine calls %USER%, holding profiles and saves\n"
         "  --modid ID      mod id, must match the generator's (default moonshine_names)\n"
@@ -581,6 +589,7 @@ Args parse(int argc, char** argv, bool* stop) {
         else if (arg == "--no-menu") args.menu = false;
         else if (arg == "--no-guessing") args.guessing = false;
         else if (arg == "--guessing") args.guessing = true;
+        else if (arg == "--all-quests") args.all_quests = true;
         else if (arg == "--root") args.root = value();
         else if (arg == "--user") args.user = value();
         else if (arg == "--modid") args.modid = value();
@@ -1185,11 +1194,29 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // for the session to know a skip of the reply it is writing from one of the line
     // before it. Under `lock`, as is every use of the tailer.
     int skips_early = 0;
-    const auto skipped_since = [&tailer, &hush_all, &skips_early](int turn) {
+    // And the same tap in a voiced Talk of the game's own ("BRIDGE skipped line"), which
+    // drops the one line being heard and leaves the rest of the row: the other party's
+    // answer, queued behind Henry's line, is still to come (bugs.txt 18 Nov 2026: Paul's
+    // and Elsbeth's first answers went unheard, their lips still, when the player tapped
+    // through Henry's line, since the whole queue was hushed).
+    int line_skips_early = 0;
+    const auto hush_line = [speaker] {
+        if (!speaker) return;
+        std::cout << "-- the player skipped the line; the voice drops it\n" << std::flush;
+        speaker->hush_line();
+    };
+    const auto skipped_since = [&tailer, &hush_all, &hush_line, &skips_early, &line_skips_early](int turn) {
         tailer.pending();
         int seen = 0;
+        int lines = 0;
         bool of_turn = false;
+        // A line skip is dropped early only while it is of a line already queued: one that
+        // comes after a voice marker the loop has not reached is of a line not yet queued,
+        // and is left for the loop, which queues the line and then drops it.
+        bool voice_ahead = false;
         for (const Event& event : tailer.buffered()) {
+            if (event.marker == Marker::Voice) voice_ahead = true;
+            if (event.marker == Marker::SkippedLine && !voice_ahead) ++lines;
             if (event.marker != Marker::Skipped) continue;
             ++seen;
             if (event.turn >= turn) of_turn = true;
@@ -1198,6 +1225,10 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             ++skips_early;
             std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
             hush_all();
+        }
+        while (line_skips_early < lines) {
+            ++line_skips_early;
+            hush_line();
         }
         return of_turn;
     };
@@ -1316,6 +1347,8 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // The slash commands (console.h), from the keyboard below or from the game's own
     // console through the log.
     Console console(personas);
+    // Said once: the mod cannot take the experimental-quests setting.
+    bool old_mod_for_all_quests = false;
     // Which deal this database is, for the check against the mod's qset= on every begin
     // and look line; the mod fingerprints already warned about, so each is said once.
     const std::string quest_set = personas.quest_set();
@@ -1396,6 +1429,27 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                         rest = comma == std::string_view::npos ? std::string_view() : rest.substr(comma + 1);
                     }
                     console.set_off(std::move(ids));
+                    // The experimental-quests setting, asserted where the mod's stand differs
+                    // from it: every quest on with the setting (and back to the switches when
+                    // a game started under it is still running after it was turned off). The
+                    // mod answers with its switches line again, now agreeing, so this is sent
+                    // once per change and not once per line.
+                    if (!event.all_quests.has_value()) {
+                        if (args.all_quests && !old_mod_for_all_quests) {
+                            old_mod_for_all_quests = true;
+                            std::cout << "-- the game's mod is older than the experimental-quests setting and"
+                                         " cannot be told to turn every quest on; /enable all does it by hand"
+                                         " until the mod is sent again\n" << std::flush;
+                        }
+                    } else if (*event.all_quests != args.all_quests) {
+                        std::cout << (args.all_quests
+                                          ? "-- experimental quests: turning every quest on for this run of the game\n"
+                                          : "-- experimental quests off: the game goes back to the save's switches\n")
+                                  << std::flush;
+                        session.hook(std::string("Moonshine.QuestAll(") + (args.all_quests ? "true" : "false") + ")",
+                                     args.all_quests ? "every quest on (experimental quests)"
+                                                     : "the save's switches (experimental quests off)");
+                    }
                     continue;
                 }
                 if (event.marker == Marker::ConsoleLine) {
@@ -1453,6 +1507,16 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                         std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
                     }
                     hush_all();
+                }
+                // The game's own Talk: one line dropped, once -- the early path's drop was
+                // of the line being heard then, and whatever is queued at this point is
+                // the rest of the row, which the tap was not of.
+                if (event.marker == Marker::SkippedLine) {
+                    if (line_skips_early > 0) {
+                        --line_skips_early;
+                    } else {
+                        hush_line();
+                    }
                 }
                 // Henry's own line goes to the voice from its said marker, not from the
                 // voice marker the mod writes a line behind it. The said marker is answered

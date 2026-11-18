@@ -140,6 +140,12 @@ public:
     // line, so the model stands aside for it as it would for one.
     void warm();
     void hush();
+    // Drop one line: the one being heard, or with none the first waiting to be. The
+    // player's skip in a Talk of the game's own that the app is voicing (Marker::
+    // SkippedLine): the game's skip is of one Response, and the row's other line is still
+    // to be heard, so the queue stays. A line being made ahead is left alone, as hush()
+    // leaves it, unless it is the one being handed to a say().
+    void hush_line();
     // Block until everything queued has been spoken, or hush() has dropped it.
     void wait();
     // True while a line is being made or played, or waits its turn -- a line made ahead

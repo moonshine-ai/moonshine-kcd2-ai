@@ -46,6 +46,10 @@ struct Settings {
     // Work out replies before they are picked. Always so with the local model; with an
     // API each guess is paid for, so it is the player's to turn on.
     bool api_guessing = false;
+    // Every quest on, not only the stories the generator switched on for a new game: the
+    // ones still being written, played at the player's own risk (the engine's --all-quests;
+    // what /enable all does by hand, for this run of the game).
+    bool experimental_quests = false;
 
     // Who the last bug report was from, as they typed it, so that the next one does not
     // ask again. Both optional. Collect-Logs.ps1 leaves these two lines out of the copy of

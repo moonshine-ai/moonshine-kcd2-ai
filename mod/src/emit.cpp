@@ -1035,6 +1035,8 @@ std::vector<SelfLine> self_lines(const Quest& quest) {
         add(6, "spotted", "spotted", quest.spotted);
         add(7, "discovered", "discovered", quest.discovered);
     }
+    if (quest.has_keepsake()) add(8, "arrived", "arrived", quest.arrived);
+    if (quest.has_paper_read()) add(9, "paperRead", "paper_read", quest.chest_paper_read);
     return lines;
 }
 
@@ -1148,6 +1150,16 @@ std::string paper_class(const Quest& quest) {
 }
 
 std::string paper_name(const Quest& quest) { return "paper_" + quest_node(quest.id); }
+
+std::string read_class(const Quest& quest) {
+    // The paper's read token: the same shape under 72 (the letter r).
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-7200-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string read_name(const Quest& quest) { return "read_" + quest_node(quest.id); }
 
 std::string paper_page_key(const std::string& modid, const Quest& quest) {
     return modid + "_" + paper_name(quest) + "_page";
@@ -2091,6 +2103,11 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (!return_from.empty()) {
         s += t(4) + "<State Name=\"returnState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
         s += t(5) + "<Edge From=\"" + return_from + "\" To=\"SetActive\" />\r\n";
+        // The thing out of the chest is another way to have it (the taken trigger writes
+        // the first objective's Handed line, above), so the return opens from it too: until
+        // 18 Nov 2026 only the holder's handover did, and a player who picked the lock had
+        // the chalice and no "Return to Benesh" in the book or on the map (bugs.txt).
+        if (quest.has_chest()) s += t(5) + "<Edge From=\"taken.OnAcquire\" To=\"SetActive\" />\r\n";
         // Done at the hand-in -- unless the ending leads on to another scene of this run,
         // when "Return to <giver>" stands until the next errand is taken up (its accept
         // closes it), so a player who walks out mid-offer still has the marker.
@@ -2648,6 +2665,32 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
             s += t(5) + "<Edge From=\"taking.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            // The paper read (Quest::has_paper_read; bugs.txt 18 Nov 2026): the graph is the
+            // one party that hears the player read a Document -- UseBookTrigger, as a
+            // deliver's letter is watched, on the paper's class, live from the accept until
+            // it has fired once -- and its word to the Lua is an item: CreateItems (the
+            // shipped haste_maliruv_lek.xml's shape, with a constant class) puts one of the
+            // read class in Henry's pocket as he closes the page, and the watch, which
+            // counts his pocket each tick, finds it there, takes it away and says his line
+            // (WatchChest, SelfTalk). OnClosed rather than OnOpened: the words come as he
+            // puts the sheet away, having read it.
+            if (quest.has_paper_read()) {
+                s += t(4) + "<State Name=\"unread\" TypeT=\"bool\">\r\n";
+                s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
+                s += t(5) + "<Edge From=\"paperRead.OnClosed\" To=\"SetFalse\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<UseBookTrigger Name=\"paperRead\">\r\n";
+                s += t(5) + "<Constant Name=\"Book\" Value=\"" + xml_escape(paper_class(quest)) + "\" />\r\n";
+                s += t(5) + "<Edge From=\"unread.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</UseBookTrigger>\r\n";
+                s += t(4) + "<EventMemberFunction Name=\"readToken\" MethodName=\"CreateItems\" "
+                            "DeclaringType=\"wh::entitymodule::Inventory\">\r\n";
+                s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(read_class(quest)) + "\" />\r\n";
+                s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+                s += t(5) + "<Edge From=\"paperRead.OnClosed\" To=\"Exec\" />\r\n";
+                s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+                s += t(4) + "</EventMemberFunction>\r\n";
+            }
         }
         // The giver's hail in his own mouth (notes.md 14 Oct 2026): the watch says when
         // (WatchHail) by a token of the hail's class, the pray's channel, and the trigger on
@@ -5716,6 +5759,16 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
              "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
              "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
              xml_escape(taken_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + taken) + "\" />\r\n";
+        // And the paper's read token (read_class), the same row again: made by the graph as
+        // Henry closes the paper, found and taken away by the watch.
+        if (q->has_paper_read()) {
+            const std::string read = read_name(*q);
+            s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+                 xml_escape(item_info_key(modid, read)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, read)) +
+                 "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+                 "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" +
+                 xml_escape(read_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + read) + "\" />\r\n";
+        }
     }
     // The token of each line Henry says to himself (emit.hpp, SelfLine): the same row under
     // the line's own class, made by the Lua's SelfTalk and gone a moment later.
@@ -5974,6 +6027,11 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
             rows.emplace_back(item_info_key(modid, paper_name(q)),
                               "A loose sheet from the bottom of " + q.target_name + "'s chest, closely written.");
             rows.emplace_back(paper_page_key(modid, q), page_markup(q.chest_paper));
+            if (q.has_paper_read()) {
+                rows.emplace_back(item_ui_key(modid, read_name(q)), "A paper read");
+                rows.emplace_back(item_info_key(modid, read_name(q)),
+                                  "Henry has read the sheet out of " + q.target_name + "'s chest.");
+            }
         }
     }
     return rows;
@@ -6669,6 +6727,8 @@ std::string state_lua(const std::string& g) {
     s += "\tif type(got) ~= \"table\" then\n";
     s += "\t\t" + g + ".state = " + g + ".FreshState()\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state loaded via \" .. tostring(via) .. \" none, fresh store\")\n";
+    // The app hears the switches on a new game too, so its setting for them can be asserted.
+    s += "\t\tpcall(" + g + ".SwitchesLine)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif type(got.version) ~= \"number\" then got.version = 0 end\n";
@@ -6788,6 +6848,8 @@ std::string state_lua(const std::string& g) {
     s += "\tif command == \"gone\" then facts.gone = true end\n";
     // Henry's sighting of her said (WatchSeek), so a load does not have him say it again.
     s += "\tif command == \"spotted\" then facts.spotted = true end\n";
+    // A find's arrival at the patch (WatchKeepsake), so the line is said once.
+    s += "\tif command == \"arrived\" then facts.arrived = true end\n";
     // A beat's man down, a beat's or a mind's target dead, a pray knelt, a mind's visit made
     // (with the game's clock at the moment, for the next to be due against).
     s += "\tif command == \"beaten\" then facts.beaten = true end\n";
@@ -6866,6 +6928,11 @@ std::string state_lua(const std::string& g) {
     s += "\tif command == \"keyed\" then facts.keyed = true end\n";
     s += "\tif command == \"chest\" then facts.chest = true end\n";
     s += "\tif command == \"taken\" then facts.taken = true end\n";
+    // The paper out of the chest in Henry's pocket (flag j, for the giver's row about it),
+    // and read (his line said once).
+    s += "\tif command == \"paper\" then facts.paper = true end\n";
+    s += "\tif command == \"paper_gone\" then facts.paper = false end\n";
+    s += "\tif command == \"paper_read\" then facts.paperRead = true end\n";
     // A dictated letter written: the three outcome digits (the flag W<digits>).
     s += "\tlocal wrote = string.match(command, \"^wrote_(%d+)$\")\n";
     s += "\tif wrote ~= nil then facts.accepted = true; facts.wrote = wrote end\n";
@@ -6885,7 +6952,8 @@ std::string state_lua(const std::string& g) {
     // n, an unyielding holder has rebuffed Henry; a, the giver has named the one who can
     // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
     // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
-    // place (the morning after the hand-in, fetched home); one z per clue-holder a seek's
+    // place (the morning after the hand-in, fetched home); j, the chest's paper is in
+    // Henry's pocket; one z per clue-holder a seek's
     // Henry has asked; W followed by three
     // digits, a dictated letter is written, each digit a part's outcome (0 as said, 1 left
     // out, 2 softened, 3 made larger), last so the digits run to the end of the letters.
@@ -6900,6 +6968,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.named and \"a\" or \"\")\n";
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
+    s += "\t\t.. (facts.paper and \"j\" or \"\")\n";
     s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
     s += "end\n";
@@ -7031,9 +7100,15 @@ std::string state_lua(const std::string& g) {
     // and the app reads the dump's `off=` to the same end), is not called over for (WatchHail),
     // dresses nobody (WatchDress) and has no marker on its giver (WatchGiver). One already
     // taken up is not undone by it: an errand under way goes on.
+    // Every quest on regardless, the app's "Enable experimental quests" setting (bugs.txt
+    // 18 Nov 2026): set by QuestAll from the app's hook, said on the switches line (all=),
+    // and not in the store -- it is the app's setting, asserted again on every load, so
+    // turning it off there is enough; the save keeps the switches as they were.
+    s += g + ".experimental = false\n";
     s += "function " + g + ".QuestOn(id)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tif q == nil then return false end\n";
+    s += "\tif " + g + ".experimental then return true end\n";
     s += "\tlocal set = (" + g + ".state or {}).switch\n";
     s += "\tif type(set) == \"table\" and set[id] ~= nil then return set[id] == true end\n";
     s += "\treturn not q.off\n";
@@ -7052,8 +7127,21 @@ std::string state_lua(const std::string& g) {
     // The switches to the app, which keeps them for /quests ("BRIDGE switches off=a,b"): said
     // when a save loads, whenever one is thrown, and before every command typed at the game's
     // console. Empty after `off=` when every quest is on.
+    // `all=1` after the list when every quest is on by the app's setting (QuestAll), `all=0`
+    // when not; a mod without it is too old for the setting, which the app says.
     s += "function " + g + ".SwitchesLine()\n";
-    s += "\t" + g + ".Log(\"BRIDGE switches off=\" .. table.concat(" + g + ".QuestsOff(), \",\"))\n";
+    s += "\t" + g + ".Log(\"BRIDGE switches off=\" .. table.concat(" + g + ".QuestsOff(), \",\")\n";
+    s += "\t\t.. \" all=\" .. (" + g + ".experimental and \"1\" or \"0\"))\n";
+    s += "end\n";
+    s += "\n";
+    // The app's "Enable experimental quests" setting: every quest on (true) or back to the
+    // switches (false), for this run of the game; the watch is woken for the markers and
+    // the hails, as a thrown switch wakes it.
+    s += "function " + g + ".QuestAll(on)\n";
+    s += "\t" + g + ".experimental = (on == true)\n";
+    s += "\t" + g + ".Log(\"BRIDGE quests all \" .. (on == true and \"on\" or \"as switched\"))\n";
+    s += "\tpcall(" + g + ".SwitchesLine)\n";
+    s += "\tpcall(" + g + ".WatchArm, \"switch\")\n";
     s += "end\n";
     s += "\n";
     // Turn quests on or off: `ids` a list of quest ids, `on` true or false. Kept in the store
@@ -8281,6 +8369,8 @@ std::string emit_conversation_lua(const std::string& modid,
             // what Henry's pocket is watched for (WatchKeepsake).
             s += ", keepsake = \"" + lua_escape(q.keepsake_class) + "\", keepsakeName = \"" +
                  lua_escape(q.keepsake_name) + "\"";
+            // Henry's aside as he comes to the patch (WatchKeepsake).
+            if (!q.arrived.empty()) s += ", arrived = \"" + lua_escape(q.arrived) + "\"";
         }
         if (q.is_spot() || q.is_ambush()) {
             if (q.hour_from >= 0 && q.hour_to >= 0 && q.hour_from != q.hour_to) {
@@ -8455,6 +8545,11 @@ std::string emit_conversation_lua(const std::string& modid,
             // trigger), and the paper laid beside the thing, where one is written.
             s += ", taken = \"" + lua_escape(taken_class(q)) + "\"";
             if (q.has_paper()) s += ", paper = \"" + lua_escape(paper_class(q)) + "\"";
+            // Henry's word on reading it, and the token the graph makes as he closes it.
+            if (q.has_paper_read()) {
+                s += ", paperRead = \"" + lua_escape(q.chest_paper_read) + "\", readToken = \"" +
+                     lua_escape(read_class(q)) + "\"";
+            }
         }
         if (q.has_helper()) {
             // The one who can let Henry in: her soul and the metarole her menu speaks through
@@ -11221,15 +11316,22 @@ std::string emit_conversation_lua(const std::string& modid,
     // the press and shows the next, whose voice marker then queued behind the line still
     // being spoken, so a player tapping through four rows heard all four in a row after
     // the last tap (bugs.txt 5 and 8 Nov 2026; the 5 Nov fix was in the app, for a skip
-    // it had been told of, and here nothing told it). The same marker the mod's own Skip
-    // writes, with no turn, is the app's cue to hush; the mouth and its queue go as they
-    // do there. On the press, as the game takes it.
+    // it had been told of, and here nothing told it). A marker of its own, "skipped line",
+    // since the game's skip is of one Response: a row of a voiced Talk is Henry's line and
+    // then theirs (voiced_sequences), and a tap through Henry's shows theirs, which is
+    // still to be heard. Until 18 Nov 2026 this wrote the session's marker, and the app
+    // hushed the whole queue and the mod dropped the whole mouth queue with it, so a
+    // player who tapped through Henry's opening line heard nothing of Paul's answer and
+    // saw his lips still (bugs.txt 18 Nov 2026, Paul and Elsbeth; the same with Father
+    // Adam and Brother Thomas in the same log). Now the mouth armed stops and the next
+    // queued is armed in its place (LipNext), and the app drops the one line it is
+    // speaking (Speaker::hush_line). On the press, as the game takes it.
     s += "\tif not " + g + ".active then\n";
     s += "\t\tif " + g + ".voicedTalk and " + g + ".buttonActions[action] == true and activation == \"press\" then\n";
-    s += "\t\t\t" + g + ".Log(\"BRIDGE skipped turn=0\")\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE skipped line\")\n";
     s += "\t\t\tpcall(" + g + ".LipStop, \"skipped\")\n";
     s += "\t\t\t" + g + ".lipKey = nil\n";
-    s += "\t\t\t" + g + ".lipQueue = {}\n";
+    s += "\t\t\t" + g + ".LipNext()\n";
     s += "\t\tend\n";
     s += "\t\treturn false\n";
     s += "\tend\n";
@@ -13415,8 +13517,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // taken token) or been handed in some other way.
     // An exposure's retrieve: until the holder is caught (WatchExpose) or the thing is handed
     // over some other way.
-    s += "\t\t\tif q.kind == \"retrieve\" and not f.handed and ((q.chest ~= nil and not (f.chest and f.taken))\n";
-    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen)) then out[#out + 1] = id end\n";
+    // And, with a paper in the chest, for as long as the errand is open once the chest
+    // stands: for the paper in Henry's pocket (flag j) and his word on reading it.
+    s += "\t\t\tif q.kind == \"retrieve\" and ((not f.handed and ((q.chest ~= nil and not (f.chest and f.taken))\n";
+    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen))) or (q.paper ~= nil and f.chest)) then out[#out + 1] = id end\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"return\" and f.cursed and q.spot ~= nil then\n";
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"seek\" and q.spot ~= nil and not f.gone then\n";
@@ -13652,6 +13756,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // `keepsake` (the letter e), which the app reads to answer the hand-in with the giver's
     // thanks_keepsake; QuestDelivered takes it with the things.
     s += g + ".keepsakeMetres = " + std::to_string(kKeepsakeMetres) + "\n";
+    s += g + ".arriveMetres = " + std::to_string(kFindArriveMetres) + "\n";
     s += "function " + g + ".LayKeepsake(id, why)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tif q == nil or q.keepsake == nil or q.spot == nil then return false end\n";
@@ -13690,9 +13795,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif has ~= (f.keepsake == true) then\n";
     s += "\t\t" + g + ".StateQuest(id, has and \"keepsake\" or \"keepsake_gone\")\n";
     s += "\tend\n";
+    s += "\tlocal d = math.sqrt((pp.x - q.spot[1]) ^ 2 + (pp.y - q.spot[2]) ^ 2)\n";
     s += "\tif not f.laid and not has then\n";
-    s += "\t\tlocal d = math.sqrt((pp.x - q.spot[1]) ^ 2 + (pp.y - q.spot[2]) ^ 2)\n";
     s += "\t\tif d <= " + g + ".keepsakeMetres then " + g + ".LayKeepsake(id, \"near\") end\n";
+    s += "\tend\n";
+    // Henry's word as he comes to the patch (q.arrived; bugs.txt 18 Nov 2026): once, within
+    // arriveMetres, before he has the keepsake in hand -- with it he has been here.
+    s += "\tif q.arrived ~= nil and not f.arrived and not has and d <= " + g + ".arriveMetres then\n";
+    s += "\t\tpcall(" + g + ".StateQuest, id, \"arrived\")\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" Henry at the patch, \" .. string.format(\"%.1f\", d) .. \"m from the spot\")\n";
+    s += "\t\t" + g + ".SeekAside(id, q, q.arrived, \"arrived\")\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";
@@ -13806,11 +13918,32 @@ std::string emit_conversation_lua(const std::string& modid,
     // fourth figure, a yaw in degrees (0 faces +y, 90 faces +x), so it stands square to the
     // room's furniture; the pose at spawn is a forward vector.
     s += g + ".chestMetres = " + std::to_string(kChestMetres) + "\n";
+    // The chest's paper once the chest stands: in Henry's pocket or not (the store's
+    // `paper`, flag j, which the app reads for the giver's row about it), and read -- the
+    // graph's read token found in his pocket (emit.cpp, the paperRead trigger), taken away
+    // and answered with his line, once (bugs.txt 18 Nov 2026: "Strange, why does Paul
+    // have the watch shifts?"). Not over a conversation; the inventory he read it from is
+    // not one.
+    s += "function " + g + ".WatchPaper(id, q, f)\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tlocal has = " + g + ".Count(p, q.paper) > 0\n";
+    s += "\tif has ~= (f.paper == true) then\n";
+    s += "\t\tpcall(" + g + ".StateQuest, id, has and \"paper\" or \"paper_gone\")\n";
+    s += "\tend\n";
+    s += "\tif q.readToken == nil or f.paperRead then return end\n";
+    s += "\tif " + g + ".Count(p, q.readToken) == 0 then return end\n";
+    s += "\t" + g + ".TokenGone(q.readToken)\n";
+    s += "\tpcall(" + g + ".StateQuest, id, \"paper_read\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" Henry has read the paper\")\n";
+    s += "\t" + g + ".SeekAside(id, q, q.paperRead, \"paperRead\")\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".WatchChest(id, q, pp)\n";
     s += "\tlocal f = " + g + ".state.quests[id]\n";
     s += "\tif type(f) ~= \"table\" then f = {}; " + g + ".state.quests[id] = f end\n";
     s += "\tif q.chest == nil then return end\n";
     s += "\tif f.chest then\n";
+    s += "\t\tif q.paper ~= nil then " + g + ".WatchPaper(id, q, f) end\n";
     s += "\t\tif not f.taken and " + g + ".Count(" + g + ".Player(), q.item) > 0 then\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" thing taken from the chest, have=\" .. " + g +
          ".Count(" + g + ".Player(), q.item))\n";
@@ -15021,9 +15154,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn true, \"in view\"\n";
     s += "end\n";
     s += "\n";
-    // Henry's aside on the seek (spotted, discovered): his voice and a bark of his own
-    // (SelfTalk), not over a conversation (the app's turn, or the game's own Talk), and
-    // said in the log.
+    // Henry's aside on the seek (spotted, discovered) -- and, since 18 Nov 2026, a find's
+    // arrival at the patch (arrived) and a retrieve's paper read (paperRead): his voice
+    // and a bark of his own (SelfTalk), not over a conversation (the app's turn, or the
+    // game's own Talk), and said in the log.
     s += "function " + g + ".SeekAside(id, q, text, what)\n";
     s += "\tif text == nil or text == \"\" then return end\n";
     s += "\tif " + g + ".active or " + g + ".InDialog() then\n";
@@ -15632,7 +15766,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tor command == \"cursed\" or command == \"cured\" or command == \"near\" or command == \"directed\"\n";
     s += "\t\t\tor command == \"ambushed\" or command == \"keepsake\" or command == \"keepsake_gone\"\n";
     s += "\t\t\tor command == \"rebuffed\" or command == \"letin\" or command == \"keyed\" or command == \"chest\"\n";
-    s += "\t\t\tor command == \"denounced\" then return end\n";
+    s += "\t\t\tor command == \"denounced\" or command == \"paper\" or command == \"paper_gone\" or command == \"paper_read\" then return end\n";
     // Which complete: the one whose journal line says how the thing was won, when the
     // graph has a port for it. how is set at the handover; a complete with no handover
     // behind it is the player having got the thing some other way, which is stolen. A

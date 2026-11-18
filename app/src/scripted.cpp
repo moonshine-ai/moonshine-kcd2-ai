@@ -137,6 +137,7 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.ambushed = at->second.find('m') != std::string::npos;
         facts.onward = at->second.find('w') != std::string::npos;
         facts.keepsake = at->second.find('e') != std::string::npos;
+        facts.paper = at->second.find('j') != std::string::npos;
         facts.rebuffed = at->second.find('n') != std::string::npos;
         facts.named = at->second.find('a') != std::string::npos;
         facts.letin = at->second.find('i') != std::string::npos;
@@ -269,6 +270,37 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
         out.pry_yes = quest.pry_yes;
         out.pry_no = quest.pry_no;
         out.pry_factor = quest.difficulty == "hard" ? 1.5 : quest.difficulty == "easy" ? 1.0 : 1.25;
+        // With a pressing row written, the plain question is refused and the pressing row
+        // carries the check (Quest::pry_press).
+        if (!quest.pry_press.empty() && !quest.pry_press_no.empty()) {
+            out.pry_press_row = quest.pry_press;
+            out.pry_press_no = quest.pry_press_no;
+        }
+    }
+    // The writer's question back at the hand-in, and Henry's three answers (Quest::opinion):
+    // put after the thanks when the errand is brought home. Written for the giver done or
+    // not: the hand-in's answer settles the errand as done before the rows are picked
+    // (Session::answer_scripted settles, then adopts the plan for the done errand, and the
+    // picked row is answered from that). All three rows and their replies, or nothing.
+    if (giver && !facts.voided && !quest.opinion.empty()) {
+        bool whole = true;
+        for (int i = 0; i < 3; ++i) {
+            whole = whole && !quest.opinion_row[i].empty() && !quest.opinion_reply[i].empty();
+        }
+        if (whole) {
+            out.opinion_ask = quest.opinion;
+            for (int i = 0; i < 3; ++i) {
+                out.opinion_rows[i] = quest.opinion_row[i];
+                out.opinion_replies[i] = quest.opinion_reply[i];
+            }
+        }
+    }
+    // The chest's paper in Henry's pocket (QuestFacts::paper), while the errand is open:
+    // his row about it at the giver, and the giver's answer (Quest::paper_ask).
+    if (giver && facts.accepted && !facts.done && !facts.locked && facts.paper && !quest.paper_ask.empty() &&
+        !quest.paper_ask_reply.empty()) {
+        out.paper_row = quest.paper_ask;
+        out.paper_reply = quest.paper_ask_reply;
     }
     // Taken up and not yet brought home, the opening round's offer of help is the wrong
     // question from the man who said he would; he may ask to be reminded instead, and is

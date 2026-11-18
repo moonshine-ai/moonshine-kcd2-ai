@@ -2656,6 +2656,231 @@ TEST_CASE("a letter's writer may be asked what is in it, and answers by Henry's 
     }
 }
 
+TEST_CASE("with a pressing row written, the pry is refused outright and the pressing row carries the check") {
+    // bugs.txt 18 Nov 2026 (Holy Jest): "What's in the letter?" should get a flat refusal,
+    // and the real answer should take a second row worded as persuasion, on the speech
+    // check. The plain question lays the pressing row; the pressing row is weighed.
+    auto writer_of = [](Fixture& f) {
+        f.session.set_persona_source(
+            [](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+                -> std::optional<Persona> {
+                QuestFacts facts = standing_of(record).facts_of("1b754e7e1163");
+                if (!facts.done) facts.accepted = true;
+                Persona persona = written_bartel(first_meeting(), facts);
+                persona.quest_of.id = "1b754e7e1163";
+                persona.quest_of.kind = "deliver";
+                persona.quest_of.difficulty = "medium";
+                persona.quest_of.item_class = "8391c83b-f6e6-5bb0-868f-fbeb43852b6b";
+                persona.quest_of.item_name = "letter";
+                persona.quest_of.target_name = "Brother Thomas";
+                persona.quest_of.pry = "What's in the letter, Benesh?";
+                persona.quest_of.pry_yes = "Lord forgive me. It asks whether a priest may jest at mass.";
+                persona.quest_of.pry_no = "A matter of church law, for the Abbot's eyes and nobody else's.";
+                persona.quest_of.pry_press = "Come now. I'm carrying it; I've a right to know what I'm carrying.";
+                persona.quest_of.pry_press_no = "You have a right to the road and the coin at the end of it. Nothing more.";
+                persona.quest = plan_quest(persona.quest_of, facts, approach);
+                persona.scripted = plan_scripted("Bartel. I dig where I'm told.", {}, {}, persona.quest_of, facts,
+                                                 first_meeting());
+                return persona;
+            });
+    };
+    auto row_of = [](Fixture& f, std::string_view intent) {
+        int at = 0;
+        for (std::size_t i = 0; i < f.offered.size(); ++i) {
+            if (f.offered[i].intent == intent) at = static_cast<int>(i) + 1;
+        }
+        return at;
+    };
+    SUBCASE("the plain question is refused with no check, and the pressing row follows; won, the matter") {
+        Fixture f(false);
+        writer_of(f);
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.game.begin_with(kBartel, " spc=15 nspc=10 have=1");
+        f.drain(tailer);
+        f.play_all(tailer);
+        const int pry = row_of(f, "pry");
+        REQUIRE(pry > 0);
+        CHECK(row_of(f, "pry_press") == 0);
+        f.game.picked(pry, "pry", "What's in the letter, Benesh?");
+        f.drain(tailer);
+        CHECK(f.said("picked as pry, answered with a refusal; the pressing row is laid as written"));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == "A matter of church law, for the Abbot's eyes and nobody else's.");
+        for (const std::string& directive : f.game.directives()) CHECK(directive.find("@check") != 0);
+        const int press = row_of(f, "pry_press");
+        REQUIRE(press > 0);
+        bool on_menu = false;
+        for (const std::string& row : f.game.menu()) {
+            on_menu = on_menu || row == "Come now. I'm carrying it; I've a right to know what I'm carrying.";
+        }
+        CHECK(on_menu);
+        f.game.picked(press, "pry_press", "Come now. I'm carrying it; I've a right to know what I'm carrying.");
+        f.drain(tailer);
+        CHECK(f.said("picked as pry_press, answered with the letter's matter, told after a speech check won (speech 15 against 10) as written"));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == "Lord forgive me. It asks whether a priest may jest at mass.");
+        bool told = false;
+        for (const std::string& directive : f.game.directives()) told = told || directive == "@check speech pass";
+        CHECK(told);
+        // Neither row comes back.
+        for (const std::string& row : f.game.menu()) {
+            CHECK(row != "What's in the letter, Benesh?");
+            CHECK(row != "Come now. I'm carrying it; I've a right to know what I'm carrying.");
+        }
+    }
+    SUBCASE("lost, the pressing row gets the second refusal") {
+        Fixture f(false);
+        writer_of(f);
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.game.begin_with(kBartel, " spc=12 nspc=10 have=1");
+        f.drain(tailer);
+        f.play_all(tailer);
+        f.game.picked(row_of(f, "pry"), "pry", "What's in the letter, Benesh?");
+        f.drain(tailer);
+        f.play_all(tailer);
+        const int press = row_of(f, "pry_press");
+        REQUIRE(press > 0);
+        f.game.picked(press, "pry_press", "Come now. I'm carrying it; I've a right to know what I'm carrying.");
+        f.drain(tailer);
+        CHECK(f.said("picked as pry_press, answered with a refusal, the speech check lost (speech 12 against 10) as written"));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content ==
+              "You have a right to the road and the coin at the end of it. Nothing more.");
+        bool told = false;
+        for (const std::string& directive : f.game.directives()) told = told || directive == "@check speech fail";
+        CHECK(told);
+    }
+}
+
+TEST_CASE("a writer with a question back asks it with the thanks, and Henry's answer closes the conversation") {
+    // bugs.txt 18 Nov 2026 (Holy Jest): once Henry brings the monk's answer home, Benesh
+    // should ask what Henry thinks, with three replies, and answer each in character. The
+    // question rides on the hand-in's thanks, the three rows are the next list, and the
+    // writer's reply to the one picked is the last word.
+    Fixture f(false);
+    f.session.set_persona_source(
+        [](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+            -> std::optional<Persona> {
+            QuestFacts facts = standing_of(record).facts_of("1b754e7e1163");
+            if (!facts.done) {
+                facts.accepted = true;
+                facts.handed = true;
+            }
+            Persona persona = written_bartel(first_meeting(), facts);
+            persona.quest_of.id = "1b754e7e1163";
+            persona.quest_of.kind = "deliver";
+            persona.quest_of.item_class = "8391c83b-f6e6-5bb0-868f-fbeb43852b6b";
+            persona.quest_of.item_name = "letter";
+            persona.quest_of.target_name = "Brother Thomas";
+            persona.quest_of.greet_handed = "You're back. Well? What did Brother Thomas say?";
+            persona.quest_of.told = "He won't trouble the Abbot. He says a man who never makes others laugh sins by defect.";
+            persona.quest_of.told_reply = "Sins by defect? Well. Here is your coin.";
+            persona.quest_of.opinion = "And you, Henry? What do you make of it?";
+            persona.quest_of.opinion_row[0] = "I think God likes laughter.";
+            persona.quest_of.opinion_reply[0] = "Does He. Then He has a strange way of showing it.";
+            persona.quest_of.opinion_row[1] = "You're right. Frivolity has no place in a sermon.";
+            persona.quest_of.opinion_reply[1] = "At last, a man of sense. Thank you, Henry.";
+            persona.quest_of.opinion_row[2] = "I don't know.";
+            persona.quest_of.opinion_reply[2] = "No. Nor do I, any more.";
+            persona.quest = plan_quest(persona.quest_of, facts, approach);
+            persona.scripted = plan_scripted("Bartel. I dig where I'm told.", {}, {}, persona.quest_of, facts,
+                                             first_meeting());
+            return persona;
+        });
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.llm.replies = {""};
+    f.game.begin_with(kBartel, " spc=15 nspc=10 have=0");
+    f.drain(tailer);
+    f.play_all(tailer);
+    int report = 0;
+    for (std::size_t i = 0; i < f.offered.size(); ++i) {
+        if (f.offered[i].intent == "report") report = static_cast<int>(i) + 1;
+    }
+    REQUIRE(report > 0);
+    f.game.picked(report, "report", "He won't trouble the Abbot. He says a man who never makes others laugh sins by defect.");
+    f.drain(tailer);
+    REQUIRE(f.recorded.size() == 1);
+    CHECK(f.recorded[0].second == kQuestComplete);
+    f.play_all(tailer);
+    // The thanks, then the question, in one reply; and the three answers, not the close.
+    CHECK(f.session.history().back().content ==
+          "Sins by defect? Well. Here is your coin.\n\nAnd you, Henry? What do you make of it?");
+    CHECK_FALSE(f.game.directives().back() == "@end");
+    REQUIRE(f.game.menu().size() == 3);
+    CHECK(f.game.menu()[0] == "I think God likes laughter.");
+    CHECK(f.game.menu()[1] == "You're right. Frivolity has no place in a sermon.");
+    CHECK(f.game.menu()[2] == "I don't know.");
+    f.game.picked(1, "opinion_1", "I think God likes laughter.");
+    f.drain(tailer);
+    CHECK(f.said("picked as opinion_1, answered with the writer's answer to what Henry thinks as written"));
+    f.play_all(tailer);
+    CHECK(f.session.history().back().content == "Does He. Then He has a strange way of showing it.");
+    CHECK(f.game.directives().back() == "@end");
+    // Every word of it written: the model was never asked.
+    CHECK(f.llm.calls.empty());
+}
+
+TEST_CASE("the chest's paper in Henry's pocket is a row at the giver, answered as written, while the errand is open") {
+    // bugs.txt 18 Nov 2026 (In the Stocks): with the list of names on him, Henry should be
+    // able to ask Benesh about it, and Benesh will only say Paul drinks with the guards.
+    // The mod's flag j says the paper is in his pocket; the row is laid on it.
+    auto giver_of = [](Fixture& f, bool carrying) {
+        f.session.set_persona_source(
+            [carrying](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+                Persona persona{"Bartel", "You are Bartel, a varlet in Kuttenberg.", "What do you want?"};
+                Quest quest = bartels_axe();
+                quest.greet_owed = "Any luck with Julian?";
+                quest.paper_ask = "I found a sheet of names in Julian's chest. The church watch, by the night.";
+                quest.paper_ask_reply = "The watch? Julian drinks with the guards, that's all I know of it.";
+                QuestFacts facts;
+                facts.accepted = true;
+                facts.paper = carrying;
+                persona.quest_of = quest;
+                persona.quest = plan_quest(quest, facts, {});
+                persona.scripted = plan_scripted("Bartel. I dig where I'm told.", {}, {}, quest, facts, {}, {}, {}, {}, "");
+                return persona;
+            });
+    };
+    SUBCASE("carried: the row is laid, and the answer is the written one") {
+        Fixture f;
+        giver_of(f, true);
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.open(tailer);
+        f.play_all(tailer);
+        int at = 0;
+        for (std::size_t i = 0; i < f.offered.size(); ++i) {
+            if (f.offered[i].intent == "paper") at = static_cast<int>(i) + 1;
+        }
+        REQUIRE(at > 0);
+        CHECK(f.game.menu()[static_cast<std::size_t>(at) - 1] ==
+              "I found a sheet of names in Julian's chest. The church watch, by the night.");
+        const std::size_t calls = f.llm.calls.size();
+        f.game.picked(at, "paper", "I found a sheet of names in Julian's chest. The church watch, by the night.");
+        f.drain(tailer);
+        CHECK(f.said("picked as paper, answered with the giver's word on the paper as written"));
+        CHECK(f.llm.calls.size() == calls);
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == "The watch? Julian drinks with the guards, that's all I know of it.");
+        // Once a visit.
+        for (const std::string& row : f.game.menu()) {
+            CHECK(row != "I found a sheet of names in Julian's chest. The church watch, by the night.");
+        }
+    }
+    SUBCASE("not carried: no row") {
+        Fixture f;
+        giver_of(f, false);
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.open(tailer);
+        f.play_all(tailer);
+        for (const MenuOption& row : f.offered) CHECK(row.intent != "paper");
+    }
+}
+
 TEST_CASE("a letter's writer may be asked what is in it before Henry agrees to carry it") {
     // notes.md (9 Oct 2026, Holy Jest): the pry is not gated on holding the letter. From
     // the offer on, the row is laid under the accepting row; asked, it is answered on the

@@ -255,6 +255,7 @@
       api_model: $('set-api-model').value.trim(),
       api_extra: $('set-api-extra').value.trim(),
       api_guessing: $('set-api-guessing').checked,
+      experimental_quests: $('set-experimental').checked,
       args: $('set-args').value.trim(),
     };
   }
@@ -280,6 +281,7 @@
     $('set-api-model').value = set.api_model;
     $('set-api-extra').value = set.api_extra;
     $('set-api-guessing').checked = set.api_guessing;
+    $('set-experimental').checked = set.experimental_quests;
     $('set-args').value = set.args;
     $('set-api-key').value = '';
     removeKey = false;

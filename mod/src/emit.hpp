@@ -76,6 +76,11 @@ std::string taken_name(const Quest& quest);
 // localisation key.
 std::string paper_class(const Quest& quest);
 std::string paper_name(const Quest& quest);
+// The paper's read token (Quest::has_paper_read): made in Henry's pocket by the graph as he
+// closes the paper (UseBookTrigger.OnClosed -> CreateItems), the one word the graph has for
+// the Lua, which finds it on the watch and says his line (read_q_<id>).
+std::string read_class(const Quest& quest);
+std::string read_name(const Quest& quest);
 // A dictated letter's Documents (Quest::has_dictation): one class per combination of the
 // parts' outcomes, the three digits spelt into the guid between a fixed prefix and a
 // suffix from the quest id, so the Lua builds the class from the store's digits with no
@@ -817,6 +822,10 @@ static_assert(sizeof kSeekKittenWobble / sizeof kSeekKittenWobble[0] == sizeof k
 // spot too far out to place at, a load that wiped it) laid again from the watch once Henry
 // is within kKeepsakeMetres of the spot without it.
 constexpr double kKeepsakeMetres = 120.0;
+// And Henry's word that he has come to the patch (Quest::arrived), once he is within
+// this of the spot: close enough to see the flowers, far enough that it is said as he
+// walks up rather than as he stoops.
+constexpr double kFindArriveMetres = 15.0;
 // A retrieve's chest (npcdb.hpp chest_pos): spawned from the watch once Henry is within
 // kChestMetres of the spot with the errand on -- the width of a town street or two, so it
 // stands before he can be at the door, and nobody's chest is made in a town he has not

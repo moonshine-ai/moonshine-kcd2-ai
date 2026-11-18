@@ -37,7 +37,7 @@ inline constexpr int kMenuOptions = 4;
 // the offer open; `more_2` is his second, where one was written (quest.h, more_2).
 inline constexpr std::string_view kIntents[] = {
     "help", "accept", "ask", "about", "agree", "decline", "press", "joke", "leave_soon", "farewell",
-    "remind", "more", "more_2", "alms", "pry",
+    "remind", "more", "more_2", "alms", "pry", "pry_press", "paper", "opinion_1", "opinion_2", "opinion_3",
 };
 // Henry's row at a beggar, while he carries something the mod says he could spare
 // (approach.h, alms); picked, it is answered with the rows for what he has -- `alms:money`,
@@ -46,7 +46,12 @@ inline constexpr std::string_view kIntents[] = {
 // game's item selection over Henry's clothes, and puts what the player picks on him.
 inline constexpr std::string_view kAlmsRow = "I've something for you.";
 // `pry` is Henry's row at a letter's writer asking what it says (scripted.h, pry_row),
-// answered as written either way and weighed by the app against the two Speech stats.
+// answered as written either way and weighed by the app against the two Speech stats;
+// `pry_press` is his second go where one is written (scripted.h, pry_press_row), the plain
+// question having been refused, and then it is the one weighed. `paper` is his row at a
+// giver about the sheet out of the holder's chest he carries (scripted.h, paper_row).
+// `opinion_1` .. `opinion_3` are his three answers to the writer's question back at the
+// hand-in (scripted.h, opinion_rows); each closes the conversation on the writer's reply.
 // Henry's row at a giver whose errand he has taken up and not yet finished, in the place of
 // the opening round's offer of help: he has already said he would, and "Is there anything I
 // can help you with?" from a man carrying your purse's errand was the wrong question. The

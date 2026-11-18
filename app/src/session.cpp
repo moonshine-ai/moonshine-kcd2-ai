@@ -226,6 +226,10 @@ void Session::handle(const Event& event) {
             // player skipped was cut in answer (Listener::skipped), ahead of this.
             status("the player skipped the line on turn " + std::to_string(event.turn));
             break;
+        case Marker::SkippedLine:
+            // The game's own voiced Talk: dropped in main.cpp, which has the speaker.
+            status("the player skipped a line of the game's own talk");
+            break;
         case Marker::None:
             break;
     }
@@ -243,6 +247,7 @@ void Session::open(std::string_view soul, const Approach& approach,
     dictating_ = 0;
     wrote_.clear();
     dictation_due_ = false;
+    opinion_round_ = false;
     closing_words_.clear();
     henry_words_.clear();
     pieced_reply_.clear();
@@ -1673,27 +1678,57 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.what = "the offer again, as a reminder";
         }
         out.spent.emplace_back("remind");
-    } else if (intent == "pry") {
+    } else if (intent == "pry" || intent == "pry_press") {
         // What the letter says, out of its writer: a Speech check the app weighs the game's
         // own way (DialogUtils.PersuadeByPlayer: Henry's stat over the writer's by a factor),
         // from the two stats the begin line carried. Either answer is written; the mod is
         // told the result so the game can show its stat-check mark. Unread stats fail it,
         // and the log says so, rather than giving the letter's matter away for nothing.
-        if (!written.pry_row.empty() && once("pry")) {
-            const bool read = approach_.speech >= 0 && approach_.npc_speech > 0;
-            const bool passed = read && approach_.speech > approach_.npc_speech * written.pry_factor;
-            out.reply = passed ? written.pry_yes : written.pry_no;
-            out.what = std::string(passed ? "the letter's matter, told after a speech check won"
-                                          : "a refusal, the speech check lost") +
-                       " (speech " + std::to_string(approach_.speech) + " against " +
-                       std::to_string(approach_.npc_speech) + (read ? "" : ", unread") + ")";
-            out.directives.push_back(passed ? "@check speech pass" : "@check speech fail");
+        // With a pressing row written (bugs.txt 18 Nov 2026, Holy Jest), the plain question
+        // is refused outright and lays the pressing row, worded as persuasion, which is
+        // what carries the check: won, the matter; lost, the writer's second refusal.
+        const bool pressing = intent == "pry_press";
+        const bool two_step = !written.pry_press_row.empty();
+        const std::string& row = pressing ? written.pry_press_row : written.pry_row;
+        if (!row.empty() && once(intent) && (!pressing || !once("pry"))) {
+            if (two_step && !pressing) {
+                out.reply = written.pry_no;
+                out.what = "a refusal; the pressing row is laid";
+                out.next.push_back({0, "pry_press", written.pry_press_row});
+            } else {
+                const bool read = approach_.speech >= 0 && approach_.npc_speech > 0;
+                const bool passed = read && approach_.speech > approach_.npc_speech * written.pry_factor;
+                out.reply = passed ? written.pry_yes : pressing ? written.pry_press_no : written.pry_no;
+                out.what = std::string(passed ? "the letter's matter, told after a speech check won"
+                                              : "a refusal, the speech check lost") +
+                           " (speech " + std::to_string(approach_.speech) + " against " +
+                           std::to_string(approach_.npc_speech) + (read ? "" : ", unread") + ")";
+                out.directives.push_back(passed ? "@check speech pass" : "@check speech fail");
+            }
             // Asked before agreeing, it settles nothing: the accepting row is laid again.
             if (!persona_.quest.question.empty() && !written.accept_row.empty()) {
                 out.next.push_back({0, "accept", written.accept_row});
             }
         }
-        out.spent.emplace_back("pry");
+        out.spent.emplace_back(intent);
+    } else if (intent == "paper") {
+        // The sheet out of the holder's chest, put to the giver (Scripted::paper_row): his
+        // written answer, once a conversation, settling nothing.
+        if (!written.paper_row.empty() && once("paper")) {
+            out.reply = written.paper_reply;
+            out.what = "the giver's word on the paper";
+        }
+        out.spent.emplace_back("paper");
+    } else if (intent == "opinion_1" || intent == "opinion_2" || intent == "opinion_3") {
+        // Henry's answer to the writer's question back (Scripted::opinion_ask), and the
+        // writer's last word on it: the conversation closes, as it would have on the thanks.
+        const int k = intent.back() - '1';
+        if (!written.opinion_rows[k].empty() && once("opinion")) {
+            out.reply = written.opinion_replies[k];
+            out.what = "the writer's answer to what Henry thinks";
+            out.closes = true;
+        }
+        out.spent.emplace_back("opinion");
     } else if (intent == "about") {
         if (!written.about.empty() && once("about")) {
             out.reply = written.about;
@@ -1912,8 +1947,28 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
     }
     // An errand ended with nothing to lead on to closes the conversation on the giver's
     // answer, as taking one up does (notes.md 23 Oct 2026: Christine thanked Henry for the
-    // prayer and the menu stood there). Whatever else they have to say is a fresh talk.
-    if (ending && ending->ended && !ending->leads_on) closing_ = true;
+    // prayer and the menu stood there). Whatever else they have to say is a fresh talk --
+    // unless the giver has a question back (Scripted::opinion_ask; bugs.txt 18 Nov 2026,
+    // Holy Jest: Benesh asks what Henry thinks): put with the thanks, Henry's three
+    // answers the next list, and the conversation closes on the writer's reply to the one
+    // picked. On the plain complete only: a lie or a keeping is no moment to ask.
+    const Scripted& written = persona_.scripted;
+    if (ending && ending->ended && !ending->leads_on) {
+        const bool asks = !written.opinion_ask.empty() && intent == "report" &&
+                          std::find(found->commands.begin(), found->commands.end(), kQuestComplete) !=
+                              found->commands.end() &&
+                          std::find(told_.begin(), told_.end(), "opinion") == told_.end();
+        if (asks) {
+            reply += "\n\n" + written.opinion_ask;
+            found->next.clear();
+            for (int k = 0; k < 3; ++k) {
+                found->next.push_back({0, "opinion_" + std::to_string(k + 1), written.opinion_rows[k]});
+            }
+            opinion_round_ = true;
+        } else {
+            closing_ = true;
+        }
+    }
     if (!say_written(said, reply, remember, heard)) return true;
     // The offer said is the ask put, for a later line that offers help again.
     if (found->what == "the offer" && !drew_.empty()) {
@@ -2069,6 +2124,11 @@ std::vector<MenuOption> Session::written_fill(bool first_round, int room) {
         if (!written.more_2_row.empty() && !spent("more_2")) take("more_2", written.more_2_row);
         if (!written.pry_row.empty() && !spent("pry")) take("pry", written.pry_row);
     }
+    // The pry's pressing row, once the plain question has been refused and until it is
+    // pressed (Scripted::pry_press_row), whatever else was picked between.
+    if (!written.pry_press_row.empty() && spent("pry") && !spent("pry_press")) {
+        take("pry_press", written.pry_press_row);
+    }
     // At a beggar, the row that gives, on every round while something is left to give: a
     // man begging is why the player stopped, and the gift should not wait on a second list.
     bool giving = false;
@@ -2178,6 +2238,15 @@ void Session::offer() {
     std::vector<MenuOption> preset = std::move(preset_);
     preset_.clear();
     if (static_cast<int>(preset.size()) > kMenuOptions) preset.resize(kMenuOptions);
+    // The writer's question back (opinion_round_): Henry's three answers and nothing else,
+    // closed as a dictation's round is.
+    if (opinion_round_) {
+        opinion_round_ = false;
+        add(std::move(preset));
+        send(/*closed=*/true);
+        status("offered the " + std::to_string(rows_.size()) + " answers to the question back");
+        return;
+    }
     // The dictation due and not begun (the errand taken up on a yes the judge read): the row
     // that picks it up goes first, unless the plan laid it already.
     if (dictation_due_ && std::find(told_.begin(), told_.end(), kDictateIntent) == told_.end() &&
@@ -2241,6 +2310,13 @@ void Session::offer() {
         std::find(told_.begin(), told_.end(), "pry") == told_.end() &&
         static_cast<int>(rows_.size()) < room) {
         add({{0, "pry", persona_.scripted.pry_row}});
+    }
+    // The chest's paper in Henry's pocket, put to the giver (Scripted::paper_row): on the
+    // list while the errand is open and it is unasked this visit.
+    if (!persona_.scripted.paper_row.empty() &&
+        std::find(told_.begin(), told_.end(), "paper") == told_.end() &&
+        static_cast<int>(rows_.size()) < room) {
+        add({{0, "paper", persona_.scripted.paper_row}});
     }
     if (first_round) {
         // On a list the errand's rows would crowd off, the seeds give way from the end,

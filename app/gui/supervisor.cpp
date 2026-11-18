@@ -98,6 +98,7 @@ std::vector<std::string> common_arguments(const Paths& paths, const Settings& se
         if (settings.api_guessing) args.push_back("--guessing");
     }
     if (!settings.mic) args.push_back("--no-mic");
+    if (settings.experimental_quests) args.push_back("--all-quests");
     // Last, so that what somebody wrote by hand in moonshine.cfg has the final word.
     for (std::string& arg : split_args(settings.args)) args.push_back(std::move(arg));
     return args;

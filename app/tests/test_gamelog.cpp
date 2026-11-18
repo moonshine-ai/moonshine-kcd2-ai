@@ -36,6 +36,10 @@ TEST_CASE("the markers the mod prints are recognised in the lines it prints them
     CHECK(skipped.marker == Marker::Skipped);
     CHECK(skipped.turn == 9);
     CHECK(classify("BRIDGE skipped turn=").marker == Marker::None);
+    // The same tap in a voiced Talk of the game's own: one line, no turn.
+    const Event skipped_line = classify("<12:05:03> [moonshine_names] BRIDGE skipped line");
+    CHECK(skipped_line.marker == Marker::SkippedLine);
+    CHECK(skipped_line.turn == 0);
 }
 
 TEST_CASE("the say slot going live and stopping are markers, with how and the mod's reason") {
@@ -339,6 +343,15 @@ TEST_CASE("a hook the game ran is a marker with its number and its words, and is
     Event none = classify("<12:04:36> BRIDGE switches off=");
     CHECK(none.marker == Marker::Switches);
     CHECK(none.said.empty());
+    CHECK_FALSE(switches.all_quests.has_value());
+    // With the all= flag of the experimental-quests setting: the list is still the list,
+    // empty or not, and the flag is read.
+    Event all = classify("<12:04:36> [moonshine_names] BRIDGE switches off=a1b2 all=1");
+    CHECK(all.said == "a1b2");
+    CHECK(all.all_quests == true);
+    Event nothing_off = classify("<12:04:36> [moonshine_names] BRIDGE switches off= all=0");
+    CHECK(nothing_off.said.empty());
+    CHECK(nothing_off.all_quests == false);
 
     FakeGame game;
     CHECK(run_counts(game.log()).hooked == 0);

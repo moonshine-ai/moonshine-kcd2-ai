@@ -551,6 +551,7 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "log_abandoned") return &q.log_abandoned;
         if (field == "chest_pos") return &q.chest_pos;
         if (field == "chest_paper") return &q.chest_paper;
+        if (field == "chest_paper_read") return &q.chest_paper_read;
         if (field == "chest_paper_name") return &q.chest_paper_name;
         if (field == "helper_soul") return &q.helper_soul;
         if (field == "helper_name") return &q.helper_name;
@@ -605,6 +606,7 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "spot_lift") return &q.spot_lift;
         if (field == "spotted") return &q.spotted;
         if (field == "discovered") return &q.discovered;
+        if (field == "arrived") return &q.arrived;
         if (field == "check") return &q.target_check;
         if (field == "check_reply_1") return &q.target_check_reply[0];
         if (field == "check_reply_2") return &q.target_check_reply[1];

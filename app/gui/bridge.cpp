@@ -59,7 +59,7 @@ json settings_json(const Settings& s) {
     return {{"root", s.root},           {"args", s.args},           {"mic", s.mic},
             {"launch_game", s.launch_game}, {"autostart", s.autostart}, {"api", s.api},
             {"api_url", s.api_url},     {"api_model", s.api_model}, {"api_extra", s.api_extra},
-            {"api_guessing", s.api_guessing}};
+            {"api_guessing", s.api_guessing}, {"experimental_quests", s.experimental_quests}};
 }
 
 // The settings the page sent, over the ones in force: a field it did not send is left as
@@ -83,6 +83,7 @@ Settings settings_from(const json& in, Settings s) {
     text("api_model", s.api_model);
     text("api_extra", s.api_extra);
     flag("api_guessing", s.api_guessing);
+    flag("experimental_quests", s.experimental_quests);
     return s;
 }
 

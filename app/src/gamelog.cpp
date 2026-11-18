@@ -17,6 +17,8 @@ constexpr std::string_view kLook = "BRIDGE look npc=";
 constexpr std::string_view kLeft = "BRIDGE left";
 constexpr std::string_view kPlayed = "BRIDGE played turn=";
 constexpr std::string_view kSkipped = "BRIDGE skipped turn=";
+// The same tap in a voiced Talk of the game's own (Marker::SkippedLine).
+constexpr std::string_view kSkippedLine = "BRIDGE skipped line";
 constexpr std::string_view kSaid = "BRIDGE said ";
 constexpr std::string_view kVoice = "BRIDGE voice ";
 constexpr std::string_view kLoaded = "BRIDGE state loaded";
@@ -204,6 +206,9 @@ Event classify(std::string_view line) {
     if (line.find(kLeft) != std::string_view::npos) {
         return {Marker::Left, 0, {}};
     }
+    if (line.find(kSkippedLine) != std::string_view::npos) {
+        return {Marker::SkippedLine, 0, {}};
+    }
     // The say slot: "voice" or "typed" after the start; bare is an older mod's, and voice.
     if (const std::size_t at = line.find(kSayStart); at != std::string_view::npos) {
         Event event{Marker::SayStart, 0, {}};
@@ -237,7 +242,16 @@ Event classify(std::string_view line) {
     // "BRIDGE switches off=a,b": the quests the save has off.
     if (const std::size_t at = line.find(kSwitches); at != std::string_view::npos) {
         Event event{Marker::Switches, 0, {}};
-        event.said = field_from(line.substr(at), "off=");
+        // Not field_from, which skips spaces after the key and would read " all=0" as the
+        // list when it is empty.
+        const std::string_view rest = line.substr(at);
+        if (const std::size_t off = rest.find("off="); off != std::string_view::npos) {
+            const std::string_view list = rest.substr(off + 4);
+            event.said = std::string(trim(list.substr(0, list.find(' '))));
+        }
+        const std::string all = field_from(rest, "all=");
+        if (all == "1") event.all_quests = true;
+        else if (all == "0") event.all_quests = false;
         return event;
     }
     // "BRIDGE console line /goto 21": typed at the game's console, for the app to answer.

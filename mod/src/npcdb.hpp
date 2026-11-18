@@ -490,6 +490,12 @@ struct Quest {
     double chest_lock = 0.9;
     std::string chest_paper;
     std::string chest_paper_name;
+    // Henry to himself as he puts the paper away after reading it (npc_quest_lines
+    // "chest_paper_read"; bugs.txt 18 Nov 2026: "Strange, why does Paul have the watch
+    // shifts?"): the graph's UseBookTrigger on the paper's class makes a token of the
+    // quest's read class in his pocket as he closes it, the watch finds the token and says
+    // the line in his voice, once (WatchChest, SelfTalk). Optional.
+    std::string chest_paper_read;
     // The one who can let Henry in (npc_quest_lines "helper_soul", "helper_name"): a soul
     // of the holder's household with a menu of their own (q_<id>_helper.xml, under a role
     // of their own), opened once the giver has named them -- the app's `named` directive
@@ -626,6 +632,11 @@ struct Quest {
     std::string keepsake_class;
     std::string keepsake_name;
     std::string giver_thanks_keepsake;
+    // Henry to himself as he comes to the patch (npc_quest_lines "arrived"; bugs.txt
+    // 18 Nov 2026, *Forget Me Not*: "This looks like the place"): said once, in his voice
+    // and as a bark of his own, within kFindArriveMetres of the spot with the errand on
+    // (WatchKeepsake, SelfTalk). Optional.
+    std::string arrived;
     // An ambush (kind "ambush", quest-design/set-aside-stories.md §5): the target is spoken
     // to, and his menu has three stages, gated by a dialogue global the Lua keeps from the
     // store (0 before, 1 directed, 2 ambushed). First Henry says who sent him (`direct`) and
@@ -770,6 +781,8 @@ struct Quest {
     bool has_chest() const { return is_retrieve() && has_item() && !chest_pos.empty(); }
     // A paper laid in the chest beside the thing (chest_paper).
     bool has_paper() const { return has_chest() && !chest_paper.empty(); }
+    // And Henry's word on reading it.
+    bool has_paper_read() const { return has_paper() && !chest_paper_read.empty(); }
     // The one who can let Henry in: an unyielding retrieve with the helper's soul, the
     // door row and the journal's lines for the naming written.
     bool has_helper() const {

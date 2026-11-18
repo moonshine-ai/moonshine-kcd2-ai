@@ -108,6 +108,17 @@ struct Quest {
     // Speech stats on the begin line (approach.h) at the quest's difficulty. Empty for a
     // writer who would tell nobody, and then no row.
     std::string pry, pry_yes, pry_no;
+    // A second step to the pry (bugs.txt 18 Nov 2026, Holy Jest): with `pry_press` written,
+    // the plain question is refused outright (`pry_no`) and Henry's pressing row (`pry_press`,
+    // worded as persuasion) is what carries the Speech check -- won, `pry_yes`; lost,
+    // `pry_press_no`. Without it the plain question carries the check, as it did.
+    std::string pry_press, pry_press_no;
+    // The writer's question back once the answer is brought home (bugs.txt 18 Nov 2026,
+    // Holy Jest: Benesh asks what Henry thinks): `opinion` is put after the hand-in's
+    // thanks, Henry's three rows are `opinion_1` .. `opinion_3`, and the writer's answer to
+    // each `opinion_<k>_reply`; the conversation closes on the answer. Empty for no question.
+    std::string opinion;
+    std::string opinion_row[3], opinion_reply[3];
     // The letter back from the receiver (notes.md 9 Oct 2026, Holy Jest): the writer asks
     // what was said (`greet_handed`, his opening line with the letter delivered), and
     // Henry's three answers -- the truth (`told`; `report` serves when it is empty, and
@@ -218,6 +229,11 @@ struct Quest {
     // be talked round.
     bool unyielding = false;
     std::string helper_name, greet_rebuffed, named_row, named_reply;
+    // The sheet in the holder's chest, in Henry's pocket (QuestFacts::paper, the mod's flag j;
+    // bugs.txt 18 Nov 2026, In the Stocks' list of names): Henry's row putting it to the
+    // giver (`paper_ask`) and the giver's answer (`paper_ask_reply`), while the errand is
+    // open. Empty for a chest with no paper, or nothing written about it.
+    std::string paper_ask, paper_ask_reply;
     // An unyielding holder who can be caught where he should not be at night (npc_quest_lines
     // `seen_with`, `seen_with_name`; Words Must Not Fail's priest in the housekeeper's bed,
     // notes.md 21 Oct 2026): the mod's Watch notes the catching as QuestFacts::seen (flag s,
@@ -428,6 +444,9 @@ struct QuestFacts {
     // A find's keepsake is in Henry's pocket (flag e): the giver's thanks at the hand-in are
     // `thanks_keepsake`. The mod's Watch sets and clears it.
     bool keepsake = false;
+    // A chest's paper is in Henry's pocket (flag j): the giver may be asked about it
+    // (Quest::paper_ask). The mod's Watch sets and clears it.
+    bool paper = false;
     // An unyielding holder's retrieve: the holder has refused Henry to his face (flag n), the
     // giver has named the one who keeps the holder's house (a), she has let Henry in by day
     // for his money (i), and she has stolen him the chest's key (q). The giver's rows turn

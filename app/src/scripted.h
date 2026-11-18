@@ -241,6 +241,18 @@ struct Scripted {
     // goes to the mod as `@check speech pass|fail` for the game's own stat-check mark.
     std::string pry_row, pry_yes, pry_no;
     double pry_factor = 1.25;
+    // The pry in two steps (Quest::pry_press): the plain question refused, and this row,
+    // worded as persuasion, carrying the check -- `pry_yes` won, `pry_press_no` lost. Empty
+    // for a pry that is one question.
+    std::string pry_press_row, pry_press_no;
+    // The writer's question back after the thanks at the hand-in, Henry's three rows and the
+    // writer's answer to each (Quest::opinion); the answer closes the conversation. Empty
+    // for a giver with no question.
+    std::string opinion_ask;
+    std::string opinion_rows[3], opinion_replies[3];
+    // Henry's row about the chest's paper he carries, and the giver's answer (Quest::
+    // paper_ask); only while the paper is in his pocket and the errand open.
+    std::string paper_row, paper_reply;
     // What `ask` may open, at the trust the save allows, in the generator's order.
     std::vector<Topic> topics;
     // Henry's remarks with their answers, in the generator's order, each a row on its own.

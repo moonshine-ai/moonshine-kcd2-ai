@@ -43,6 +43,8 @@ TEST_CASE("settings: a file nobody has written is the defaults") {
     CHECK(s.autostart);
     CHECK_FALSE(s.api);
     CHECK_FALSE(s.api_guessing);
+    // The unfinished quests are off until asked for.
+    CHECK_FALSE(s.experimental_quests);
     CHECK(s == Settings{});
 }
 
@@ -68,6 +70,7 @@ TEST_CASE("settings: the model, the switches, and the last line for a key winnin
         "api_model = some-model\n"
         "api_extra = {\"reasoning_effort\": \"low\"}\n"
         "api_guessing = true\n"
+        "experimental_quests = on\n"
         "api_model = the-later-one\n");
     CHECK_FALSE(s.mic);
     CHECK_FALSE(s.launch_game);
@@ -77,6 +80,7 @@ TEST_CASE("settings: the model, the switches, and the last line for a key winnin
     CHECK(s.api_model == "the-later-one");
     CHECK(s.api_extra == "{\"reasoning_effort\": \"low\"}");
     CHECK(s.api_guessing);
+    CHECK(s.experimental_quests);
 }
 
 TEST_CASE("settings: a switch that says neither yes nor no is left as it was") {

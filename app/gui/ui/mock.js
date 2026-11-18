@@ -38,7 +38,7 @@
                 voice: false, ear: false, game_log: false, error: '' },
       check: { state: 'done', ready: true, game_root: items[0].text, error: '', items: JSON.parse(JSON.stringify(items)) },
       settings: { root: '', args: '', mic: true, launch_game: true, autostart: true, api: false, api_url: '',
-                  api_model: '', api_extra: '', api_guessing: false },
+                  api_model: '', api_extra: '', api_guessing: false, experimental_quests: false },
       has_key: false,
       task: { kind: '', running: false, title: '', detail: '', done: 0, total: 0, error: '', result: '', path: '' },
       update: { state: 'current', latest: '0.9.102.28', error: '' },

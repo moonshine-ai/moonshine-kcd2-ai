@@ -319,6 +319,11 @@ TEST_CASE("command: an API's key goes in the environment and nowhere on the comm
 
     settings.api_guessing = true;
     CHECK(has_arg(engine_command(paths, settings, key), "--guessing"));
+    // The experimental quests: the engine's --all-quests, only when asked for.
+    CHECK_FALSE(has_arg(engine_command(paths, settings, key), "--all-quests"));
+    settings.experimental_quests = true;
+    CHECK(has_arg(engine_command(paths, settings, key), "--all-quests"));
+    settings.experimental_quests = false;
 
     // No key is an empty one said out loud: a key in the environment the window was itself
     // started from is not the player's.

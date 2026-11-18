@@ -976,7 +976,9 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
             static constexpr char kLines[] =
                 "SELECT field, text FROM npc_quest_lines WHERE quest_id = ? "
                 "AND field IN ('apologise', 'apologise_yes', 'apologise_no', "
-                "'report', 'keep', 'kept_reply', 'count', 'pry', 'pry_yes', 'pry_no', "
+                "'report', 'keep', 'kept_reply', 'count', 'pry', 'pry_yes', 'pry_no', 'pry_press', 'pry_press_no', "
+                "'opinion', 'opinion_1', 'opinion_2', 'opinion_3', 'opinion_1_reply', 'opinion_2_reply', 'opinion_3_reply', "
+                "'paper_ask', 'paper_ask_reply', "
                 "'greet_handed', 'told', 'told_reply', 'lie_soft', 'lie_soft_reply', 'lie_big', 'lie_big_reply', 'lie_caught', "
                 "'tell', 'lie', 'quiet', 'lie_reply', 'quiet_reply', 'news', "
                 "'fought', 'fought_reply', 'confess', 'dead_reply', 'spot_text', "
@@ -1040,6 +1042,17 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "pry") quest.pry = text_at(row, 1);
                 else if (field == "pry_yes") quest.pry_yes = text_at(row, 1);
                 else if (field == "pry_no") quest.pry_no = text_at(row, 1);
+                else if (field == "pry_press") quest.pry_press = text_at(row, 1);
+                else if (field == "pry_press_no") quest.pry_press_no = text_at(row, 1);
+                else if (field == "opinion") quest.opinion = text_at(row, 1);
+                else if (field == "opinion_1") quest.opinion_row[0] = text_at(row, 1);
+                else if (field == "opinion_2") quest.opinion_row[1] = text_at(row, 1);
+                else if (field == "opinion_3") quest.opinion_row[2] = text_at(row, 1);
+                else if (field == "opinion_1_reply") quest.opinion_reply[0] = text_at(row, 1);
+                else if (field == "opinion_2_reply") quest.opinion_reply[1] = text_at(row, 1);
+                else if (field == "opinion_3_reply") quest.opinion_reply[2] = text_at(row, 1);
+                else if (field == "paper_ask") quest.paper_ask = text_at(row, 1);
+                else if (field == "paper_ask_reply") quest.paper_ask_reply = text_at(row, 1);
                 else if (field == "greet_handed") quest.greet_handed = text_at(row, 1);
                 else if (field == "told") quest.told = text_at(row, 1);
                 else if (field == "told_reply") quest.told_reply = text_at(row, 1);

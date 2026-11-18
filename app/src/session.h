@@ -472,6 +472,10 @@ private:
     bool dictation_due_ = false;
     // The dictation's rows for the part being chosen on; empty when none is.
     std::vector<MenuOption> dictation_rows() const;
+    // The writer's question back has just been put (Scripted::opinion_ask): the next list is
+    // Henry's three answers alone, closed like a dictation's round -- a question asked to
+    // his face is answered, not walked out of -- and the flag is spent on it.
+    bool opinion_round_ = false;
     bool voiced_ = false;
     // The words the conversation closes on, as last written; empty until they are, and
     // again once the mod has been told they were spoken. And Henry's latest words, the

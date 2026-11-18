@@ -1916,6 +1916,33 @@ void Speaker::hush() {
     impl_->drained.notify_all();
 }
 
+void Speaker::hush_line() {
+    bool cut = false;
+    {
+        std::lock_guard<std::mutex> held(impl_->mutex);
+        if (impl_->busy && (impl_->current == Impl::Job::Kind::Say || impl_->handing)) {
+            // The line being heard stops. The epoch moves so that a line whose sound is
+            // still being made is dropped rather than played late; the lines waiting read
+            // the epoch as they start, so they are not touched by it.
+            ++impl_->epoch;
+            impl_->cancel.store(true);
+            cut = true;
+        } else {
+            const auto first = std::find_if(impl_->queue.begin(), impl_->queue.end(),
+                                            [](const Impl::Job& job) {
+                                                return job.kind == Impl::Job::Kind::Say;
+                                            });
+            if (first != impl_->queue.end()) {
+                impl_->queue.erase(first);
+                cut = true;
+            }
+        }
+    }
+    if (!cut) return;
+    impl_->pending.notify_all();
+    impl_->drained.notify_all();
+}
+
 void Speaker::wait() {
     std::unique_lock<std::mutex> held(impl_->mutex);
     impl_->drained.wait(held, [&] { return impl_->queue.empty() && !impl_->busy; });

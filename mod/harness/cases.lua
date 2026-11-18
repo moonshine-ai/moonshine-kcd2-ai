@@ -1218,6 +1218,47 @@ case("Keepsake: a laying that fails is tried again from the watch once Henry is 
     check(#E.ground == 1 and E.ground[1].class == q.keepsake, "one on the ground")
 end)
 
+case("Keepsake: Henry says he has come to the place once, within arriveMetres, in his own voice", function(E, M, check)
+    -- bugs.txt 18 Nov 2026 (Forget Me Not): "This looks like the place" as he comes to the
+    -- marigold patch. The find's own aside (q.arrived), from the keepsake watch: once,
+    -- with the errand on and the keepsake still in the grass, and not over a conversation.
+    local id, q = byName(M, "Forget Me Not")
+    check(q and q.keepsake ~= nil and q.spot ~= nil, "a find with a keepsake and its spot")
+    check(q.arrived ~= nil and q.arrived ~= "" and q.asides ~= nil and q.asides.arrived ~= nil, "the line and its token")
+    M.npc = E.soul(q.giver)
+    -- Before the accept, nothing: the watch is not his yet.
+    player:SetWorldPos({ x = q.spot[1] + 5, y = q.spot[2], z = q.spot[3] })
+    local mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "arrived", mark) == 0, "not said before the errand is taken up")
+    M.QuestCommand(id, "accept")
+    M.npc = nil
+    -- Far off: not yet.
+    player:SetWorldPos({ x = q.spot[1] + M.arriveMetres + 20, y = q.spot[2], z = q.spot[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "arrived", mark) == 0, "not said from " .. (M.arriveMetres + 20) .. "m")
+    check(M.state.quests[id].arrived ~= true, "not in the store")
+    -- Within arriveMetres: said, in his voice, once.
+    player:SetWorldPos({ x = q.spot[1] + M.arriveMetres - 2, y = q.spot[2], z = q.spot[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "arrived", mark) == 1, "said as he comes to the patch")
+    check(E.find("BRIDGE voice henry " .. q.arrived, mark), "in his voice")
+    check(E.find("BRIDGE quest " .. id .. " Henry at the patch", mark), "said in the log")
+    check(M.state.quests[id].arrived == true, "noted in the store")
+    E.advance(4200)
+    check(barked(E, id, "arrived", mark) == 1, "not said again while he stands there")
+    -- And not again after a save and a load: the store has it.
+    local text = E.save()
+    local ok = E.load(text)
+    check(ok, "loaded")
+    player:SetWorldPos({ x = q.spot[1] + 3, y = q.spot[2], z = q.spot[3] })
+    mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "arrived", mark) == 0, "not said again after a load")
+end)
+
 case("Keepsake: a load that wiped the placed item clears laid so the watch can try again", function(E, M, check)
     local id, q = byName(M, "Forget Me Not")
     M.npc = E.soul(q.giver)
@@ -3339,7 +3380,7 @@ end)
 -- and makes that token, off which the graph asks the engine for the line as his own bark;
 -- the mod draws nothing itself, on the narrative line or the conversation's caption.
 case("Self talk: each line Henry says to himself has its own token, SelfTalk voices it and makes the token, and nothing is put on the HUD", function(E, M, check)
-    local fields = { "enters", "followWarn", "followedReply", "followOver", "wake", "spotted", "discovered" }
+    local fields = { "enters", "followWarn", "followedReply", "followOver", "wake", "spotted", "discovered", "arrived" }
     local lines, classes = 0, {}
     local ids = {}
     for id in pairs(M.quests) do ids[#ids + 1] = id end
@@ -3867,6 +3908,56 @@ case("Chest: spawned once when Henry comes near with the errand on, locked and k
     M.QuestCommand(id, "complete")
     check(E.find("BRIDGE quest " .. id .. " completes as complete_stolen", mark), "the hand-in is the stolen ending")
     check(M.Count(player, q.item) == 0, "and the chalice goes to Benesh")
+end)
+
+case("Chest: the sheet of names in Henry's pocket is the letter j, and closing it once read is his aside, once", function(E, M, check)
+    -- bugs.txt 18 Nov 2026 (In the Stocks): Henry to himself as he closes the list of watch
+    -- shifts ("Strange, why does Paul have..."), and the app told the sheet is on him so he
+    -- can ask Benesh about it. The graph's UseBookTrigger on the paper makes the read token
+    -- (readToken) at OnClosed; the chest watch sees it, says the aside and notes the fact.
+    local id, q = byName(M, "In the Stocks")
+    check(q and q.chest ~= nil and q.paper ~= nil, "In the Stocks keeps a paper in its chest")
+    if q == nil or q.paper == nil then return end
+    check(q.paperRead ~= nil and q.paperRead ~= "" and q.readToken ~= nil and q.asides ~= nil and q.asides.paperRead ~= nil,
+          "the aside, the read token and the aside's own token")
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    M.npc = nil
+    player:SetWorldPos({ x = q.chest[1] - 5, y = q.chest[2], z = q.chest[3] })
+    E.advance(2100)
+    local chest = System.GetEntityByName("mn_chest_" .. id)
+    check(chest ~= nil, "the chest stands")
+    if chest == nil then return end
+    check(string.find(M.QuestFlagLetters(M.state.quests[id]), "j", 1, true) == nil, "no j while the sheet is in the chest")
+    -- Pocketed: the letter j, and nothing said -- he has not read it.
+    chest.inventory:MoveItemOfClass(player.inventory:GetId(), q.paper, 1, true)
+    local mark = E.mark()
+    E.advance(2100)
+    check(M.state.quests[id].paper == true, "the sheet noted in his pocket")
+    check(string.find(M.QuestFlagLetters(M.state.quests[id]), "j", 1, true) ~= nil, "the letter j")
+    check(barked(E, id, "paperRead", mark) == 0, "nothing said for carrying it")
+    -- Closed after reading: the graph's token appears; the aside, in his voice, once.
+    player.inventory:CreateItem(q.readToken, 100, 1)
+    mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "paperRead", mark) == 1, "said as he closes the sheet")
+    check(E.find("BRIDGE voice henry " .. q.paperRead, mark), "in his voice")
+    check(E.find("BRIDGE quest " .. id .. " Henry has read the paper", mark), "said in the log")
+    check(M.state.quests[id].paperRead == true, "noted in the store")
+    E.advance(4200)
+    check(M.Count(player, q.readToken) == 0, "the read token taken away again")
+    check(barked(E, id, "paperRead", mark) == 1, "not said again")
+    -- The graph's trigger is disarmed once read (unread false), but were a token to come
+    -- again, the fact holds it.
+    player.inventory:CreateItem(q.readToken, 100, 1)
+    mark = E.mark()
+    E.advance(2100)
+    check(barked(E, id, "paperRead", mark) == 0, "not said for a second token")
+    -- Put back in the chest: j gone.
+    player.inventory:MoveItemOfClass(chest.inventory:GetId(), q.paper, 1, true)
+    E.advance(2100)
+    check(M.state.quests[id].paper == false and string.find(M.QuestFlagLetters(M.state.quests[id]), "j", 1, true) == nil,
+          "the letter j goes with the sheet")
 end)
 
 -- A retrieve whose unyielding holder can be caught where he should not be at night (Words
@@ -4865,20 +4956,32 @@ case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first,
     check(E.find("BRIDGE lip stopped -- next row") or true, "the drop logged when a clip was on")
 end)
 
-case("Mouth: the skip button in the game's own voiced Talk writes the skipped marker and drops the queue", function(E, M, check)
+case("Mouth: the skip button in the game's own voiced Talk drops the line being heard and arms the next", function(E, M, check)
     -- Father Ernest's reading (bugs.txt 5 and 8 Nov 2026): four rows tapped through, and
     -- the app, told of no skip, queued and spoke all four. Outside a session the press is
     -- the game's; the mod only says it happened, with no turn, and lets go of the mouth.
+    -- Of one line (bugs.txt 18 Nov 2026): a row is Henry's line and then theirs, and a tap
+    -- through Henry's shows theirs, which the app is still to speak, so its mouth is armed
+    -- in place of his rather than dropped with it.
     local ernest = E.soul("kkut_man_2", { pos = { x = 2, y = 0, z = 0 } })
     check(M.active ~= true, "no session")
+    M.Voice("henry", "Father, I have a letter for you.")
     M.Voice("male", "For the soul of her brother Matthew, abandoned at Nicopolis.", "kkut_man_2")
-    M.Voice("male", "A black sickness on the Turks.", "kkut_man_2")
-    check(M.voicedTalk == true and M.lipKey ~= nil and #M.lipQueue == 1, "a voiced Talk with a line armed and one queued")
+    check(M.voicedTalk == true and M.lipKey == M.LipKey("henry", "Father, I have a letter for you.") and #M.lipQueue == 1,
+        "a voiced Talk with Henry's line armed and theirs queued")
     local mark = E.mark and E.mark() or nil
     local taken = M.OnPlayerAction("dialog_skip", "press")
     check(taken == false, "the press still reaches the game's own skip")
-    check(E.find("BRIDGE skipped turn=0", mark), "the skip said, with no turn of ours")
-    check(M.lipKey == nil and #M.lipQueue == 0, "the mouth off and the queue emptied")
+    check(E.find("BRIDGE skipped line", mark), "the skip said, of a line, with no turn of ours")
+    check(not E.find("BRIDGE skipped turn=", mark), "not the session's marker")
+    check(M.lipKey == M.LipKey("male", "For the soul of her brother Matthew, abandoned at Nicopolis.") and #M.lipQueue == 0,
+        "their mouth armed in Henry's place, the queue empty")
+    M.OnPlayerAction("dialog_skip", "release")
+    -- A second tap, through theirs: the mouth off, nothing left to arm.
+    mark = E.mark and E.mark() or nil
+    M.OnPlayerAction("dialog_skip", "press")
+    check(E.find("BRIDGE skipped line", mark), "the second skip said")
+    check(M.lipKey == nil and #M.lipQueue == 0, "the mouth off and nothing queued")
     M.OnPlayerAction("dialog_skip", "release")
     -- The next row is spoken as any other.
     M.Voice("male", "And here it is.", "kkut_man_2")
@@ -4887,7 +4990,7 @@ case("Mouth: the skip button in the game's own voiced Talk writes the skipped ma
     M.voicedTalk = false
     mark = E.mark and E.mark() or nil
     M.OnPlayerAction("dialog_skip", "press")
-    check(not E.find("BRIDGE skipped turn=0", mark), "nothing said outside a voiced Talk")
+    check(not E.find("BRIDGE skipped line", mark), "nothing said outside a voiced Talk")
     M.OnPlayerAction("dialog_skip", "release")
 end)
 
@@ -5249,6 +5352,48 @@ case("Switches: they are in the save, and a save from before them has the shippe
     ok = E.load("return { moonshine = { version = 1, souls = {}, quests = {}, known = {} } }")
     check(ok and type(M.state.switch) == "table" and next(M.state.switch) == nil, "an old store gets an empty set of switches")
     check(M.QuestOn(stocks) and not M.QuestOn(id), "so the shipped defaults stand")
+end)
+
+case("Switches: the app's experimental-quests setting puts every quest on for the run without touching the save's switches, and the switches line says so", function(E, M, check)
+    -- bugs.txt 18 Nov 2026: "Enable experimental quests" in the window. The app hooks
+    -- QuestAll(true) when the switches line says all=0 and its setting is on, and
+    -- QuestAll(false) the other way round; the line answers with the new stand, so the
+    -- hook is sent once per change.
+    shippedDefaults(M)
+    local id = byName(M, "Charity Begins at Home")
+    local stocks = byName(M, "In the Stocks")
+    M.QuestSwitch({ stocks }, false)
+    local mark = E.mark()
+    M.SwitchesLine()
+    local line = E.find("BRIDGE switches off=", mark)
+    check(line ~= nil and string.find(line, " all=0", 1, true) ~= nil, "all=0 to begin with: " .. tostring(line))
+    check(not M.QuestOn(id) and not M.QuestOn(stocks), "both off")
+    mark = E.mark()
+    M.QuestAll(true)
+    check(E.find("BRIDGE quests all on", mark) ~= nil, "said in the log")
+    line = E.find("BRIDGE switches off=", mark)
+    check(line ~= nil and string.find(line, "off= all=1", 1, true) ~= nil, "nothing off, all=1: " .. tostring(line))
+    check(M.QuestOn(id) and M.QuestOn(stocks) and M.QuestOfferable(id) == true, "every quest on, the off ones offerable")
+    check(M.state.switch[stocks] == false and M.state.switch[id] == nil, "the save's switches untouched")
+    check(#M.QuestsOff() == 0, "nothing off for the dump either")
+    -- In the save and back: the setting is the app's, not the store's, so it holds across a
+    -- load within the run (the app asserts it again anyway) ...
+    local text = E.save()
+    local ok = E.load(text)
+    check(ok and M.experimental == true and M.QuestOn(id), "the run's setting holds over a load")
+    check(string.find(E.find("BRIDGE switches off=", mark) or "", "all=", 1, true) ~= nil, "the line on the load carries all=")
+    -- ... and off again gives the switches back as they were.
+    mark = E.mark()
+    M.QuestAll(false)
+    line = E.find("BRIDGE switches off=", mark)
+    check(line ~= nil and string.find(line, " all=0", 1, true) ~= nil and string.find(line, stocks, 1, true) ~= nil,
+          "In the Stocks off again, all=0: " .. tostring(line))
+    check(not M.QuestOn(id) and not M.QuestOn(stocks), "both off as before")
+    -- A new game (no store in the save) says its switches too, so the app can assert the setting.
+    mark = E.mark()
+    ok = E.load("return {}")
+    check(ok and E.find("BRIDGE switches off=", mark) ~= nil, "the switches said on a fresh store")
+    M.QuestSwitch({ stocks }, true)
 end)
 
 case("Switches: an off quest's giver has no marker and calls nobody over, and both come back on", function(E, M, check)
