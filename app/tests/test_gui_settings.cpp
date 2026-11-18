@@ -39,7 +39,8 @@ TEST_CASE("settings: a file nobody has written is the defaults") {
     CHECK(s.root.empty());
     CHECK(s.mic);
     CHECK(s.launch_game);
-    CHECK_FALSE(s.autostart);
+    // Opening Moonshine starts it, unless that has been turned off.
+    CHECK(s.autostart);
     CHECK_FALSE(s.api);
     CHECK_FALSE(s.api_guessing);
     CHECK(s == Settings{});
@@ -61,7 +62,7 @@ TEST_CASE("settings: the model, the switches, and the last line for a key winnin
     const Settings s = parse_settings(
         "mic = off\n"
         "launch_game = no\n"
-        "autostart = on\n"
+        "autostart = off\n"
         "model = API\n"
         "api_url = https://api.example.com/v1\n"
         "api_model = some-model\n"
@@ -70,7 +71,7 @@ TEST_CASE("settings: the model, the switches, and the last line for a key winnin
         "api_model = the-later-one\n");
     CHECK_FALSE(s.mic);
     CHECK_FALSE(s.launch_game);
-    CHECK(s.autostart);
+    CHECK_FALSE(s.autostart);
     CHECK(s.api);
     CHECK(s.api_url == "https://api.example.com/v1");
     CHECK(s.api_model == "the-later-one");
@@ -80,7 +81,8 @@ TEST_CASE("settings: the model, the switches, and the last line for a key winnin
 
 TEST_CASE("settings: a switch that says neither yes nor no is left as it was") {
     CHECK(parse_settings("mic = perhaps\n").mic);
-    CHECK_FALSE(parse_settings("autostart = perhaps\n").autostart);
+    CHECK(parse_settings("autostart = perhaps\n").autostart);
+    CHECK_FALSE(parse_settings("api_guessing = perhaps\n").api_guessing);
 }
 
 TEST_CASE("settings: a save rewrites its own lines where they stand and leaves the rest") {
@@ -107,11 +109,14 @@ TEST_CASE("settings: a save rewrites its own lines where they stand and leaves t
 TEST_CASE("settings: what is at its default is not written, and is taken out when it goes back") {
     Settings s;
     CHECK(merge_settings("", s).empty());
-    s.autostart = true;
-    const std::string with = merge_settings("# mine\n", s);
-    CHECK(with == "# mine\nautostart = on\n");
     s.autostart = false;
+    const std::string with = merge_settings("# mine\n", s);
+    CHECK(with == "# mine\nautostart = off\n");
+    s.autostart = true;
     CHECK(merge_settings(with, s) == "# mine\n");
+    // A line that says what the default says, written by hand or by a version whose
+    // default was the other way, is taken out too.
+    CHECK(merge_settings("# mine\nautostart = on\n", s) == "# mine\n");
 }
 
 TEST_CASE("settings: a key written twice by hand ends up written once") {

@@ -583,7 +583,7 @@ TEST_CASE("bridge: opening checks the installation, and Play starts what was che
     Machine machine("play");
     put(machine.paths.config, "root = D:\\Games\\KCD2\r\n");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     json state = controller.state();
@@ -594,7 +594,8 @@ TEST_CASE("bridge: opening checks the installation, and Play starts what was che
     CHECK(state["home"]["title"] == "Ready to play");
     CHECK(state["settings"]["root"] == "D:\\Games\\KCD2");
     CHECK(state["engine"]["state"] == "idle");
-    // Nothing is started by opening the window.
+    // Nothing is started by opening the window this way (--no-play, which every test
+    // here that presses things itself opens it with; the test of opening it is below).
     CHECK(machine.engine_count() == 0);
     // What was asked is what would be started: the same game folder.
     CHECK(has_arg(machine.ran[0], "--where"));
@@ -638,7 +639,7 @@ TEST_CASE("bridge: Play does not start an engine over an installation that is no
     Machine machine("not-ready");
     machine.where = where_report(true, false);
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     controller.call("play", json::object());
     REQUIRE(checked(controller));
@@ -651,7 +652,7 @@ TEST_CASE("bridge: no engine in the folder is said as that") {
     Machine machine("no-engine");
     fs::remove(machine.paths.engine);
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     const json state = controller.state();
     CHECK(state["check"]["state"] == "failed");
@@ -665,20 +666,67 @@ TEST_CASE("bridge: an engine that answers with something that is not a report") 
     Machine machine("garbled");
     machine.where = "moonshine_app: the procedure entry point could not be located";
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     CHECK(controller.state()["check"]["state"] == "failed");
 }
 
-TEST_CASE("bridge: pressing Play for them when the window opens is a setting") {
-    Machine machine("autostart");
-    put(machine.paths.config, "autostart = on\n");
-    Controller controller(machine.parts());
-    controller.start();
-    REQUIRE(eventually([&] { return machine.engine_count() == 1; }));
-    controller.shutdown();
-    // Closing the window stops the engine by asking it to.
-    CHECK(std::find(machine.order.begin(), machine.order.end(), "engine stopped") != machine.order.end());
+TEST_CASE("bridge: opening the window presses Play, unless the player or the opening says not to") {
+    {
+        // As installed, with nothing chosen: the desktop shortcut starts Moonshine and the game.
+        Machine machine("autostart");
+        Controller controller(machine.parts());
+        controller.start();
+        REQUIRE(eventually([&] { return machine.engine_count() == 1; }));
+        CHECK(machine.games_asked == 1);
+        controller.shutdown();
+        // Closing the window stops the engine by asking it to.
+        CHECK(std::find(machine.order.begin(), machine.order.end(), "engine stopped") != machine.order.end());
+    }
+    {
+        // Turned off in Settings: the window opens and waits for Play.
+        Machine machine("autostart-off");
+        put(machine.paths.config, "autostart = off\n");
+        Controller controller(machine.parts());
+        controller.start();
+        REQUIRE(checked(controller));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        CHECK(machine.engine_count() == 0);
+        CHECK(controller.state()["home"]["title"] == "Ready to play");
+        CHECK(controller.state()["settings"]["autostart"] == false);
+    }
+    {
+        // --no-play, which is how the installer opens it after an install or an update:
+        // the window is there to be looked at, and the game is not started unasked.
+        Machine machine("autostart-not-now");
+        Controller controller(machine.parts());
+        controller.start(Controller::Start::wait);
+        REQUIRE(checked(controller));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        CHECK(machine.engine_count() == 0);
+        CHECK(machine.games_asked == 0);
+        CHECK(controller.state()["home"]["title"] == "Ready to play");
+        CHECK(controller.state()["settings"]["autostart"] == true);
+    }
+    {
+        // --play, whatever the setting says.
+        Machine machine("autostart-told");
+        put(machine.paths.config, "autostart = off\n");
+        Controller controller(machine.parts());
+        controller.start(Controller::Start::play);
+        REQUIRE(eventually([&] { return machine.engine_count() == 1; }));
+        controller.shutdown();
+    }
+    {
+        // An installation that is not whole is not played, however it was opened.
+        Machine machine("autostart-not-whole");
+        machine.where = where_report(true, false);
+        Controller controller(machine.parts());
+        controller.start();
+        REQUIRE(checked(controller));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        CHECK(machine.engine_count() == 0);
+    }
 }
 
 // --- settings ----------------------------------------------------------------------------------------
@@ -687,7 +735,7 @@ TEST_CASE("bridge: saved settings are in moonshine.cfg, and the key is not") {
     Machine machine("save");
     put(machine.paths.config, "# by hand\nargs = --threads 6\n");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     const json answer = controller.call("saveSettings", {{"mic", false},
@@ -729,7 +777,7 @@ TEST_CASE("bridge: a key is left alone unless the page says otherwise, and an em
     Machine machine("key");
     Controller controller(machine.parts());
     machine.secrets->set("sk-kept-0123456789", nullptr);
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     CHECK(controller.call("saveSettings", {{"mic", false}})["ok"] == true);
@@ -742,7 +790,7 @@ TEST_CASE("bridge: a key is left alone unless the page says otherwise, and an em
 TEST_CASE("bridge: settings that cannot work are refused with a sentence, and nothing is written") {
     Machine machine("refuse");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     json answer = controller.call("saveSettings", {{"api", true}, {"api_url", ""}, {"api_model", "m"}});
@@ -770,7 +818,7 @@ TEST_CASE("bridge: settings that cannot work are refused with a sentence, and no
 TEST_CASE("bridge: a change to the settings while playing starts the engine again with them") {
     Machine machine("restart");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     controller.call("play", json::object());
     REQUIRE(eventually([&] { return controller.state()["engine"]["phase"] == "ready"; }));
@@ -794,7 +842,7 @@ TEST_CASE("bridge: an API chosen by hand with no address never becomes the local
     Machine machine("half-api");
     put(machine.paths.config, "model = api\n");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     json state = controller.state();
     // The engine would have said ready: with no address it sees no API at all.
@@ -811,7 +859,7 @@ TEST_CASE("bridge: the folder picker's answer is saved and checked") {
     Machine machine("root");
     machine.where = where_report(false);
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     CHECK(controller.state()["home"]["fix"] == "folder");
     machine.where = where_report();
@@ -827,7 +875,7 @@ TEST_CASE("bridge: Test connection asks the API in the form, with the key typed 
     Machine machine("test-api");
     Controller controller(machine.parts());
     machine.secrets->set("sk-kept-0123456789", nullptr);
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     // Nothing saved: the form's own values are what is tested.
@@ -1178,7 +1226,7 @@ TEST_CASE("bridge: a newer version published is offered, and the same or an olde
     machine.install_manifest();
     machine.publish("0.9.101");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(eventually([&] { return controller.state()["update"]["state"] == "available"; }));
     CHECK(controller.state()["update"]["latest"] == "0.9.101");
 
@@ -1209,7 +1257,7 @@ TEST_CASE("bridge: updating downloads the installer, stops the engine, and hands
     machine.install_manifest();
     machine.publish("0.9.101");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     REQUIRE(eventually([&] { return controller.state()["update"]["state"] == "available"; }));
     controller.call("play", json::object());
@@ -1252,7 +1300,7 @@ TEST_CASE("bridge: an update that did not download changes nothing") {
     machine.fetch_result.bad = {"Moonshine-0.9.101-setup.exe"};
     machine.fetch_result.trouble = "could not reach the server";
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(eventually([&] { return controller.state()["update"]["state"] == "available"; }));
     controller.call("applyUpdate", json::object());
     REQUIRE(task_over(controller));
@@ -1288,7 +1336,7 @@ TEST_CASE("bridge: the installer an update ran is gone the next time the window 
     std::ofstream(folder / "Moonshine-0.9.100-setup.exe") << "the last update";
     std::ofstream(folder / "Moonshine-0.9.101-setup.exe.part") << "half of the next";
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     CHECK_FALSE(fs::exists(folder / "Moonshine-0.9.100-setup.exe"));
     CHECK(fs::exists(folder / "Moonshine-0.9.101-setup.exe.part"));
 }
@@ -1298,7 +1346,7 @@ TEST_CASE("bridge: updating to the version already here is a repair") {
     machine.install_manifest();
     machine.publish("0.9.100");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(eventually([&] { return controller.state()["update"]["state"] == "current"; }));
     controller.call("applyUpdate", json::object());
     REQUIRE(task_over(controller));
@@ -1313,7 +1361,7 @@ TEST_CASE("bridge: repair fetches the installed manifest's files over a stopped 
     machine.install_manifest();
     machine.where = where_report(true, false);
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
     CHECK(controller.state()["home"]["fix"] == "repair");
 
@@ -1361,7 +1409,7 @@ TEST_CASE("bridge: repair puts the mod back in the game only where the installer
     machine.where = report;
     put(machine.paths.home / "mod" / "moonshine_names" / "mod.manifest", "<mod version 2/>");
     Controller controller(machine.parts());
-    controller.start();
+    controller.start(Controller::Start::wait);
     REQUIRE(checked(controller));
 
     // Subscribed on the Workshop: no folder in the game's mods, and none is made.
@@ -1430,7 +1478,7 @@ TEST_CASE("bridge: uninstalling removes the key, and the mod only when asked, th
     {
         Controller controller(machine.parts());
         machine.secrets->set("sk-kept-0123456789", nullptr);
-        controller.start();
+        controller.start(Controller::Start::wait);
         REQUIRE(checked(controller));
         controller.call("play", json::object());
         REQUIRE(eventually([&] { return controller.state()["engine"]["phase"] == "ready"; }));
@@ -1450,7 +1498,7 @@ TEST_CASE("bridge: uninstalling removes the key, and the mod only when asked, th
     }
     {
         Controller controller(machine.parts());
-        controller.start();
+        controller.start(Controller::Start::wait);
         REQUIRE(checked(controller));
         CHECK(controller.call("uninstall", {{"remove_mod", true}})["ok"] == true);
         REQUIRE(eventually([&] { return machine.quits == 2; }));

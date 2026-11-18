@@ -435,7 +435,7 @@ void Controller::background(std::function<void()> work) {
     workers_.push_back(std::move(worker));
 }
 
-void Controller::start(bool play) {
+void Controller::start(Start how) {
     // The installer the last update downloaded has been run (this may be the window it
     // opened at its end), so it goes. A download that was cut short stays, as a .part, to
     // be carried on from. Windows refuses while the installer is still closing; then it
@@ -448,10 +448,10 @@ void Controller::start(bool play) {
         }
         for (const fs::path& installer : spent) fs::remove(installer, ec);
     }
-    const bool autostart = play || [this] {
+    const bool autostart = how == Start::play || (how == Start::as_set && [this] {
         std::lock_guard<std::mutex> held(lock_);
         return settings_.autostart;
-    }();
+    }());
     run_check(autostart);
     check_update();
 }

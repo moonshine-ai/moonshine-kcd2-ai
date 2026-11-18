@@ -31,8 +31,10 @@ struct Settings {
     // Play asks Steam for the game. Off for a build of the game that is not Steam's, or a
     // player who starts it some other way; the app follows the game's log when it appears.
     bool launch_game = true;
-    // Play is pressed for them when the window opens.
-    bool autostart = false;
+    // Play is pressed for them when the window opens, which is what opening Moonshine
+    // means to a player: the desktop shortcut starts Moonshine and the game together, as
+    // the console launcher before the window did. Off for one who wants to press it.
+    bool autostart = true;
 
     // Which model answers: the one that ships, on this PC, or an OpenAI-compatible API
     // of the player's choosing (app/src/openai.h).

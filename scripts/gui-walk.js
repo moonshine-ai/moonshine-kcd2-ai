@@ -1,6 +1,7 @@
 // A walk through the real Moonshine window, by a script instead of a hand.
 //
-//   MOONSHINE_UI_SCRIPT=scripts/gui-walk.js MOONSHINE_HOME=<installation> app/build/Moonshine 2> walk.txt
+//   MOONSHINE_UI_SCRIPT=scripts/gui-walk.js MOONSHINE_HOME=<installation> app/build/Moonshine --no-play 2> walk.txt
+//   (--no-play: the window would otherwise press Play itself, and this presses it)
 //   (on Windows, where a program with a window has no stderr: set MOONSHINE_UI_TRACE=walk.txt)
 //
 // The window runs this in its page once the page has loaded (app/gui/main_gui.cpp). It
@@ -43,10 +44,12 @@ async function until(what, reached, seconds) {
 (async () => {
   try {
     await until('opening', (h) => h.title !== 'Checking the installation', 60);
-    if (text('home-button') !== 'Play') {
+    // Stop is what the button says when the window pressed Play itself (opened without
+    // --no-play, with the setting that does that left on).
+    if (text('home-button') !== 'Play' && text('home-button') !== 'Stop') {
       say('not ready, so nothing to play');
     } else {
-      document.getElementById('home-button').click();
+      if (text('home-button') === 'Play') document.getElementById('home-button').click();
       const up = await until('starting', (h) => h.tone === 'live' || h.tone === 'problem', 300);
 
       moonshine.show('logs');

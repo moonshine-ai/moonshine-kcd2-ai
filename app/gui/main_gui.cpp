@@ -19,9 +19,13 @@
 //     the game is being played, on a PC whose memory the game wants;
 //   - the old console launcher offered when there is no WebView2 to make a window with.
 //
-//   --play              press Play as soon as the check has passed, as the setting "Press
-//                       Play for me when Moonshine opens" does: for a shortcut or a
-//                       script that means "start playing" (scripts/start-moonshine-on-wl1.sh)
+//   --play              press Play as soon as the check has passed, even where the setting
+//                       "Press Play for me when Moonshine opens" has been turned off: for
+//                       a script that means "start playing" (scripts/start-moonshine-on-wl1.sh)
+//   --no-play           do not, even where that setting is on (which it is unless turned
+//                       off): the window opened to be looked at. The installer opens it
+//                       this way at the end of an install and of an update, and so do the
+//                       scripts that press Play themselves
 //
 //   MOONSHINE_HOME      the installation, when it is not the folder this program is in
 //                       (a checkout: the repository's top, with the engine in app/build)
@@ -299,7 +303,7 @@ std::string pick_folder(void*, const std::string&) {
 
 #endif
 
-int run_window(bool play) {
+int run_window(Controller::Start how) {
     const Paths paths = find_paths();
     const bool debug = !environment("MOONSHINE_UI_DEBUG").empty();
 
@@ -414,7 +418,7 @@ int run_window(bool play) {
         w.init("window.addEventListener('load', function () {\n" + text.str() + "\n});");
     }
     w.set_html(page());
-    controller.start(play);
+    controller.start(how);
 
     // The state, sent to the page whenever it differs from what was last sent. Not while
     // the window is minimised: the page is asleep then, and is told on waking.
@@ -469,15 +473,23 @@ int run_window(bool play) {
 }  // namespace moonshine::gui
 
 #ifdef _WIN32
-// --play: press Play as soon as the check passes, whatever the setting says. For a
-// shortcut or a script that means "start playing", not "open the window".
+// --play and --no-play: press Play as soon as the check passes, or do not, whatever the
+// setting says. With neither it is as the setting says, which is to press it.
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int) {
-    return moonshine::gui::run_window(arguments && std::wcsstr(arguments, L"--play") != nullptr);
+    using Start = moonshine::gui::Controller::Start;
+    Start how = Start::as_set;
+    if (arguments && std::wcsstr(arguments, L"--no-play") != nullptr) how = Start::wait;
+    else if (arguments && std::wcsstr(arguments, L"--play") != nullptr) how = Start::play;
+    return moonshine::gui::run_window(how);
 }
 #else
 int main(int argc, char** argv) {
-    bool play = false;
-    for (int i = 1; i < argc; ++i) play = play || std::string(argv[i]) == "--play";
-    return moonshine::gui::run_window(play);
+    using Start = moonshine::gui::Controller::Start;
+    Start how = Start::as_set;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--no-play") how = Start::wait;
+        else if (std::string(argv[i]) == "--play" && how != Start::wait) how = Start::play;
+    }
+    return moonshine::gui::run_window(how);
 }
 #endif

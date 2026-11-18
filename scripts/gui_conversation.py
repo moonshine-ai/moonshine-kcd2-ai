@@ -124,7 +124,8 @@ def main() -> int:
         status.unlink()
 
     env = dict(os.environ, MOONSHINE_HOME=str(home), MOONSHINE_UI_SCRIPT=str(script), MOONSHINE_UI_TRACE=str(trace))
-    window = subprocess.Popen([str(args.gui)], env=env, stderr=subprocess.DEVNULL)
+    # --no-play: the page script presses Play, and reports having done so.
+    window = subprocess.Popen([str(args.gui), "--no-play"], env=env, stderr=subprocess.DEVNULL)
     faults: list[str] = []
 
     def phase() -> str:

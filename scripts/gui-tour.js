@@ -1,6 +1,6 @@
 // The real Moonshine window, shown a screen at a time for pictures to be taken of it.
 //
-//   MOONSHINE_UI_SCRIPT=scripts/gui-tour.js MOONSHINE_HOME=<installation> app/build/Moonshine
+//   MOONSHINE_UI_SCRIPT=scripts/gui-tour.js MOONSHINE_HOME=<installation> app/build/Moonshine --no-play
 //
 // Like gui-walk.js, run by the window in its own page. It presses nothing that starts or
 // changes anything: it waits on each screen for a few seconds, says which it is on

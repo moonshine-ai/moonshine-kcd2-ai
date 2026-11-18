@@ -139,9 +139,14 @@ public:
     explicit Controller(Parts parts);
     ~Controller();
 
-    // The first check, and Play if the player asked for that on opening: by the setting,
-    // or (play) by starting the window with --play.
-    void start(bool play = false);
+    // How the window was opened, for whether Play is pressed once the check has passed.
+    enum class Start {
+        as_set,  // as the setting says ("Press Play for me when Moonshine opens", on unless turned off)
+        play,    // --play: pressed, whatever the setting says
+        wait,    // --no-play: not pressed, whatever the setting says
+    };
+    // The first check, and Play after it if this opening calls for that.
+    void start(Start how = Start::as_set);
     // Stop the engine and wait for anything in hand.
     void shutdown();
 

@@ -124,9 +124,11 @@ needs the companion app running to handle the local AI model generation.
 
 1. Double-click **Moonshine** on the desktop (or search for the Moonshine app after
    pressing the Windows key).
-2. The Moonshine window opens and says **Ready to play**. Press **Play**. It asks Steam
-   to start the game and loads the model, which takes ten to thirty seconds; the window
-   says *Starting* while it does, then **Listening**.
+2. The Moonshine window opens, checks the installation, and starts by itself: it asks
+   Steam to start the game and loads the model, which takes ten to thirty seconds; the
+   window says *Starting* while it does, then **Listening**. If it is waiting at **Ready
+   to play** instead (it does when the installer opened it, or when you have turned
+   *Press Play for me when Moonshine opens* off in Settings), press **Play**.
 3. Leave Moonshine open while you play. Minimise it if you like: it gives back nearly all
    of its memory while minimised. Closing it stops the voices (it asks first), and the
    game carries on without them.
@@ -167,8 +169,8 @@ and **Play** is there again: press it and Steam starts the game, with Moonshine 
 up and ready to join in.
 
 The **Settings** tab has the few things there are to choose: where the game is, whether
-Play also starts the game, whether Moonshine presses Play by itself when it opens, and
-whether the microphone is listened to.
+Play also starts the game, whether Moonshine presses Play by itself when it opens (it
+does, unless you turn that off), and whether the microphone is listened to.
 
 ### If something goes wrong
 
@@ -444,7 +446,8 @@ conversation with that engine as the game would (`--canned` needs no model).
 
 | | |
 |---|---|
-| `--play` | press Play as soon as the check passes (what the setting "Press Play for me when Moonshine opens" does) |
+| `--play` | press Play as soon as the check passes, even where the setting "Press Play for me when Moonshine opens" is off |
+| `--no-play` | do not, even where that setting is on, which it is unless turned off: the installer opens the window this way after an install or an update, and so do the scripts that press Play themselves |
 | `MOONSHINE_HOME` | the installation, when it is not the folder the program is in |
 | `MOONSHINE_UI_DIR` | read the page from this folder rather than from the program |
 | `MOONSHINE_UI_DEBUG` | allow the browser's developer tools |

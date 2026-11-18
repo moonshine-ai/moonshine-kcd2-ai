@@ -165,12 +165,15 @@ Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; S
 ; 150 MB) and installs it for this user, or for everybody when Setup is elevated.
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft Edge WebView2 ..."; Flags: waituntilterminated; Check: NeedsWebView2
 ; Then the app itself, whose first screen is the check of the installation, so a bad
-; install is seen here and not as a silent app on the first evening.
-Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Description: "Open Moonshine now"; Flags: postinstall nowait skipifsilent
+; install is seen here and not as a silent app on the first evening. --no-play: opened
+; from the shortcut the window presses Play itself and Steam starts the game, and the end
+; of an install is not the moment for that.
+Filename: "{app}\Moonshine.exe"; Parameters: "--no-play"; WorkingDir: "{app}"; Description: "Open Moonshine now"; Flags: postinstall nowait skipifsilent
 ; The guide was the page before the install; here it is offered, not opened unasked.
 Filename: "{app}\README.txt"; Description: "Read the guide"; Flags: postinstall shellexec nowait skipifsilent unchecked
-; An update the window started (/SILENT /RELAUNCH=1) ends with the window open again.
-Filename: "{app}\Moonshine.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent runasoriginaluser; Check: WantsRelaunch
+; An update the window started (/SILENT /RELAUNCH=1) ends with the window open again, and
+; again without the game being started: the player asked for an update, not for the game.
+Filename: "{app}\Moonshine.exe"; Parameters: "--no-play"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent runasoriginaluser; Check: WantsRelaunch
 
 [InstallDelete]
 ; What an earlier version put here and this one does not: the Qwen3-TTS voice engine
