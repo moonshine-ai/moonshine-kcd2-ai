@@ -671,9 +671,11 @@ wrangler secret put REPORT_TO                   # the address the emails go to; 
 ```
 
 The token `wrangler` uses needs Workers Scripts, Workers R2 Storage and Email Sending
-on the account, and Workers Routes and DNS on the `moonshine.ai` zone (for the custom
-domain). Sending to an address that is not a verified destination of the account needs
-the Workers Paid plan.
+on the account. Attaching the custom domain the first time needs Workers Routes and DNS
+on the `moonshine.ai` zone as well; with a token that lacks them, add the domain in the
+dashboard instead (the Worker's Settings > Domains & Routes), which is how it was done,
+and `wrangler deploy` works without them from then on. Sending to an address that is not
+a verified destination of the account needs the Workers Paid plan.
 
 **Changing it** is editing `src/index.js` and `wrangler deploy`. To try a change first:
 
