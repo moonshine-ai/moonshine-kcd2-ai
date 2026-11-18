@@ -1,6 +1,6 @@
 # Moonshine AI for Kingdom Come: Deliverance II
 
-[This mod](https://download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe) gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
+[This mod](https://download.moonshine.ai/kcd2/0.9.102.29/Moonshine-0.9.102.29-setup.exe) gives every unnamed villager, beggar, miner and varlet in Kuttenberg and Trosky a
 name, history, [friends](https://liber.moonshine.ai) , family, and a *Talk* option. Speak to them through your microphone and they answer in character, in their own voice, about their own work and lives. Everything runs on your own PC, and as installed nothing you say leaves it.
 
 [![Intro: a conversation in Kingdom Come: Deliverance II](images/kcd2-intro.gif)](https://www.youtube.com/watch?v=ytNBseHc7dk)
@@ -63,7 +63,7 @@ game closed.
 
 ### Step 1: Download the installer
 
-Download [download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe](https://download.moonshine.ai/kcd2/0.9.102.28/Moonshine-0.9.102.28-setup.exe); it is around
+Download [download.moonshine.ai/kcd2/0.9.102.29/Moonshine-0.9.102.29-setup.exe](https://download.moonshine.ai/kcd2/0.9.102.29/Moonshine-0.9.102.29-setup.exe); it is around
 40 MB. It is the only file you need: the models and the rest come down while it runs.
 
 **You should see** `Moonshine-<version>-setup.exe` in your Downloads folder.
