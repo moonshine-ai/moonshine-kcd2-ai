@@ -682,6 +682,13 @@ constexpr double kSkipLineDebounceSeconds = 0.1;
 // verse on his own if his Scholarship is this or more (soul:GetSkillLevel, the game's own
 // scale of 1-30), or on the counsel's word whatever his learning.
 constexpr int kDebateScholarship = 25;
+// The order of Henry's three answers on each stage's menu, a different one per stage so
+// the sound answer is not always the top row.
+constexpr const char* kDebateOrders[][3] = {
+    {"plausible", "sound", "common"},
+    {"common", "plausible", "sound"},
+    {"sound", "common", "plausible"},
+};
 // With the shout goes the game's own "hold to look" hint (emit_leg, hailLook): "Look at
 // <giver>" at the lower right, Left Alt or LB held turning Henry's view to him. It is up
 // this many seconds, or until Henry has looked or taken the errand: long enough to find

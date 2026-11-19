@@ -4789,55 +4789,65 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             s += t(13) + "<Decision Name=\"debate_" + n + "_menu\" Priority=\"General\">\r\n";
             s += t(14) + "<Sequences>\r\n";
             // The sound answer, weighed on its exit.
-            s += t(15) + "<Sequence EndType=\"Decision\" Name=\"debate_" + n + "_sound\" ExitScript=\"Moonshine.QuestDebateSound('" +
+            std::string sound;
+            sound += t(15) + "<Sequence EndType=\"Decision\" Name=\"debate_" + n + "_sound\" ExitScript=\"Moonshine.QuestDebateSound('" +
                  quest.id + "', " + n + ")\">\r\n";
-            s += prompt(16, field(k, "sound").c_str(), d.sound);
-            s += t(16) + "<Elements>\r\n";
-            s += line(17, "HENRY", field(k, "sound").c_str(), d.sound);
-            s += t(16) + "</Elements>\r\n";
-            s += t(16) + "<Decision Name=\"debate_" + n + "_out\" Autoselect=\"true\">\r\n";
-            s += t(17) + "<Sequences>\r\n";
+            sound += prompt(16, field(k, "sound").c_str(), d.sound);
+            sound += t(16) + "<Elements>\r\n";
+            sound += line(17, "HENRY", field(k, "sound").c_str(), d.sound);
+            sound += t(16) + "</Elements>\r\n";
+            sound += t(16) + "<Decision Name=\"debate_" + n + "_out\" Autoselect=\"true\">\r\n";
+            sound += t(17) + "<Sequences>\r\n";
             if (last) {
-                s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"" + won_end +
+                sound += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"" + won_end +
                      "\" Name=\"debate_" + n + "_yes\" ExitScript=\"" + gave("learned") + "\">\r\n";
-                s += t(19) + "<Triggers>\r\n" + t(20) + "<Port Name=\"handover\" />\r\n" + t(19) + "</Triggers>\r\n";
-                s += t(19) + "<Elements>\r\n";
-                s += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
-                s += line(20, role, "learned_yes", quest.holder_learned_yes);
-                s += t(19) + "</Elements>\r\n";
-                s += gift_nest(19, "learned");
-                s += t(18) + "</Sequence>\r\n";
+                sound += t(19) + "<Triggers>\r\n" + t(20) + "<Port Name=\"handover\" />\r\n" + t(19) + "</Triggers>\r\n";
+                sound += t(19) + "<Elements>\r\n";
+                sound += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
+                sound += line(20, role, "learned_yes", quest.holder_learned_yes);
+                sound += t(19) + "</Elements>\r\n";
+                sound += gift_nest(19, "learned");
+                sound += t(18) + "</Sequence>\r\n";
             } else {
-                s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"GoTo\" GoToDecision=\"debate_stages\" Name=\"debate_" +
+                sound += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"GoTo\" GoToDecision=\"debate_stages\" Name=\"debate_" +
                      n + "_yes\">\r\n";
-                s += t(19) + "<Elements>\r\n";
-                s += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
-                s += line(20, role, field(k, "sound_reply").c_str(), d.sound_reply);
-                s += t(19) + "</Elements>\r\n";
-                s += t(18) + "</Sequence>\r\n";
+                sound += t(19) + "<Elements>\r\n";
+                sound += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
+                sound += line(20, role, field(k, "sound_reply").c_str(), d.sound_reply);
+                sound += t(19) + "</Elements>\r\n";
+                sound += t(18) + "</Sequence>\r\n";
             }
-            s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')!=1\" EndType=\"EndDialogue\" Name=\"debate_" + n +
+            sound += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')!=1\" EndType=\"EndDialogue\" Name=\"debate_" + n +
                  "_no\" ExitScript=\"" + stage("debate " + n + " lost") + "\">\r\n";
-            s += t(19) + "<Elements>\r\n";
-            s += line(20, role, field(k, "sound_no").c_str(), d.sound_no);
-            s += t(19) + "</Elements>\r\n";
-            s += t(18) + "</Sequence>\r\n";
-            s += t(17) + "</Sequences>\r\n";
-            s += t(16) + "</Decision>\r\n";
-            s += t(15) + "</Sequence>\r\n";
+            sound += t(19) + "<Elements>\r\n";
+            sound += line(20, role, field(k, "sound_no").c_str(), d.sound_no);
+            sound += t(19) + "</Elements>\r\n";
+            sound += t(18) + "</Sequence>\r\n";
+            sound += t(17) + "</Sequences>\r\n";
+            sound += t(16) + "</Decision>\r\n";
+            sound += t(15) + "</Sequence>\r\n";
             // The two that lose the stage on the holder's rebuttal.
+            std::map<std::string, std::string> lost;
             for (const char* way : {"plausible", "common"}) {
                 const std::string reply = std::string(way) + "_reply";
                 const std::string& henry_words = std::string(way) == "plausible" ? d.plausible : d.common;
                 const std::string& reply_words = std::string(way) == "plausible" ? d.plausible_reply : d.common_reply;
-                s += t(15) + "<Sequence EndType=\"EndDialogue\" Name=\"debate_" + n + "_" + way + "\" ExitScript=\"" +
-                     stage("debate " + n + " lost") + "\">\r\n";
-                s += prompt(16, field(k, way).c_str(), henry_words);
-                s += t(16) + "<Elements>\r\n";
-                s += line(17, "HENRY", field(k, way).c_str(), henry_words);
-                s += line(17, role, field(k, reply.c_str()).c_str(), reply_words);
-                s += t(16) + "</Elements>\r\n";
-                s += t(15) + "</Sequence>\r\n";
+                std::string row;
+                row += t(15) + "<Sequence EndType=\"EndDialogue\" Name=\"debate_" + n + "_" + way + "\" ExitScript=\"" +
+                       stage("debate " + n + " lost") + "\">\r\n";
+                row += prompt(16, field(k, way).c_str(), henry_words);
+                row += t(16) + "<Elements>\r\n";
+                row += line(17, "HENRY", field(k, way).c_str(), henry_words);
+                row += line(17, role, field(k, reply.c_str()).c_str(), reply_words);
+                row += t(16) + "</Elements>\r\n";
+                row += t(15) + "</Sequence>\r\n";
+                lost[way] = row;
+            }
+            // The three in a different order each stage (kDebateOrders), so the sound
+            // answer is not always the top row and picking it takes the discernment the
+            // design asks for (bugs.txt 19 Nov 2026).
+            for (const char* way : kDebateOrders[k % (sizeof kDebateOrders / sizeof kDebateOrders[0])]) {
+                s += std::string(way) == "sound" ? sound : lost[way];
             }
             s += t(14) + "</Sequences>\r\n";
             s += t(13) + "</Decision>\r\n";
