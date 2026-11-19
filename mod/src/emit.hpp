@@ -376,6 +376,12 @@ std::string giver_closed_class(const Quest& quest);
 std::string giver_closed_name(const Quest& quest);
 std::string giver_open_class(const Quest& quest);
 std::string giver_open_name(const Quest& quest);
+// A scene's link told open by the mod (bugs.txt 19 Nov 2026: no marker on Father Dominic
+// once Holy Jest was done): one token of this class, made by WatchGiver when the store has
+// the favour before done the way the link follows, for the head's linkOpened trigger,
+// Or'd with the Level's before_open port on the marker's gate. One per link.
+std::string link_open_class(const Quest& quest);
+std::string link_open_name(const Quest& quest);
 
 // Libs/Tables/item/item__<modid>.xml -- the mod's own item classes, for the things a
 // favour is about that the shipped tables have no carriable row for (a saw), and the

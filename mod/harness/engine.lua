@@ -630,6 +630,9 @@ function Engine.delivered(id, how)
     qs.handed = true
     Engine.questState[id] = qs
     Engine.ports[#Engine.ports + 1] = id .. " handover"
+    -- A word deliver's hand row is the graph's plain complete (emit.cpp row_completes).
+    local q = Moonshine.quests[id]
+    if q ~= nil and q.item == "" then Engine.firePort(id .. " complete") end
     Moonshine.QuestDelivered(id, how)
 end
 
@@ -640,6 +643,9 @@ function Engine.carried(id)
     qs.onwardHanded = true
     Engine.questState[id] = qs
     Engine.ports[#Engine.ports + 1] = id .. " onward handover"
+    -- The row's port is the graph's plain complete (emit.cpp row_completes, 19 Nov 2026):
+    -- the objectives close on it, not on a beat the app's conversation would have to play.
+    Engine.firePort(id .. " complete")
     Moonshine.QuestCarried(id)
 end
 

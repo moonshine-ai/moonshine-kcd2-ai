@@ -1018,6 +1018,20 @@ std::string giver_open_class(const Quest& quest) {
 
 std::string giver_open_name(const Quest& quest) { return "open_" + quest_node(quest.id); }
 
+std::string link_open_class(const Quest& quest) {
+    // A scene's link told open from the Lua (bugs.txt 19 Nov 2026: no marker on Father
+    // Dominic once Holy Jest was done): the same shape under 4c (the letter L), made once by
+    // WatchGiver when the store has the favour before done the way the link follows, for the
+    // head's linkOpened trigger, which is Or'd with the Level's before_open port -- the
+    // marker shows on either word, the graph's or the mod's.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4c00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string link_open_name(const Quest& quest) { return "link_" + quest_node(quest.id); }
+
 std::string hail_node(const std::string& quest_id) { return quest_node(quest_id) + "_hail"; }
 
 std::vector<SelfLine> self_lines(const Quest& quest) {
@@ -1846,6 +1860,7 @@ struct LegOut {
     std::vector<std::string> ways;
     std::vector<std::string> untrue_ways;
     std::vector<std::string> complete_ports;  // the leg's complete* ports, as named
+    std::vector<std::string> row_completes;   // and the Talk rows among them, "<node>.<port>"
 };
 
 LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx) {
@@ -1930,9 +1945,25 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     }
     // What fires the leg's reward and save: the quest's Done in a quest of one scene, the
     // leg's own hand-in ports in a run (the run is done only at its last).
+    const bool onward = quest.carries_on();
+    // The rows of the game's own Talks that end the errand where they are said -- the one
+    // an ask's or a plea's word is carried on to (the onward menu's hand row), the one a
+    // word deliver tells (the holder's hand row) -- are the graph's plain complete as much
+    // as the giver's complete port is, and are wired here as that. Until 19 Nov 2026 the
+    // row's exit script queued the complete as a beat for the app's conversation to play,
+    // and no conversation followed the row to play it: after Father Adam's refusal the
+    // journal kept "Return the silver chalice" and "Beg Father Adam" open with their
+    // markers (bugs.txt 19 Nov 2026). The Lua no longer queues it (QuestCarried,
+    // QuestDelivered: QuestCommand's `fired`).
+    std::vector<std::string> plain_completes = {P("complete")};
+    if (onward) out.row_completes.push_back("onwardTalk.handover");
+    if (quest.carries_word() && holder) out.row_completes.push_back("holder.handover");
+    for (const std::string& src : out.row_completes) {
+        plain_completes.push_back(src);
+        out.complete_ports.push_back(src);
+    }
     const std::vector<std::string> on_done =
         ctx.multi ? out.complete_ports : std::vector<std::string>{"questState.OnDone"};
-    const bool onward = quest.carries_on();
     if (holder) out.definitions += t(4) + "<Definition File=\"" + xml_escape(holder_node(quest.id) + ".xml") + "\" />\r\n";
     if (quest.has_follow()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(followed_node(quest.id) + ".xml") + "\" />\r\n";
@@ -1964,7 +1995,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // name still on the marker, when the holder dies with the thing on him.
     s += t(4) + "<State Name=\"objState\"" + rfo + " TypeT=\"" + xml_escape(objective_type(quest.id)) + "\">\r\n";
     s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetActive\" />\r\n";
-    s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetDone\" />\r\n";
+    for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
     for (const std::string& how : ways) {
         s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"Set" + resolution_state(how) + "\" />\r\n";
     }
@@ -2019,7 +2050,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // A retrieve's or a buy's mid-moment: the holder has given the thing up, and the
     // journal says so (Updated, log_handed) with the marker back on the giver. A
     // deliver's: the receiver has taken it (its menu's handover port is the same).
-    const bool handed = (quest.is_retrieve() || quest.is_buy() || quest.is_deliver()) && holder;
+    // Not a word deliver's: its hand row is the plain complete (above), with nothing to
+    // carry back and no "Return to <giver>".
+    const bool handed = (quest.is_retrieve() || quest.is_buy() || (quest.is_deliver() && !quest.carries_word())) && holder;
     if (handed) {
         s += t(5) + "<Edge From=\"holder.handover\" To=\"SetHanded\" />\r\n";
         // Or taken out of the chest (the watch's taken token; notes.md 14 Oct 2026).
@@ -2156,7 +2189,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         // Done at the hand-in -- unless the ending leads on to another scene of this run,
         // when "Return to <giver>" stands until the next errand is taken up (its accept
         // closes it), so a player who walks out mid-offer still has the marker.
-        if (!ctx.leads_on("")) s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetDone\" />\r\n";
+        if (!ctx.leads_on("")) for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
         for (const std::string& how : ways) {
             if (!ctx.leads_on(how)) s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetDone\" />\r\n";
         }
@@ -2178,7 +2211,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (onward) {
         s += t(4) + "<State Name=\"onwardState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
         s += t(5) + "<Edge From=\"" + P("onward") + "\" To=\"SetActive\" />\r\n";
-        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetDone\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetDone\" />\r\n";
         }
@@ -2324,7 +2357,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 s += t(5) + "<Edge From=\"clueHidden" + n + ".OnAcquire\" To=\"SetHidden\" />\r\n";
                 s += t(5) + "<Edge From=\"asked" + n + ".OnAcquire\" To=\"SetDone\" />\r\n";
                 if (found) s += t(5) + "<Edge From=\"found.OnAcquire\" To=\"SetCanceled\" />\r\n";
-                s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetCanceled\" />\r\n";
+                for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetCanceled\" />\r\n";
                 for (const std::string& how : ways) {
                     s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetCanceled\" />\r\n";
                 }
@@ -2339,7 +2372,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
                 s += t(5) + "<Edge From=\"asked" + n + ".OnAcquire\" To=\"SetFalse\" />\r\n";
                 if (found) s += t(5) + "<Edge From=\"found.OnAcquire\" To=\"SetFalse\" />\r\n";
-                s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetFalse\" />\r\n";
+                for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetFalse\" />\r\n";
                 for (const std::string& how : ways) {
                     s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetFalse\" />\r\n";
                 }
@@ -3013,7 +3046,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<State Name=\"helperState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
         s += t(5) + "<Edge From=\"named.OnAcquire\" To=\"SetActive\" />\r\n";
         s += t(5) + "<Edge From=\"helperTalk.spoken\" To=\"SetDone\" />\r\n";
-        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetDone\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetDone\" />\r\n";
         }
@@ -3024,7 +3057,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "</" + std::string(kHelperObjective) + ">\r\n";
         s += t(4) + "<State Name=\"helperOpen\" TypeT=\"bool\">\r\n";
         s += t(5) + "<Edge From=\"named.OnAcquire\" To=\"SetTrue\" />\r\n";
-        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetFalse\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetFalse\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetFalse\" />\r\n";
         }
@@ -3065,7 +3098,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetActive\" />\r\n";
         s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetDone\" />\r\n";
         s += t(5) + "<Edge From=\"holder.handover\" To=\"SetCanceled\" />\r\n";
-        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetCanceled\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetCanceled\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetCanceled\" />\r\n";
         }
@@ -3078,7 +3111,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
         s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetFalse\" />\r\n";
         s += t(5) + "<Edge From=\"holder.handover\" To=\"SetFalse\" />\r\n";
-        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetFalse\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetFalse\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetFalse\" />\r\n";
         }
@@ -3639,6 +3672,11 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             if (edge.compare(0, name.size() + 1, name + ".") == 0) edge = name + sfx + edge.substr(name.size());
         }
     }
+    for (std::string& src : leg.row_completes) {
+        for (const std::string& name : names) {
+            if (src.compare(0, name.size() + 1, name + ".") == 0) src = name + sfx + src.substr(name.size());
+        }
+    }
     return sfx;
 }
 
@@ -3749,6 +3787,12 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
             if (leads_on(how)) continue;
             s += t(5) + "<Edge From=\"" + (multi ? quest_port({leg.id, command, 0}) : command) + "\" To=\"SetDone\" />\r\n";
         }
+        // And the Talk rows that are the leg's plain complete (LegOut::row_completes).
+        if (!leads_on("")) {
+            for (const std::string& src : legs[i].row_completes) {
+                s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
+            }
+        }
     }
     // Given up to any giver's face: the quest (a run's whole story) fails in the book, and
     // everything that follows OnFailed (the welcome, a leg's "on", the return) closes.
@@ -3837,9 +3881,35 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     // Lua's WatchHail reads the same hours (HourIn) before shouting.
     std::string marker_on = head.is_link() ? "giverMarkerOn.bool" : "questState.None";
     if (head.is_link()) {
+        // The link told open either way (bugs.txt 19 Nov 2026: Holy Jest done and no marker
+        // on Father Dominic for the scenes that follow it): the Level's before_open port
+        // from the favour before's done ports, or the mod's own token (link_open_class),
+        // made once by WatchGiver when the store has that favour done the way the link
+        // follows -- the mod's word does not ride on a bool crossing two quest nodes in the
+        // Level, which no probe has yet seen do so.
+        s += t(4) + "<ObjectProperties Name=\"linkPlayerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+        s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+        s += t(4) + "</ObjectProperties>\r\n";
+        s += t(4) + "<Function Name=\"linkOpenClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                    "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(link_open_class(head)) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"linkOpened\">\r\n";
+        s += t(5) + "<Edge From=\"linkOpenClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"linkPlayerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"questState.None\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
+        s += t(4) + "<State Name=\"linkOpen\" TypeT=\"bool\">\r\n";
+        s += t(5) + "<Edge From=\"linkOpened.OnAcquire\" To=\"SetTrue\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<Function Name=\"giverMarkerLink\" MethodName=\"math::boolean::Or\" DeclaringType=\"math::boolean\">\r\n";
+        s += t(5) + "<Edge From=\"before_open\" To=\"A\" />\r\n";
+        s += t(5) + "<Edge From=\"linkOpen.State\" To=\"B\" />\r\n";
+        s += t(4) + "</Function>\r\n";
         s += t(4) + "<Function Name=\"giverMarkerOn\" MethodName=\"math::boolean::And\" DeclaringType=\"math::boolean\">\r\n";
         s += t(5) + "<Edge From=\"questState.None\" To=\"A\" />\r\n";
-        s += t(5) + "<Edge From=\"before_open\" To=\"B\" />\r\n";
+        s += t(5) + "<Edge From=\"giverMarkerLink.bool\" To=\"B\" />\r\n";
         s += t(4) + "</Function>\r\n";
     }
     if (head.has_hail_hours()) {
@@ -6243,9 +6313,11 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
     // two classes, made by the Lua's WatchGiver as the giver steps in and out of where
     // Henry may not go (emit.hpp, giver_closed_class).
     for (const Quest* q : heads) {
-        for (int i = 0; i < 2; ++i) {
-            const std::string gname = i == 0 ? giver_closed_name(*q) : giver_open_name(*q);
-            const std::string gclass = i == 0 ? giver_closed_class(*q) : giver_open_class(*q);
+        for (int i = 0; i < 3; ++i) {
+            // And a link's open token (link_open_class), on a head that follows another scene.
+            if (i == 2 && !q->is_link()) continue;
+            const std::string gname = i == 0 ? giver_closed_name(*q) : i == 1 ? giver_open_name(*q) : link_open_name(*q);
+            const std::string gclass = i == 0 ? giver_closed_class(*q) : i == 1 ? giver_open_class(*q) : link_open_class(*q);
             s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
                  xml_escape(item_info_key(modid, gname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, gname)) +
                  "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
@@ -7313,6 +7385,8 @@ std::string state_lua(const std::string& g) {
     // nothing of them.
     s += "\tif command == \"closed\" then facts.giverHidden = true end\n";
     s += "\tif command == \"open\" then facts.giverHidden = false end\n";
+    // A scene's link told open to the graph by the mod's token (WatchGiver), once.
+    s += "\tif command == \"linkopen\" then facts.linkOpened = true end\n";
     s += "\tif command == \"named\" then facts.accepted = true; facts.named = true end\n";
     // A seek's clue asked at a holder (QuestCommand's `clue`, by soul): which of them Henry
     // has asked, for the dump's count (one flag letter z each; QuestFlagLetters).
@@ -8848,6 +8922,8 @@ std::string emit_conversation_lua(const std::string& modid,
             // only, whose QuestGiver marker it is.
             s += ", giverClosed = \"" + lua_escape(giver_closed_class(q)) + "\", giverOpen = \"" +
                  lua_escape(giver_open_class(q)) + "\"";
+            // And the link's own word that it is open (WatchGiver; emit.hpp link_open_class).
+            if (q.is_link()) s += ", linkOpen = \"" + lua_escape(link_open_class(q)) + "\"";
         }
         // An unyielding holder (In the Stocks): the menu's rows are refusals, and the store
         // notes the rebuff (QuestRebuffed) for the app's giver to send Henry at the chest.
@@ -15035,8 +15111,23 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
     s += "\tlocal gp = nil\n";
     s += "\tlocal closed = nil\n";
+    // A scene's link (q.after): closed while the favour before is not done the way the link
+    // follows, and told open once, by its own token, when it is (bugs.txt 19 Nov 2026; the
+    // graph's linkOpened, Or'd with the Level's before_open). The store remembers the
+    // telling (linkOpened), so a load makes no second token.
+    s += "\tlocal linked = q.after ~= nil and q.after ~= \"\"\n";
+    s += "\tlocal linkOpen = linked and " + g + ".QuestLinkState(id) == \"open\"\n";
+    s += "\tif linkOpen and q.linkOpen ~= nil and not (type(f) == \"table\" and f.linkOpened == true) then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" link open: \" .. q.after .. \" is done its way\")\n";
+    s += "\t\tpcall(" + g + ".StateQuest, id, \"linkopen\")\n";
+    s += "\t\t" + g + ".Token(q, q.linkOpen)\n";
+    s += "\tend\n";
     s += "\tif not " + g + ".QuestOn(id) then\n";
     s += "\t\tclosed = true\n";
+    // A locked link's marker is off by the graph's own gate; nothing to hide until it opens.
+    s += "\telseif linked and not linkOpen then\n";
+    s += "\t\t" + g + ".giverPending[id] = nil\n";
+    s += "\t\treturn\n";
     s += "\telse\n";
     s += "\t\tpcall(function()\n";
     s += "\t\t\tlocal e = System.GetEntityByName(q.giver)\n";
@@ -16092,7 +16183,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // One directive. handover is all inventory and asks nothing of the graph; accept
     // and complete are journal moments, so they queue the beat that fires the port,
     // and complete also collects the item first.
-    s += "function " + g + ".QuestCommand(id, command)\n";
+    // `fired` is the word that the graph already has this beat from the Talk row's own port
+    // (the onward menu's hand row, a word deliver's: LegOut::row_completes), so nothing is
+    // queued for the app's conversation to play -- there is none following the row to play
+    // it, and a code left armed gated the next conversation's every face or was dropped at
+    // its opening (bugs.txt 19 Nov 2026). Everything else of the command is done.
+    s += "function " + g + ".QuestCommand(id, command, fired)\n";
     s += "\tlocal quest = " + g + ".quests[id]\n";
     s += "\tif quest == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest unknown id=\" .. tostring(id) .. \" \" .. tostring(command))\n";
@@ -16316,6 +16412,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal code = " + g + ".questCodes[id .. \" \" .. beat]\n";
     s += "\tif code == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest has no beat for \" .. command)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif fired then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. beat .. \" fired by the row's own port; no beat queued\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\ttable.insert(" + g + ".questQueue, code)\n";
@@ -16961,7 +17061,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // the way the app's directive would queue it, and pays what the giver promised.
     s += "\tif quest.item == \"\" then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" word carried to \" .. quest.target .. \", complete on the spot\")\n";
-    s += "\t\t" + g + ".QuestCommand(id, \"complete\")\n";
+    s += "\t\t" + g + ".QuestCommand(id, \"complete\", true)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tlocal receiver = nil\n";
@@ -16998,7 +17098,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tf.onward = true\n";
     s += "\tend\n";
     s += "\t" + g + ".state.quests[id] = f\n";
-    s += "\t" + g + ".QuestCommand(id, \"complete\")\n";
+    s += "\t" + g + ".QuestCommand(id, \"complete\", true)\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".OnConversation(npc, user, slotId)\n";

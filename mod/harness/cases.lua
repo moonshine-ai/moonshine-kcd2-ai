@@ -1510,9 +1510,14 @@ case("Onward: the telling pays and sends Henry on; the word said completes and p
     check(E.find("word carried on to " .. q.onward), "logged as carried on")
     check(E.find("word carried on; paid at the telling"), "and not paid again")
     if q.rewardClass then check(count() == had + 1, "still the one reward") end
+    -- The graph has the complete from the row's own port (row_completes), and no beat is
+    -- left queued for a conversation that is not coming (19 Nov 2026: the code sat armed
+    -- after Father Adam's refusal and the journal kept both objectives open).
+    check(E.questState[id].state == "done", "the graph's complete from the row's port")
     queued = false
     for _, code in ipairs(M.questQueue) do if code == M.questCodes[id .. " complete"] then queued = true end end
-    check(queued or M.questCode == M.questCodes[id .. " complete"], "the plain complete queued")
+    check(not queued and M.questCode ~= M.questCodes[id .. " complete"], "no complete beat queued behind it")
+    check(E.find("fired by the row's own port"), "and the log says why")
 end)
 
 case("QuestDelivered: the letter moves to the receiver and how is delivered", function(E, M, check)
@@ -1650,7 +1655,8 @@ case("Plea: a deliver's truth told sends Henry back to the receiver, whose refus
     check(E.holderMenuOpen(q.target) == false, "and shut once the plea is made")
     check(M.state.quests[id].done == true and M.state.quests[id].carried == true, "done at the refusal")
     check(M.state.quests[id].how == "truth", "and still the truth")
-    check(armedOrQueued(M, id, "complete"), "the plain complete queued: the scene gated on the truth opens")
+    check(E.questState[id].state == "done", "the graph's complete from the row's port: the scene gated on the truth opens")
+    check(not armedOrQueued(M, id, "complete"), "no complete beat queued behind it")
     check(E.find("word carried on; paid at the telling"), "nothing paid again")
 end)
 
@@ -4838,6 +4844,67 @@ case("Marker: a giver's marker comes off while he stands in a trespass area and 
     E.advance(4500)
     E.advance(2100)
     check(E.count(closed, mark) == 1, "nothing more once the errand is taken")
+end)
+
+-- bugs.txt 19 Nov 2026 (Holy Jest done, no marker on Father Dominic for Letter of the
+-- Law): a scene's link is told open to its graph by the mod's own token the first tick
+-- the store has the favour before done the way the link follows; once, in the store, and
+-- the trespass gate takes over from then on. Locked, nothing is made: the graph's own
+-- gate has the marker off.
+case("Marker: a link's marker is told open by the mod's token once the favour before is done its way, once only, and a locked link makes nothing", function(E, M, check)
+    local id, q = byName(M, "Letter of the Law")
+    if q == nil then check(true, "no Letter of the Law in this data"); return end
+    check(q.after ~= nil and q.after ~= "" and M.quests[q.after] ~= nil, "a link, after " .. tostring(q.after))
+    check(q.linkOpen == "6d6f6f6e-7368-4c00-8000-" .. id, "the open token is the link's own class under the L prefix")
+    local links, heads = 0, 0
+    for other, oq in pairs(M.quests) do
+        if oq.giverClosed ~= nil then
+            heads = heads + 1
+            if oq.after ~= nil and oq.after ~= "" then
+                links = links + 1
+                check(oq.linkOpen ~= nil, oq.name .. " carries the link token")
+            else
+                check(oq.linkOpen == nil, oq.name .. " is no link and carries none")
+            end
+        end
+    end
+    check(links > 0 and links < heads, links .. " links among " .. heads .. " heads")
+    E.labels = {}
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 500, y = 500, z = 0 })
+    M.WatchArm("world")
+    local mark = E.mark()
+    local opened = "BRIDGE quest " .. id .. " link open: " .. q.after
+    E.advance(4500)
+    check(not E.find(opened, mark) and E.count("BRIDGE quest token made", mark) == 0, "locked: no token, nothing hidden")
+    check(M.state.quests[id] == nil or M.state.quests[id].linkOpened == nil, "nothing in the store")
+    -- The favour before is done the way the link follows. Every link after it opens
+    -- (A Beggar's Heart follows Holy Jest as Letter of the Law does): one token each.
+    local siblings = 0
+    for _, oq in pairs(M.quests) do
+        if oq.linkOpen ~= nil and oq.after == q.after and M.QuestHowMatches("truth", oq.afterHow) then siblings = siblings + 1 end
+    end
+    M.state.quests[q.after] = { accepted = true, done = true, how = "truth" }
+    check(M.QuestLinkState(id) == "open", "the link is open")
+    E.advance(2100)
+    check(E.count(opened, mark) == 1 and M.state.quests[id].linkOpened == true, "told open once, in the store")
+    check(E.count("BRIDGE quest token made", mark) == siblings, "one token per link after it: " .. siblings)
+    E.advance(2100)
+    check(M.Count(player, q.linkOpen) == 0, "and gone a moment later")
+    E.advance(4500)
+    check(E.count(opened, mark) == 1 and E.count("BRIDGE quest token made", mark) == siblings, "not told twice")
+    -- Open, the trespass gate works as any head's.
+    E.labels = { private = true, personal = true }
+    E.advance(2100)
+    E.advance(2100)
+    check(E.count("BRIDGE quest " .. id .. " giver closed", mark) == 1 and M.state.quests[id].giverHidden == true, "closed indoors once open")
+    -- A load with the telling in the store: nothing again.
+    M.giverPending = {}
+    mark = E.mark()
+    E.labels = {}
+    E.advance(2100)
+    E.advance(2100)
+    check(E.count(opened, mark) == 0 and E.count("BRIDGE quest " .. id .. " giver open", mark) == 1, "the store remembers the telling; the gate goes on")
 end)
 
 -- The bedside on top of the catching (notes.md 22 Oct 2026): the catching itself says
