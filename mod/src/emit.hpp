@@ -673,6 +673,18 @@ constexpr int kTravelMoodMetres = 40;
 constexpr int kHailMetres = 15;
 constexpr int kHailBubbleMetres = 25;
 constexpr int kHailAgainSeconds = 90;
+// And not from a fast travel (bugs.txt 19 Nov 2026: "As fat as a prior"'s hail heard
+// while the map carried Henry past its giver). The engine moves Henry along the road at
+// the map's pace with the world clock wound with him, so a tick that finds him stepped
+// kTravelJumpMetres or more, or the clock kTravelClockSeconds or more on, since the tick
+// before is a travel (or a load, a wait at a bench, a sleep -- all of them a moment nobody
+// should be shouting through), and WatchHail holds its tongue for kTravelGraceSeconds of
+// real time after the last such tick. A giver by the road he arrives on hails him once he
+// has stood there that long. 30 m a tick is three times a sprint's two seconds; two game
+// minutes a tick is twice what the clock does on foot.
+constexpr double kTravelJumpMetres = 30.0;
+constexpr int kTravelClockSeconds = 120;
+constexpr int kTravelGraceSeconds = 6;
 // The wave that goes with the shout (HailWave, 19 Nov 2026): the engine's urgeDialog
 // behaviour waves big past five metres and small within, and the clip is started on this
 // animation layer, which a probe on a standing townsman found takes an upper-body "_over"

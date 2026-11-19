@@ -3388,6 +3388,9 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 0, "not again inside hailAgain")
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(M.hailAgain * 1000 + 100)
+    -- Back on foot: in two steps, since one of the whole way reads as a travel (WatchRoad).
+    player:SetWorldPos({ x = 100 + M.hailMetres + 2, y = 100, z = 0 })
+    E.advance(2100)
     player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
     mark = E.mark()
     E.advance(2100)
@@ -3398,6 +3401,8 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     E.clipLengths["greetings_wave_small_over"] = nil
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(M.hailAgain * 1000 + 100)
+    player:SetWorldPos({ x = 100 + M.hailMetres + 2, y = 100, z = 0 })
+    E.advance(2100)
     player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
     mark = E.mark()
     E.advance(2100)
@@ -3556,6 +3561,53 @@ case("Self talk: each line Henry says to himself has its own token, SelfTalk voi
     E.dialog.open = false
 end)
 
+-- bugs.txt 19 Nov 2026: "As fat as a prior"'s hail heard as the map carried Henry past
+-- its giver. A tick that finds Henry stepped kTravelJumpMetres or the clock wound
+-- kTravelClockSeconds since the tick before is a travel; no hail through it nor for
+-- kTravelGraceSeconds after, and then the giver he arrived beside hails him.
+case("Hail: not through a fast travel -- a tick's long step or a wound clock holds every hail for a few seconds after, then the giver Henry arrives beside shouts", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil or q.hail == nil then check(true, "no hail in this data"); return end
+    check(M.travelJumpMetres == 30 and M.travelClockSeconds == 120 and M.travelGraceSeconds == 6, "the constants as emit.hpp has them")
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    -- Henry far off, walking: two ticks of ordinary steps, nothing noted.
+    player:SetWorldPos({ x = 1000, y = 1000, z = 0 })
+    M.WatchArm("world")
+    E.advance(2100)
+    player:SetWorldPos({ x = 1005, y = 1000, z = 0 })
+    E.advance(2100)
+    check(M.travelGraceAt == nil and not E.find("BRIDGE watch travelling"), "a walk is no travel")
+    -- The map carries him: a long step lands him within hailMetres of the giver.
+    local hail = "BRIDGE quest " .. id .. " hail " .. q.giver
+    local mark = E.mark()
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
+    E.advance(2100)
+    check(E.find("BRIDGE watch travelling", mark) and M.travelGraceAt ~= nil, "the step is read as a travel")
+    check(not E.find(hail, mark), "no hail through it")
+    -- Carried on past him at the map's pace: still travelling, still no hail.
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100 + 40, z = 0 })
+    E.advance(2100)
+    player:SetWorldPos({ x = 100, y = 100 + 2, z = 0 })
+    E.advance(2100)
+    check(not E.find(hail, mark), "nor as he is carried past")
+    check(E.count("BRIDGE watch travelling", mark) == 1, "the travel is logged once")
+    -- Set down beside the giver: the grace, then the hail.
+    E.advance(2100)
+    E.advance(2100)
+    check(not E.find(hail, mark), "nor in the grace just after")
+    E.advance(2100)
+    E.advance(2100)
+    check(E.find("BRIDGE watch travel over", mark) and E.find(hail, mark), "then the giver he stands beside hails him")
+    -- The clock alone (a wait, a sleep) is a travel too.
+    M.hailed = {}
+    mark = E.mark()
+    E.worldBase = E.worldBase + 600
+    E.advance(2100)
+    check(E.find("BRIDGE watch travelling", mark) and not E.find(hail, mark), "a wound clock holds the hail as well")
+    E.advance(2100 * 4)
+    check(E.find(hail, mark), "and lets it go after the grace")
+end)
+
 case("Hail hours: a giver with a day written is not hailed outside it (asleep, at her supper), and is within it", function(E, M, check)
     -- Christine's hours (hail_hours 8-20; notes.md 25 Oct 2026): the hail only in them, as
     -- her marker is only on the map in them (the graph's giverDay). Benesh has no hours and
@@ -3650,6 +3702,8 @@ case("Godwin: nothing is offered, looked at, hailed or begun while the player is
     player.soul.nameKey = "char_26_uiName"
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(M.hailAgain * 1000 + 100)
+    player:SetWorldPos({ x = 100 + M.hailMetres + 2, y = 100, z = 0 })
+    E.advance(2100)
     player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
     mark = E.mark()
     E.advance(2100)

@@ -7138,6 +7138,10 @@ std::string state_lua(const std::string& g) {
     // The world's entities are new with it: a keepsake scaled in the last one is not
     // scaled in this (ScaleKeepsake).
     s += "\t\t" + g + ".keepsakeScaled = {}\n";
+    // And where Henry stood is the last world's (WatchRoad): the new one's first tick is
+    // a reading, not a step.
+    s += "\t\t" + g + ".travelLast = nil\n";
+    s += "\t\t" + g + ".travelGraceAt = nil\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving\")\n";
     s += "\tend\n";
     s += "\tif not " + g + ".worldHooks[via] then\n";
@@ -14107,6 +14111,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(function() pp = " + g + ".Player():GetWorldPos() end)\n";
     s += "\t" + g + ".watchQuick = false\n";
     s += "\t" + g + ".giverSwitches = 0\n";
+    s += "\tif pp ~= nil then " + g + ".WatchRoad(pp, now) end\n";
     s += "\tif pp ~= nil then\n";
     s += "\t\tfor _, id in ipairs(pending) do\n";
     s += "\t\t\tlocal q = " + g + ".quests[id]\n";
@@ -14164,12 +14169,46 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".hailMetres = " + std::to_string(kHailMetres) + "\n";
     s += g + ".hailAgain = " + std::to_string(kHailAgainSeconds) + "\n";
     s += g + ".hailed = {}\n";
+    // Henry carried by the map (emit.hpp kTravelJumpMetres, kTravelClockSeconds,
+    // kTravelGraceSeconds; bugs.txt 19 Nov 2026): WatchRoad keeps where he stood and what
+    // the clock said last tick, and the real time of the last tick that found him stepped or
+    // the clock wound too far for a walk; OnRoad is the grace after it. (WatchTravel is the
+    // travel kind's own watch.)
+    s += g + ".travelJumpMetres = " + health_text(kTravelJumpMetres) + "\n";
+    s += g + ".travelClockSeconds = " + std::to_string(kTravelClockSeconds) + "\n";
+    s += g + ".travelGraceSeconds = " + std::to_string(kTravelGraceSeconds) + "\n";
+    s += g + ".travelLast = nil\n";
+    s += g + ".travelGraceAt = nil\n";
+    s += "function " + g + ".WatchRoad(pp, now)\n";
+    s += "\tlocal clock = " + g + ".WorldTime()\n";
+    s += "\tlocal last = " + g + ".travelLast\n";
+    s += "\t" + g + ".travelLast = { x = pp.x, y = pp.y, clock = clock, at = now }\n";
+    s += "\tif last == nil then return end\n";
+    s += "\tlocal step = math.sqrt((pp.x - last.x) ^ 2 + (pp.y - last.y) ^ 2)\n";
+    s += "\tlocal wound = (clock ~= nil and last.clock ~= nil) and (clock - last.clock) or 0\n";
+    s += "\tif step < " + g + ".travelJumpMetres and wound < " + g + ".travelClockSeconds then return end\n";
+    s += "\tif " + g + ".travelGraceAt == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE watch travelling: \" .. string.format(\"%.1f\", step) .. \"m and \" .. " + g +
+         ".Whole(wound) .. \"s since last tick; no hail for \" .. " + g + ".travelGraceSeconds .. \"s after it ends\")\n";
+    s += "\tend\n";
+    s += "\t" + g + ".travelGraceAt = now\n";
+    s += "end\n";
+    s += "function " + g + ".OnRoad()\n";
+    s += "\tlocal at = " + g + ".travelGraceAt\n";
+    s += "\tif at == nil then return false end\n";
+    s += "\tif " + g + ".Now() - at < " + g + ".travelGraceSeconds then return true end\n";
+    s += "\t" + g + ".travelGraceAt = nil\n";
+    s += "\t" + g + ".Log(\"BRIDGE watch travel over; hails go on\")\n";
+    s += "\treturn false\n";
+    s += "end\n";
     s += "function " + g + ".WatchHail(id, q, pp)\n";
     s += "\tlocal f = ((" + g + ".state or {}).quests or {})[id]\n";
     s += "\tif type(f) == \"table\" and (f.accepted or f.done) then return end\n";
     s += "\tif not " + g + ".QuestOn(id) then return end\n";
     // Not over a conversation, nor over a line Henry is saying to himself: the next tick will do.
     s += "\tif " + g + ".active or " + g + ".InDialog() or " + g + ".SelfTalking() then return end\n";
+    // Nor through a fast travel, nor for a moment after it (WatchRoad; bugs.txt 19 Nov 2026).
+    s += "\tif " + g + ".OnRoad() then return end\n";
     // Her day (hail_hours; notes.md 25 Oct 2026): asleep or at her supper she does not call
     // Henry over, and her marker is off the map (the graph's giverDay).
     s += "\tif q.hailHours ~= nil and not " + g + ".HourIn(q.hailHours) then return end\n";
