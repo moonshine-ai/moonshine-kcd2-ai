@@ -5449,6 +5449,147 @@ case("Mouth: the skip button in the game's own voiced Talk drops the line being 
     M.OnPlayerAction("dialog_skip", "release")
 end)
 
+-- A line long enough for three or more pages of the caption, for the two cases below.
+local function longLine()
+    local parts = {}
+    for i = 1, 7 do
+        parts[i] = "You have it, then, and that is the " .. ({ "first", "second", "third", "fourth", "fifth", "sixth", "seventh" })[i]
+            .. " thing I will say of it before my name comes down off the stocks where that priest hung it."
+    end
+    return table.concat(parts, " ")
+end
+
+case("Line: in a session a tap of the skip on a paged line turns the page, and only on the last page cuts the line short, which settles the caption", function(E, M, check)
+    -- bugs.txt 19 Nov 2026: a skip on a long line dropped the player into the menu while
+    -- the caption went on turning under it. Now the tap is the next page (LineSkip), the
+    -- voice going on under it; the last page's tap is the skip it was, and the caption
+    -- settles on the last page (LineCut).
+    live(E, M)
+    M.npcName = "Benesh"
+    local twin = E.soul("DialogTwin_kkut_additive_man_47")
+    local long = longLine()
+    local pages = M.Pages(long)
+    check(#pages >= 3, "three pages or more: " .. #pages)
+    M.Say(1, "@voiced " .. long)
+    M.Say(2, "@opt 1 ask 18:I have a question. @rows 1")
+    lipCue(E, M, "npc", long, 1, "lip npc 1\nplay pdea_dial_a 1.00 40.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.menuHeld == true and M.lipEnt == twin, "the menu held for the voice, the mouth on the twin")
+    check(captionShows(E)[1] == pages[1], "the first page up")
+    local mark = E.mark()
+    -- One tap: the second page. The mouth stays, the menu stays held, no skip marker.
+    M.OnPlayerAction("dialog_skip", "press")
+    M.OnPlayerAction("dialog_skip", "release")
+    check(captionShows(E)[1] == pages[2], "the tap turned to the second page: " .. tostring(string.sub(captionShows(E)[1], 1, 30)))
+    check(E.find("BRIDGE skipped to caption page 2 of " .. #pages, mark), "said as a page turned")
+    check(not E.find("BRIDGE skipped turn=", mark), "not a skip of the line")
+    check(M.lipEnt == twin and M.menuHeld == true, "the mouth going on and the menu still held")
+    -- Through to the last page, a tap a page.
+    for i = 3, #pages do
+        M.OnPlayerAction("dialog_skip", "press")
+        M.OnPlayerAction("dialog_skip", "release")
+        check(captionShows(E)[1] == pages[i], "page " .. i .. " on the tap")
+    end
+    -- On the last page the tap is the skip: the mouth off, the menu let go.
+    mark = E.mark()
+    M.OnPlayerAction("dialog_skip", "press")
+    M.OnPlayerAction("dialog_skip", "release")
+    check(E.find("BRIDGE skipped turn=2", mark), "the last page's tap is the skip")
+    check(M.lipEnt == nil and M.menuHeld == false, "the mouth off and the menu let go")
+    check(captionShows(E)[1] == pages[#pages], "the caption left on the last page")
+    -- A skip from the first page of a fresh line settles the caption on its last page: no
+    -- page turns under the menu afterwards.
+    M.Say(3, "@voiced " .. long)
+    M.Say(4, "@opt 1 ask 18:Another question. @rows 1")
+    lipCue(E, M, "npc", long, 1, "lip npc 1\nplay pdea_dial_a 1.00 40.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(captionShows(E)[1] == pages[1], "a fresh line's first page")
+    -- Taps through the pages, then the skip.
+    for i = 2, #pages do
+        M.OnPlayerAction("dialog_skip", "press"); M.OnPlayerAction("dialog_skip", "release")
+    end
+    mark = E.mark()
+    M.OnPlayerAction("dialog_skip", "press"); M.OnPlayerAction("dialog_skip", "release")
+    check(E.find("BRIDGE skipped turn=4", mark), "skipped")
+    E.advance(60000)
+    M.PageTick()
+    check(captionShows(E)[1] == pages[#pages], "and nothing turns under the menu: still the last page")
+    check(not E.find("BRIDGE caption page ", mark), "no page turned on the clock after the skip")
+end)
+
+case("Line: a voiced Talk's lines show in our caption, in pages, as their mouths are armed, the tap turns a page and is kept from the game, and the game's caption comes back after", function(E, M, check)
+    -- bugs.txt 19 Nov 2026: Brother Thomas's answer filled the screen in the game's own
+    -- caption, and the skip meant something else there than in a session. The Talk's
+    -- lines take the session's road (TalkCaption, TalkLine, LineSkip) once the app has
+    -- moved a mouth this run (lipsync), and the game's caption is hidden for the Talk.
+    local thomas = E.soul("ksed_man_1", { pos = { x = 2, y = 0, z = 0 } })
+    check(M.active ~= true, "no session")
+    local long = longLine()
+    local pages = M.Pages(long)
+    -- Without the app's mouth seen this run the game's own caption is left alone.
+    M.lipsync = false
+    M.Voice("henry", "Brother Thomas, a question.")
+    M.Voice("male", long, "ksed_man_1")
+    check(M.talkCaption == false, "the caption stays the game's with no mouth seen")
+    check(E.hud.visible["bc.subtitles"] == nil, "the game's caption not touched")
+    M.LipStop("test"); M.lipKey = nil; M.lipQueue = {}
+    -- The app's cues have moved a mouth this run: the Talk's caption is ours.
+    M.lipsync = true
+    E.dialog.open = true
+    local mark = E.mark()
+    M.Voice("henry", "Brother Thomas, a question.")
+    M.Voice("male", long, "ksed_man_1")
+    check(M.talkCaption == true, "the caption taken over for the Talk")
+    check(E.hud.visible["bc.subtitles"] == false, "the game's caption hidden")
+    check(E.find("BRIDGE talk caption ours", mark), "said")
+    local shown = captionShows(E)
+    check(shown and shown[1] == "Brother Thomas, a question." and shown[2] == M.playerName, "Henry's line first, under his name")
+    -- His stop arms theirs, and the caption turns to it: the first page, under their name.
+    lipCue(E, M, "henry", "Brother Thomas, a question.", 1, "lip henry 1\nplay tmck_dial_a 1.00 2.00\n")
+    E.advance(M.lipPollMillis + 10)
+    lipCue(E, M, "henry", "Brother Thomas, a question.", 2, "stop\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipWho == "male" and M.lipKey == M.LipKey("male", long), "their mouth armed")
+    shown = captionShows(E)
+    check(shown and shown[1] == pages[1] and shown[2] == "Brother Thomas", "their first page under their name: " .. tostring(shown and shown[2]))
+    check(E.find("BRIDGE caption in " .. #pages .. " pages", mark), "the pages said")
+    -- Their audio begins: the pages count from it, and turn on the Talk's own clock.
+    lipCue(E, M, "male", long, 1, "lip male 1\nplay jnun_dial_a 1.00 40.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(#thomas.anims >= 1, "their clip on them")
+    E.advance(math.ceil(M.pageDur[1] * 1000) + 500)
+    check(captionShows(E)[1] == pages[2], "the second page in its time, with no pump: " .. tostring(string.sub(captionShows(E)[1], 1, 30)))
+    -- A tap: the third page, the mouth still on, and the press kept from the game's skip.
+    mark = E.mark()
+    local taken = M.OnPlayerAction("dialog_skip", "press")
+    check(taken == true, "the press kept from the game while a page is still to come")
+    check(captionShows(E)[1] == pages[3], "the third page on the tap")
+    check(E.find("BRIDGE skipped to caption page 3 of " .. #pages, mark), "said")
+    check(not E.find("BRIDGE skipped line", mark), "not a skip of the line")
+    check(M.lipKey == M.LipKey("male", long), "their mouth still armed")
+    M.OnPlayerAction("dialog_cancel", "press")
+    check(captionShows(E)[1] == pages[3], "the same tap's second action turns nothing")
+    M.OnPlayerAction("dialog_cancel", "release"); M.OnPlayerAction("dialog_skip", "release")
+    E.advance(300)
+    -- Taps to the last page, then one more: the skip of the line, as before.
+    for i = 4, #pages do
+        M.OnPlayerAction("dialog_skip", "press"); M.OnPlayerAction("dialog_skip", "release"); E.advance(300)
+    end
+    check(captionShows(E)[1] == pages[#pages], "the last page")
+    mark = E.mark()
+    taken = M.OnPlayerAction("dialog_skip", "press")
+    check(taken == false and E.find("BRIDGE skipped line", mark), "on the last page the press is the game's skip, and the line's")
+    check(M.lipKey == nil, "the mouth off")
+    M.OnPlayerAction("dialog_skip", "release")
+    -- The Talk ends: our caption down, the game's back.
+    E.dialog.open = false
+    E.advance(1100)
+    check(M.talkCaption == false, "the Talk's caption let go")
+    check(E.hud.visible["bc.subtitles"] == true, "the game's caption shown again")
+    check(captionShows(E).up == false, "ours down")
+    check(E.find("BRIDGE talk caption given back -- talk over", mark), "said")
+end)
+
 -- -------------------------------------------------------------------- Seek
 -- Sweepings and Strays' second scene (quest-design/stories.md): Anna's cat, the mod's own,
 -- made at the first point of the path when Henry comes within hearing, calling, moving on

@@ -7146,6 +7146,9 @@ std::string state_lua(const std::string& g) {
     // a reading, not a step.
     s += "\t\t" + g + ".travelLast = nil\n";
     s += "\t\t" + g + ".travelGraceAt = nil\n";
+    // A Talk's caption of ours is the last world's too; the new world's HUD is its own.
+    s += "\t\t" + g + ".talkCaption = false\n";
+    s += "\t\t" + g + ".voicedTalk = false\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving\")\n";
     s += "\tend\n";
     s += "\tif not " + g + ".worldHooks[via] then\n";
@@ -10291,12 +10294,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal gen = " + g + ".voicedGen\n";
     s += "\tlocal function tick()\n";
     s += "\t\tif gen ~= " + g + ".voicedGen then return end\n";
-    s += "\t\tif " + g + ".active then " + g + ".voicedDisk = false return end\n";
+    // A session opened over the Talk: its own caption takes over (Begin hides the game's,
+    // Leave gives it back), so the Talk's is simply let go of.
+    s += "\t\tif " + g + ".active then " + g + ".voicedDisk = false; " + g + ".talkCaption = false; " + g + ".lineGen = " + g + ".lineGen + 1 return end\n";
+    // The Talk's caption goes the moment the Talk does, not with the frames four seconds on.
+    s += "\t\tif not " + g + ".InDialog() then pcall(" + g + ".TalkCaptionDown, \"talk over\") end\n";
     s += "\t\tif " + g + ".Now() - " + g + ".voicedAt < 4 or " + g + ".InDialog() then\n";
     s += "\t\t\tpcall(function() Script.SetTimer(1000, tick) end)\n";
     s += "\t\t\treturn\n";
     s += "\t\tend\n";
     s += "\t\t" + g + ".Log(\"BRIDGE voiced dialogue over, frames given back\")\n";
+    s += "\t\tpcall(" + g + ".TalkCaptionDown, \"voiced dialogue over\")\n";
     s += "\t\t" + g + ".FramesRest()\n";
     s += "\t\tif " + g + ".voicedDisk then " + g + ".voicedDisk = false; " + g + ".Disk(" + g + ".diskRest) end\n";
     s += "\t\t" + g + ".LipStop(\"voiced dialogue over\")\n";
@@ -11199,9 +11207,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // until the next line, and nothing is drawn, since a line that is captioned does not
     // want a second copy of itself over the top in another face.
     s += "\tif " + g + ".mode == \"caption\" then\n";
-    s += "\t\t" + g + ".shown = text\n";
-    s += "\t\t" + g + ".PageSet(text, " + g + ".more)\n";
-    s += "\t\t" + g + ".Write(" + g + ".Display())\n";
+    s += "\t\t" + g + ".LineShow(text, " + g + ".above)\n";
     // No frame timer unless a probe has asked for the line to be put back (captionEvery):
     // one write holds until the next line, so there is nothing for a pump to do between.
     s += "\t\tif " + g + ".captionEvery > 0 and not " + g + ".painting then\n";
@@ -11268,6 +11274,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".VoicedFrames)\n";
     s += "\t" + g + ".voicedTalk = true\n";
     s += "\tif soul ~= nil and soul ~= \"\" then " + g + ".voicedSoul = soul end\n";
+    // The Talk's caption is ours, in pages, while the app is voicing (TalkCaption).
+    s += "\tpcall(" + g + ".TalkCaption)\n";
     // One row's lines come in the same frame; a call a second or more after the last is
     // the next row picked, so whatever the last row still had armed or queued is over.
     s += "\tlocal now = " + g + ".Now()\n";
@@ -11885,7 +11893,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal now = " + g + ".Now()\n";
     s += "\t\t\tif " + g + ".skipLineAt >= 0 and now - " + g + ".skipLineAt < " + g + ".skipLineDebounce then return false end\n";
     s += "\t\t\t" + g + ".skipLineAt = now\n";
+    // The Talk's line in our caption with a page still to come (TalkLine): the tap turns
+    // it and is kept from the game, whose skip would end the row under it. The same road
+    // the session's tap takes (LineSkip, bugs.txt 19 Nov 2026).
+    s += "\t\t\tif " + g + ".talkCaption and " + g + ".LineSkip() then return true end\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE skipped line\")\n";
+    s += "\t\t\t" + g + ".LineCut()\n";
     s += "\t\t\tpcall(" + g + ".LipStop, \"skipped\")\n";
     s += "\t\t\t" + g + ".lipKey = nil\n";
     s += "\t\t\t" + g + ".LipNext()\n";
@@ -11943,11 +11956,17 @@ std::string emit_conversation_lua(const std::string& modid,
     // app's cue to hush its voice, and -- for a reply still being written (streaming) -- to
     // stop the model and end the reply at what the screen had, which lands as the turn
     // that finishes the line (Say, cutShort): no mouth for it, no wait on it, the menu.
+    //
+    // A line in pages (bugs.txt 19 Nov 2026): the tap turns to the next page first, and
+    // only on the last is the line cut short (LineSkip); a line cut short settles on its
+    // last page (LineCut), so the caption stops turning under the menu.
     s += "function " + g + ".Skip()\n";
+    s += "\tif " + g + ".LineSkip() then return end\n";
     s += "\t" + g + ".Log(\"BRIDGE skipped turn=\" .. " + g + ".turn)\n";
     s += "\t" + g + ".hold = 0\n";
     s += "\t" + g + ".Speak(0)\n";
     s += "\tif " + g + ".streaming then " + g + ".cutShort = true end\n";
+    s += "\t" + g + ".LineCut()\n";
     // The borrowed mouth comes off and the menu it was holding comes up, as the game's
     // own skip ends a line: the player has heard enough of it. The pieces of a reply still
     // to be spoken go with it: the player has heard enough of all of it.
@@ -12217,6 +12236,109 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Refresh()\n";
     s += "end\n";
     s += "\n";
+    // ---- A line on the screen: the one road (bugs.txt 19 Nov 2026) ---------------------
+    //
+    // Every line either party says on screen goes through these, whichever conversation it
+    // is in: the app's own (Say for theirs, Said for Henry's) or a voiced Talk of the game's
+    // (a holder's menu, Brother Thomas's counsel, Father Ernest's reading: Voice, LipArm).
+    // Before this the Talk's lines showed in the game's own caption, whole -- Thomas's
+    // answer on marriage filled the screen -- and only the session's were paged, and the
+    // skip did two different things in the two. Now:
+    //
+    // LineShow puts a line up in our caption, in pages (PageSet), under its speaker.
+    // LineSkip is what a tap of the skip means while a line is up: a page still to come is
+    // turned, and the line goes on under it (the voice is one piece of audio and is not
+    // cut; the player is reading ahead of it); on the last page the tap is the line's end,
+    // and the caller cuts it short as before. A line still being written (streaming) shows
+    // its newest words and is not paged by hand. LineCut settles a line cut short on its
+    // last page, so the caption does not go on turning under the menu that follows -- the
+    // 19 Nov report: "skipping drops the user back into the interactive menu, but the
+    // caption text continues updating".
+    //
+    // In a voiced Talk the caption is ours once the app has moved a mouth this run
+    // (lipsync: its cues are arriving, so its voice is what the lines are timed to); a run
+    // without the app keeps the game's own captions, since nothing of ours would know when
+    // one line ends and the next begins. The game's widget is hidden for the Talk
+    // (Caption false, as a session does) and given back when it ends (VoicedFrames). The
+    // line shown is the one whose mouth is armed (LipArm): Henry's first, then theirs,
+    // as the lines queue, so the words follow the voice. Its pages turn on a clock of
+    // their own (LineTimer), since the session's pump is not running.
+    s += g + ".talkCaption = false\n";
+    s += g + ".lineGen = 0\n";
+    s += "function " + g + ".LineShow(text, speaker)\n";
+    s += "\tif " + g + ".mode ~= \"caption\" then return false end\n";
+    s += "\t" + g + ".above = speaker or \"\"\n";
+    s += "\t" + g + ".shown = text\n";
+    s += "\t" + g + ".PageSet(text, " + g + ".active and " + g + ".more)\n";
+    s += "\t" + g + ".Write(" + g + ".Display())\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".LineSkip()\n";
+    s += "\tif " + g + ".pagesOf ~= " + g + ".shown or #" + g + ".pages < 2 then return false end\n";
+    s += "\tif " + g + ".active and " + g + ".streaming then return false end\n";
+    s += "\tif " + g + ".page >= #" + g + ".pages then return false end\n";
+    s += "\t" + g + ".page = " + g + ".page + 1\n";
+    s += "\t" + g + ".pageAt = " + g + ".Now()\n";
+    s += "\t" + g + ".Log(\"BRIDGE skipped to caption page \" .. " + g + ".page .. \" of \" .. #" + g + ".pages)\n";
+    s += "\t" + g + ".Refresh()\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".LineCut()\n";
+    s += "\tif " + g + ".pagesOf ~= " + g + ".shown or " + g + ".page >= #" + g + ".pages then return end\n";
+    s += "\t" + g + ".page = #" + g + ".pages\n";
+    s += "\t" + g + ".pageAt = " + g + ".Now()\n";
+    s += "\t" + g + ".Refresh()\n";
+    s += "end\n";
+    s += "\n";
+    // The voiced Talk's side. TalkCaption takes the caption over for the Talk (once,
+    // at its first line); TalkLine shows the line whose mouth was just armed; LineTimer
+    // turns its pages; TalkCaptionDown gives the game's caption back.
+    s += "function " + g + ".TalkCaption()\n";
+    s += "\tif " + g + ".active or " + g + ".talkCaption then return end\n";
+    s += "\tif not " + g + ".lipsync or " + g + ".mode ~= \"caption\" then return end\n";
+    s += "\t" + g + ".talkCaption = true\n";
+    s += "\t" + g + ".wrote = nil\n";
+    s += "\t" + g + ".shown = \"\"\n";
+    s += "\t" + g + ".above = \"\"\n";
+    s += "\t" + g + ".Caption(false)\n";
+    s += "\t" + g + ".Plate()\n";
+    s += "\t" + g + ".Log(\"BRIDGE talk caption ours: the voiced Talk's lines in pages\")\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".TalkLine(who, text)\n";
+    s += "\tif not " + g + ".talkCaption then return end\n";
+    s += "\tlocal speaker = \"\"\n";
+    s += "\tif who == \"henry\" then speaker = " + g + ".playerName\n";
+    s += "\telseif " + g + ".voicedSoul ~= nil then speaker = " + g + ".soulNames[" + g + ".voicedSoul] or \"\" end\n";
+    s += "\tif not " + g + ".LineShow(text, speaker) then return end\n";
+    s += "\tif #" + g + ".pages > 1 then " + g + ".LineTimer() end\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".LineTimer()\n";
+    s += "\t" + g + ".lineGen = " + g + ".lineGen + 1\n";
+    s += "\tlocal gen = " + g + ".lineGen\n";
+    s += "\tlocal function tick()\n";
+    s += "\t\tif gen ~= " + g + ".lineGen or " + g + ".active or not " + g + ".talkCaption then return end\n";
+    s += "\t\tpcall(" + g + ".PageTick)\n";
+    s += "\t\tif " + g + ".pagesOf ~= " + g + ".shown or " + g + ".page >= #" + g + ".pages then return end\n";
+    s += "\t\tpcall(function() Script.SetTimer(" + std::to_string(kTalkPageTickMs) + ", tick) end)\n";
+    s += "\tend\n";
+    s += "\tpcall(function() Script.SetTimer(" + std::to_string(kTalkPageTickMs) + ", tick) end)\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".TalkCaptionDown(why)\n";
+    s += "\tif not " + g + ".talkCaption then return end\n";
+    s += "\t" + g + ".talkCaption = false\n";
+    s += "\t" + g + ".lineGen = " + g + ".lineGen + 1\n";
+    s += "\t" + g + ".shown = \"\"\n";
+    s += "\t" + g + ".above = \"\"\n";
+    s += "\t" + g + ".Write(\"\")\n";
+    s += "\t" + g + ".Caption(true)\n";
+    s += "\t" + g + ".Log(\"BRIDGE talk caption given back -- \" .. tostring(why))\n";
+    s += "end\n";
+    s += "\n";
     // The voice slot shows the same way, the words heard where the typed ones would be.
     s += "function " + g + ".Display()\n";
     s += "\tif not " + g + ".typing and not " + g + ".SayVoice() then return " + g + ".Page(), " + g + ".above end\n";
@@ -12261,9 +12383,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".hold = 0\n";
     s += "\tend\n";
     s += "\tif " + g + ".mode == \"caption\" then\n";
-    s += "\t\t" + g + ".above = " + g + ".playerName\n";
-    s += "\t\t" + g + ".shown = line\n";
-    s += "\t\t" + g + ".Refresh()\n";
+    s += "\t\t" + g + ".LineShow(line, " + g + ".playerName)\n";
     s += "\telse\n";
     s += "\t\t" + g + ".above = " + g + ".playerName .. \": \" .. line\n";
     s += "\t\t" + g + ".shown = " + g + ".Named(\"...\")\n";
@@ -12506,7 +12626,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".lipWho = who\n";
     s += "\t" + g + ".lipGen = " + g + ".lipGen + 1\n";
     s += "\tlocal gen = " + g + ".lipGen\n";
-    s += "\tif not " + g + ".active then " + g + ".Log(string.format(\"BRIDGE lip armed %s key=%.0f in the voiced talk\", tostring(who), " + g + ".lipKey)) end\n";
+    s += "\tif not " + g + ".active then\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE lip armed %s key=%.0f in the voiced talk\", tostring(who), " + g + ".lipKey))\n";
+    // The Talk's caption follows the mouth: the line armed is the line shown (TalkLine).
+    s += "\t\tpcall(" + g + ".TalkLine, who, text)\n";
+    s += "\tend\n";
     s += "\tlocal polls = 0\n";
     s += "\tlocal function tick()\n";
     s += "\t\tif gen ~= " + g + ".lipGen then return end\n";
@@ -12579,14 +12703,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif seq == 1 then " + g + ".lipT0 = " + g + ".Now() end\n";
     // The audio has begun: a paged caption counts its pages from here -- or, for a piece
     // of a reply spoken as it was written, turns to the page the piece is on.
-    s += "\tif seq == 1 and " + g + ".lipWho == \"npc\" then pcall(" + g + ".PageAnchor, " + g + ".lipText) end\n";
+    // (The other party is "npc" in a session and the speaker's gender in a voiced Talk:
+    // anyone but Henry.)
+    s += "\tif seq == 1 and " + g + ".lipWho ~= \"henry\" then pcall(" + g + ".PageAnchor, " + g + ".lipText) end\n";
     s += "\tif stop then\n";
     s += "\t\t" + g + ".LipStop(\"audio ended\")\n";
     s += "\t\t" + g + ".lipKey = nil\n";
     // The other party's line heard out: the menu that waited on it may come, and a paged
     // caption shows its last page. Not between the pieces of a reply: the next piece is
     // armed in its turn, and the menu waits for the last.
-    s += "\t\tif " + g + ".lipWho == \"npc\" and #" + g + ".lipQueue == 0 then\n";
+    s += "\t\tif " + g + ".lipWho ~= \"henry\" and #" + g + ".lipQueue == 0 then\n";
     s += "\t\t\tpcall(" + g + ".MenuRelease, \"audio ended\")\n";
     s += "\t\t\tpcall(" + g + ".PageLast)\n";
     s += "\t\tend\n";
@@ -17331,6 +17457,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // where they should go -- told the player's own settings first (Plate), since the old
     // road forced its speaker row on and a measure taken that way is a line high.
     s += "\t" + g + ".wrote = nil\n";
+    s += "\t" + g + ".talkCaption = false\n";
     s += "\t" + g + ".Caption(false)\n";
     s += "\tif " + g + ".mode == \"caption\" then " + g + ".Plate() end\n";
     // The hint gets the screen to itself before the first line, because a conversation

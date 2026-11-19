@@ -899,7 +899,7 @@ function Engine.installGlobals()
     -- (vars.MoonshineCaption.html is the caption's text, .name its speaker row), shown
     -- whether each element is up. The game's caption clip answers GetPos with a y of the
     -- kind the game gives a one-line caption in a dialogue (wl1, 10 Nov 2026).
-    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
+    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {}, visible = {} }
     UIAction = {
         -- The HUD's action hints as last set (SetActionHints draws what the array holds
         -- and hides the rest), kept in hud.hints for a case to read.
@@ -911,7 +911,9 @@ function Engine.installGlobals()
             Engine.hud.calls[#Engine.hud.calls + 1] = name
             Engine.hud.args[#Engine.hud.calls] = { ... }
         end,
-        SetVisible = function() end,
+        -- A clip of the game's HUD shown or hidden by name (the caption's Subtitles clip,
+        -- emit.cpp Caption), kept in hud.visible for a case to read.
+        SetVisible = function(_, _, clip, show) Engine.hud.visible[clip] = show end,
         SetVariable = function(element, _, name, value)
             Engine.hud.vars[element] = Engine.hud.vars[element] or {}
             Engine.hud.vars[element][name] = value
@@ -1054,7 +1056,7 @@ function Engine.reset()
     Engine.ports = {}
     Engine.questState = {}
     Engine.dialog = { open = false, npc = nil, menu = false, beats = 0 }
-    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {} }
+    Engine.hud = { rows = nil, calls = {}, args = {}, vars = {}, shown = {}, visible = {} }
     Engine.cvars = { sys_PakPriority = "0" }
     Engine.luaActions = nil
     Engine.maps = {}

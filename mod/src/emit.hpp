@@ -907,6 +907,9 @@ constexpr double kChestMetres = 80.0;
 // speaking pace, a little under 180 words a minute).
 constexpr int kCaptionPageChars = 240;
 constexpr int kCaptionSpeakRate = 15;
+// A voiced Talk of the game's own has no pump of ours running; its paged caption turns
+// on a timer of its own at this period (the pump's own, 400 ms; bugs.txt 19 Nov 2026).
+constexpr int kTalkPageTickMs = 400;
 constexpr const char* kCurseBuff = "c3ceb785-f7b8-4176-ad5a-7f9c5f0353aa";  // quest_nakaza_plague
 // The mod's own Smelly debuff (assets/pak/Libs/Tables/rpg/buff__moonshine_names.xml): a day of
 // lowered charisma for the bucket of guts a holder answers a refused bribe with.
