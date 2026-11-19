@@ -3648,6 +3648,44 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     check(M.QuestFlagLetters(M.state.quests[id]) == "naiq", "the facts letters read naiq")
 end)
 
+case("Unyielding: her door frightened open is the door for nothing, the letter S beside the i, and the counsel's word is the letter C and the holder's global", function(E, M, check)
+    -- The threat row (bugs.txt 18 Nov 2026): QuestHelper 'scared' takes no money, lets
+    -- Henry in the same, and the store says it was fear.
+    local id, q = byName(M, "In the Stocks")
+    if q == nil or q.helper == nil then check(false, "In the Stocks has a helper"); return end
+    local elsbeth = E.soul(q.helper)
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    M.QuestCommand(id, "named")
+    local purse, hers = player.inventory:GetMoney(), elsbeth.inventory:GetMoney()
+    M.QuestHelper(id, "scared")
+    check(elsbeth.inventory:GetMoney() == hers, "nothing to her")
+    check(math.abs(player.inventory:GetMoney() - purse) < 0.01, "nothing off Henry")
+    local f = M.state.quests[id]
+    check(f.letin == true and f.scared == true, "let in, and by fear, in the store")
+    check(M.QuestFlagLetters(f) == "aiS", "the facts letters read aiS")
+    check(E.find("BRIDGE quest stage " .. id .. " helper scared"), "staged")
+    -- The counsel (Blind Pride's Brother Thomas): QuestCounsel is the store's counselled,
+    -- the letter C, and the holder menu's global up.
+    local bid, bq = byName(M, "Blind Pride")
+    check(bq ~= nil and bq.counsel ~= nil and bq.counselVar ~= nil, "Blind Pride has a counsel and its global")
+    if bq == nil or bq.counsel == nil then return end
+    M.npc = E.soul(bq.giver)
+    M.QuestCommand(bid, "accept")
+    check((E.gvar(bq.counselVar) or 0) == 0, "the global down before the asking")
+    M.QuestCounsel(bid)
+    local bf = M.state.quests[bid]
+    check(bf.counselled == true, "counselled, in the store")
+    check(string.find(M.QuestFlagLetters(bf), "C", 1, true) ~= nil, "the letter C")
+    check(E.gvar(bq.counselVar) == 1, "the holder menu's global up")
+    check(E.find("BRIDGE quest " .. bid .. " counselled by Brother Thomas"), "said in the log")
+    -- The role for his menu: granted when the soul is sighted (GrantHolder).
+    local thomas = E.soul(bq.counsel)
+    check(bq.counselMeta ~= nil and string.find(bq.counselMeta, "_COUNSEL", 1, true) ~= nil, "a metarole of his own")
+    M.GrantHolder(thomas)
+    check(M.HasMeta(thomas, bq.counselMeta), "his menu's role granted")
+end)
+
 case("Clues: a seek's clue asked at a holder makes that holder's own token, and only at a holder", function(E, M, check)
     -- A seek whose giver cannot say where (Plump as a Friar): the neighbours who can each
     -- have an objective of their own in the graph, closed by a token of their own class
@@ -3936,6 +3974,18 @@ case("Chest: the sheet of names in Henry's pocket is the letter j, and closing i
     check(M.state.quests[id].paper == true, "the sheet noted in his pocket")
     check(string.find(M.QuestFlagLetters(M.state.quests[id]), "j", 1, true) ~= nil, "the letter j")
     check(barked(E, id, "paperRead", mark) == 0, "nothing said for carrying it")
+    -- The chalice taken and handed in first: the errand is done, and the sheet unread; the
+    -- watch keeps the quest for the sheet's sake (bugs.txt 18 Nov 2026: read after the
+    -- hand-in, nothing said).
+    chest.inventory:MoveItemOfClass(player.inventory:GetId(), q.item, 1, true)
+    E.advance(2100)
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "complete")
+    M.npc = nil
+    check(M.state.quests[id].done == true, "done")
+    local kept = false
+    for _, pid in ipairs(M.WatchPending()) do if pid == id then kept = true end end
+    check(kept, "still watched for the unread sheet")
     -- Closed after reading: the graph's token appears; the aside, in his voice, once.
     player.inventory:CreateItem(q.readToken, 100, 1)
     mark = E.mark()
@@ -3953,11 +4003,8 @@ case("Chest: the sheet of names in Henry's pocket is the letter j, and closing i
     mark = E.mark()
     E.advance(2100)
     check(barked(E, id, "paperRead", mark) == 0, "not said for a second token")
-    -- Put back in the chest: j gone.
-    player.inventory:MoveItemOfClass(chest.inventory:GetId(), q.paper, 1, true)
-    E.advance(2100)
-    check(M.state.quests[id].paper == false and string.find(M.QuestFlagLetters(M.state.quests[id]), "j", 1, true) == nil,
-          "the letter j goes with the sheet")
+    -- (The quest stays pending here for its holder's dress, which the harness never lays;
+    -- the sheet's own clause is spent, which the second token not being seen shows.)
 end)
 
 -- A retrieve whose unyielding holder can be caught where he should not be at night (Words

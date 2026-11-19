@@ -142,6 +142,8 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.named = at->second.find('a') != std::string::npos;
         facts.letin = at->second.find('i') != std::string::npos;
         facts.keyed = at->second.find('q') != std::string::npos;
+        facts.scared = at->second.find('S') != std::string::npos;
+        facts.counselled = at->second.find('C') != std::string::npos;
         facts.denounced = at->second.find('d') != std::string::npos;
         facts.checks = static_cast<int>(std::count(at->second.begin(), at->second.end(), 'c'));
         // W and the digits after it: a dictated letter's outcomes (the mod's QuestFlagLetters
@@ -220,7 +222,10 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
         out.offer = quest.offer;
         // The row that draws the offer out, in the quest's own words where it has them.
         out.help_row = quest.opener;
-        out.accept_row = quest.carries_word()
+        // And the row that takes it up: the quest's own where written (`accept`), else by kind.
+        out.accept_row = !quest.accept.empty()
+            ? quest.accept
+            : quest.carries_word()
             ? "I'll go to " + quest.target_name + " and tell him for you."
             : quest.has_dictation()
             ? "I'll write your " + quest.item_name + " down for you and take it to " + quest.target_name + "."

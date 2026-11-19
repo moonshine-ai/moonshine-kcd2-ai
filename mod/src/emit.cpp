@@ -538,6 +538,10 @@ std::string emit_metarole_table(const std::string& modid, const std::string& met
         if (q.has_helper()) {
             s += "\t\t<metarole metarole_name=\"" + helper_metarole(q.id) + "\" />\r\n";
         }
+        // And one for the one with the argument (Blind Pride's Brother Thomas).
+        if (q.has_counsel()) {
+            s += "\t\t<metarole metarole_name=\"" + counsel_metarole(q.id) + "\" />\r\n";
+        }
     }
     s += "\t</metaroles>\r\n";
     s += "</database>\r\n";
@@ -588,6 +592,7 @@ std::string emit_role_table(const std::string& modid,
         if (q.has_holder()) triple(holder_role(q.id), holder_metarole(q.id));
         if (q.carries_on()) triple(onward_role(q.id), onward_metarole(q.id));
         if (q.has_helper()) triple(helper_role(q.id), helper_metarole(q.id));
+        if (q.has_counsel()) triple(counsel_role(q.id), counsel_metarole(q.id));
     }
     s += "\t</roles>\r\n";
     s += "</database>\r\n";
@@ -629,6 +634,7 @@ std::string emit_storm_roles(const std::string& modid,
         if (q.has_holder()) rule("hold", q.target_soul, holder_role(q.id));
         if (q.carries_on()) rule("onward", q.onward_soul, onward_role(q.id));
         if (q.has_helper()) rule("helper", q.helper_soul, helper_role(q.id));
+        if (q.has_counsel()) rule("counsel", q.counsel_soul, counsel_role(q.id));
     }
     s += "\t</rules>\r\n";
     s += "</storm>\r\n";
@@ -1168,6 +1174,9 @@ std::string paper_page_key(const std::string& modid, const Quest& quest) {
 std::string helper_metarole(const std::string& quest_id) { return holder_metarole(quest_id) + "_HELPER"; }
 std::string helper_role(const std::string& quest_id) { return helper_metarole(quest_id) + "_LETIN"; }
 std::string helper_node(const std::string& quest_id) { return quest_node(quest_id) + "_helper"; }
+std::string counsel_metarole(const std::string& quest_id) { return holder_metarole(quest_id) + "_COUNSEL"; }
+std::string counsel_role(const std::string& quest_id) { return counsel_metarole(quest_id) + "_ASK"; }
+std::string counsel_node(const std::string& quest_id) { return quest_node(quest_id) + "_counsel"; }
 
 namespace {
 
@@ -1334,6 +1343,16 @@ Quest with_holder_lines(Quest q) {
         fill(q.log_rebuffed, q.target_name + " would not hear a word of it and showed me the door. " + owner +
                                  " should know.");
     }
+    if (q.has_counsel()) {
+        // The one with the argument (Blind Pride's Brother Thomas): the greeting and the way
+        // out have plain defaults; the ask and the holder's learned row are the story's own.
+        fill(q.counsel_open, "Brother, I need a learned word on a matter of marriage.");
+        fill(q.counsel_open_reply, "Then you have come to the right door. Ask.");
+        fill(q.counsel_leave, "Another time, Brother.");
+        fill(q.counsel_leave_reply, "Go with God.");
+        fill(q.log_counselled, q.counsel_name + " gave me chapter and verse. Now to put it to " + q.target_name + ".");
+        fill(q.objective_counsel, "Ask " + q.counsel_name + " for the argument");
+    }
     if (q.has_helper()) {
         const std::string& who = q.target_name;
         fill(q.helper_open, "You keep house here? " + who + " lodges under this roof.");
@@ -1348,6 +1367,10 @@ Quest with_holder_lines(Quest q) {
         fill(q.helper_leave_reply, "Already have.");
         fill(q.log_letin, q.helper_name + " took the money and will leave the door on the latch while " + who +
                               " is out.");
+        if (q.has_helper_threat()) {
+            fill(q.log_scared, q.helper_name + " will leave the door on the latch while " + who +
+                                   " is out. It cost me nothing but her good opinion.");
+        }
         if (q.has_key()) {
             fill(q.log_keyed, q.helper_name + " got me the key to " + who + "'s chest. It cost me dear, but it spares "
                                   "me the lock.");
@@ -1907,6 +1930,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (quest.has_helper()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(helper_node(quest.id) + ".xml") + "\" />\r\n";
     }
+    if (quest.has_counsel()) {
+        out.definitions += t(4) + "<Definition File=\"" + xml_escape(counsel_node(quest.id) + ".xml") + "\" />\r\n";
+    }
     if (!quest.hail.empty()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(hail_node(quest.id) + ".xml") + "\" />\r\n";
     }
@@ -1998,11 +2024,19 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     const bool named = quest.has_helper();
     const bool keyed = quest.has_key();
     if (rebuffed) s += t(5) + "<Edge From=\"holder.rebuffed\" To=\"SetRebuffed\" />\r\n";
+    const bool scared = quest.has_helper_threat();
     if (named) {
         s += t(5) + "<Edge From=\"named.OnAcquire\" To=\"SetNamed\" />\r\n";
         s += t(5) + "<Edge From=\"helperTalk.door\" To=\"SetLetin\" />\r\n";
+        // The threat row won fires its own port, not the door's, so the journal has the
+        // scared line and not the one about her money.
+        if (scared) s += t(5) + "<Edge From=\"helperTalk.scared\" To=\"SetScared\" />\r\n";
         if (keyed) s += t(5) + "<Edge From=\"helperTalk.key\" To=\"SetKeyed\" />\r\n";
     }
+    // The counsel's argument got (Blind Pride's Brother Thomas; the counsel menu's `asked`
+    // port): Updated, log_counselled, the marker back on the holder it is to be put to.
+    const bool counselled = quest.has_counsel();
+    if (counselled) s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetCounselled\" />\r\n";
     // A dictated letter written (the Lua's token on the app's `wrote_<digits>` directive,
     // the naming's shape): Updated, log_written, the marker on the receiver.
     const bool written = quest.has_written_log();
@@ -2987,6 +3021,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "</State>\r\n";
         s += t(4) + "<State Name=\"letin\" TypeT=\"bool\">\r\n";
         s += t(5) + "<Edge From=\"helperTalk.door\" To=\"SetTrue\" />\r\n";
+        if (scared) s += t(5) + "<Edge From=\"helperTalk.scared\" To=\"SetTrue\" />\r\n";
         s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
         s += t(4) + "</State>\r\n";
         if (keyed) {
@@ -3009,6 +3044,38 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "<Asset Name=\"Souls\" Alias=\"holderHousehold\" />\r\n";
         s += t(5) + "<Edge From=\"letin.State\" To=\"IsActive\" />\r\n";
         s += t(4) + "</SetEntityContext>\r\n";
+    }
+    // The one with the argument (Blind Pride's Brother Thomas): their optional objective
+    // open from the accept until Henry has asked them (the counsel menu's `asked`), the
+    // holder has given in (handover) or the errand is over; their menu offered on the same
+    // bool. The marker sits on them, so Henry knows where the argument is to be had.
+    if (counselled) {
+        s += t(4) + "<State Name=\"counselState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
+        s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetActive\" />\r\n";
+        s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetDone\" />\r\n";
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetCanceled\" />\r\n";
+        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetCanceled\" />\r\n";
+        for (const std::string& how : ways) {
+            s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetCanceled\" />\r\n";
+        }
+        s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetCanceled\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<" + std::string(kCounselObjective) + " Name=\"objectiveVisual6\"" + rfo + ">\r\n";
+        s += t(5) + "<Edge From=\"counselState.State\" To=\"Progress\" />\r\n";
+        s += t(4) + "</" + std::string(kCounselObjective) + ">\r\n";
+        s += t(4) + "<State Name=\"counselOpen\" TypeT=\"bool\">\r\n";
+        s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
+        s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetFalse\" />\r\n";
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetFalse\" />\r\n";
+        s += t(5) + "<Edge From=\"" + P("complete") + "\" To=\"SetFalse\" />\r\n";
+        for (const std::string& how : ways) {
+            s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetFalse\" />\r\n";
+        }
+        s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<" + counsel_node(quest.id) + " Name=\"counselTalk\">\r\n";
+        s += t(5) + "<Edge From=\"counselOpen.State\" To=\"active\" />\r\n";
+        s += t(4) + "</" + counsel_node(quest.id) + ">\r\n";
     }
     // An exposure (Words Must Not Fail): the house the holder is caught in -- the witness's
     // household, and him -- expects Henry from the catching on, the giver's welcome shape,
@@ -3116,7 +3183,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (rebuffed) s += state("Rebuffed", "Updated");
     if (named) s += state("Named", "Updated");
     if (named) s += state("Letin", "Updated");
+    if (scared) s += state("Scared", "Updated");
     if (keyed) s += state("Keyed", "Updated");
+    if (counselled) s += state("Counselled", "Updated");
     if (written) s += state("Written", "Updated");
     if (caught) s += state("Caught", "Updated");
     if (followed) s += state("Followed", "Updated");
@@ -3165,6 +3234,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // An exposure's is the witness's household and the holder in it (npcdb read_helper).
     if (named) {
         s += t(4) + "<SoulAsset Name=\"helper\" SharedSoulGuids=\"" + xml_escape(quest.helper_guid) + "\" />\r\n";
+    }
+    if (counselled) {
+        s += t(4) + "<SoulAsset Name=\"counsel\" SharedSoulGuids=\"" + xml_escape(quest.counsel_guid) + "\" />\r\n";
     }
     if (named || caught) {
         std::string guids;
@@ -3347,10 +3419,22 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
              xml_escape(filled.log_letin) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
     }
+    if (scared) {
+        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Scared\" Marker=\"target\">\r\n";
+        s += t(7) + "<Log StringName=\"" + key("log_scared") + "\" Text=\"" +
+             xml_escape(filled.log_scared) + "\" />\r\n";
+        s += t(6) + "</EnumLog>\r\n";
+    }
     if (keyed) {
         s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Keyed\" Marker=\"target\">\r\n";
         s += t(7) + "<Log StringName=\"" + key("log_keyed") + "\" Text=\"" +
              xml_escape(filled.log_keyed) + "\" />\r\n";
+        s += t(6) + "</EnumLog>\r\n";
+    }
+    if (counselled) {
+        s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Counselled\" Marker=\"target\">\r\n";
+        s += t(7) + "<Log StringName=\"" + key("log_counselled") + "\" Text=\"" +
+             xml_escape(filled.log_counselled) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
     }
     // A mind's visits keep the marker on the one looked in on until the last, which sends
@@ -3423,6 +3507,20 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "</Logs>\r\n";
         s += t(4) + "</Objective>\r\n";
     }
+    // The optional objective, "Ask <counsel> for the argument": IsOptional, tracked with
+    // the marker on them from the accept until asked.
+    if (counselled) {
+        s += t(4) + "<Objective TypeT=\"ProgressFailable\" Name=\"" + std::string(kCounselObjective) + "\" IsOptional=\"true\">\r\n";
+        s += t(5) + "<LocalizedName StringName=\"" + key("objective_counsel") + "\" Text=\"" +
+             xml_escape(filled.objective_counsel) + "\" />\r\n";
+        s += t(5) + "<Logs>\r\n";
+        s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"counsel\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
+        s += t(5) + "</Logs>\r\n";
+        s += t(4) + "</Objective>\r\n";
+    }
     // A seek's clue-holders' objectives, "Ask <name> about the <animal>": IsOptional, one
     // each, tracked with the marker on the holder from the accept until Henry has asked
     // them or the animal is found (askState<i> above).
@@ -3487,7 +3585,7 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             names.insert((*it)[2].str());
         }
     }
-    for (const char* alias : {"target", "onward", "keepsake", "searchmark", "brawlers", "helper", "holderHousehold"}) {
+    for (const char* alias : {"target", "onward", "keepsake", "searchmark", "brawlers", "helper", "holderHousehold", "counsel"}) {
         names.insert(alias);
     }
     // A seek's clue-holders' assets, clue1, clue2... (one each, so they are not a fixed list).
@@ -3495,7 +3593,7 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
     for (std::sregex_iterator it(leg.assets_a.begin(), leg.assets_a.end(), clue_re), end; it != end; ++it) {
         names.insert((*it)[1].str());
     }
-    std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kHelperObjective};
+    std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kHelperObjective, kCounselObjective};
     static const std::regex objective_re("<Objective TypeT=\"[^\"]*\" Name=\"([A-Za-z_0-9]+)\"");
     for (std::sregex_iterator it(leg.objectives.begin(), leg.objectives.end(), objective_re), end; it != end; ++it) {
         if (std::find(objectives.begin(), objectives.end(), (*it)[1].str()) == objectives.end()) {
@@ -3516,6 +3614,9 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             text = replace_all(text, "<" + name + " Name=\"", "<" + name + sfx + " Name=\"");
             text = replace_all(text, "</" + name + ">", "</" + name + sfx + ">");
             text = replace_all(text, "Name=\"" + name + "\">", "Name=\"" + name + sfx + "\">");
+            // An optional objective's Name is followed by IsOptional, not the close (the
+            // counsel's in a story's second scene: Blind Pride, 18 Nov 2026).
+            text = replace_all(text, "Name=\"" + name + "\" IsOptional=", "Name=\"" + name + sfx + "\" IsOptional=");
             text = replace_all(text, "Value=\"" + name + "\"", "Value=\"" + name + sfx + "\"");
         }
     };
@@ -3929,8 +4030,15 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
             rows.emplace_back(quest_key(modid, quest.id, "log_named"), filled.log_named);
             rows.emplace_back(quest_key(modid, quest.id, "objective_helper"), filled.objective_helper);
             rows.emplace_back(quest_key(modid, quest.id, "log_letin"), filled.log_letin);
+            if (quest.has_helper_threat()) rows.emplace_back(quest_key(modid, quest.id, "log_scared"), filled.log_scared);
             if (quest.has_key()) rows.emplace_back(quest_key(modid, quest.id, "log_keyed"), filled.log_keyed);
         }
+    }
+    // The counsel's journal (Blind Pride): the argument got, and the optional objective.
+    if (quest.has_counsel()) {
+        const Quest filled = with_holder_lines(quest);
+        rows.emplace_back(quest_key(modid, quest.id, "log_counselled"), filled.log_counselled);
+        rows.emplace_back(quest_key(modid, quest.id, "objective_counsel"), filled.objective_counsel);
     }
     // A seek's clue-holders' objectives (emit.hpp clue_objective).
     if (quest.is_seek()) {
@@ -4625,6 +4733,14 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
         s += plain("expose", "gvar('" + seen_var + "')==1", "expose", quest.holder_expose, "expose_yes",
                    quest.holder_expose_yes);
     }
+    // The counsel's argument (Blind Pride: Brother Thomas's chapter and verse put to Benesh):
+    // Henry has asked the one with the argument (the store's counselled, written to the
+    // quest's counsel global by QuestFlags), and the holder is talked round without a check
+    // -- the persuaded ending, with lines of its own.
+    if (quest.has_counsel()) {
+        s += plain("learned", "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "counsel")) + "')==1",
+                   "learned", quest.holder_learned, "learned_yes", quest.holder_learned_yes);
+    }
 
     // A check is a sequence with SkillCheckType and a tier, whose nested decision holds
     // one branch for each outcome; the engine weighs the player's stats against the tier
@@ -5011,6 +5127,11 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
             rows.emplace_back(key("gift_refuse"), quest.holder_gift_refuse);
             rows.emplace_back(key("gift_refuse_reply"), quest.holder_gift_refuse_reply);
         }
+        // The counsel's argument put to a beat's target (Blind Pride).
+        if (quest.has_counsel()) {
+            rows.emplace_back(key("learned"), quest.holder_learned);
+            rows.emplace_back(key("learned_yes"), quest.holder_learned_yes);
+        }
         return rows;
     }
     std::vector<std::pair<std::string, std::string>> rows = {
@@ -5040,6 +5161,10 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
     if (quest.has_expose()) {
         rows.emplace_back(key("expose"), quest.holder_expose);
         rows.emplace_back(key("expose_yes"), quest.holder_expose_yes);
+    }
+    if (quest.has_counsel()) {
+        rows.emplace_back(key("learned"), quest.holder_learned);
+        rows.emplace_back(key("learned_yes"), quest.holder_learned_yes);
     }
     if (quest.has_follow()) {
         rows.emplace_back(key("followed"), quest.holder_followed);
@@ -5187,6 +5312,8 @@ std::string emit_helper_dialogue(const std::string& modid, const Quest& raw) {
     if (quest.has_key()) s += t(4) + "<Port Name=\"keyed\" Direction=\"In\" Type=\"bool\" />\r\n";
     s += t(4) + "<Port Name=\"door\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     if (quest.has_key()) s += t(4) + "<Port Name=\"key\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    // The threat won: the house opens as on the door's port, with the journal's own line.
+    if (quest.has_helper_threat()) s += t(4) + "<Port Name=\"scared\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     // Fired by every row that ends the talk, paid or not: Henry has spoken to her, which is
     // what her objective asks (notes.md 14 Oct 2026: it stayed open after the door was
     // bought, since it closed only with the quest).
@@ -5249,6 +5376,42 @@ std::string emit_helper_dialogue(const std::string& modid, const Quest& raw) {
         s += t(10) + "</Decision>\r\n";
         s += t(9) + "</Sequence>\r\n";
     }
+    // The threat (bugs.txt 18 Nov 2026: "be able to threaten Elsbeth to avoid paying her"): a
+    // coerce check at the same tier, once a visit until the door is open one way or the
+    // other (!Port('letin')). Won, its own port opens the house as the door's does (the
+    // graph's letin bool hears both) with the journal's scared line, and the exit takes no
+    // money (QuestHelper 'scared'); lost, the menu comes back without it, and the door is
+    // still for sale.
+    if (quest.has_helper_threat()) {
+        s += t(9) + "<Sequence EntryCondition=\"!Port('letin') AND !ThisSequenceUsed()\" EndType=\"Decision\" "
+                    "SkillCheckType=\"dread\" Type=\"Skillcheck\" SkillCheck=\"" + tier + "\" Name=\"threat\" ExitScript=\"" +
+             stage("row threat") + "\">\r\n";
+        s += prompt(10, "threat", quest.helper_threat);
+        s += t(10) + "<Elements>\r\n";
+        s += line(11, "HENRY", "threat", quest.helper_threat);
+        s += t(10) + "</Elements>\r\n";
+        s += t(10) + "<Decision Name=\"threat_out\" Priority=\"General\">\r\n";
+        s += t(11) + "<Sequences>\r\n";
+        s += t(12) + "<Sequence EndType=\"EndDialogue\" SkillcheckCondition=\"Success\" Name=\"threat_yes\" ExitScript=\"" +
+             helped("scared") + "\">\r\n";
+        s += t(13) + "<UiPrompt StringName=\"" + hold + "\" Text=\"" + xml_escape(kHoldPrompt) + "\" />\r\n";
+        s += t(13) + "<Triggers>\r\n" + t(14) + "<Port Name=\"scared\" />\r\n" + t(14) + "<Port Name=\"spoken\" />\r\n" +
+             t(13) + "</Triggers>\r\n";
+        s += t(13) + "<Elements>\r\n";
+        s += line(14, role, "threat_yes", quest.helper_threat_yes);
+        s += t(13) + "</Elements>\r\n";
+        s += t(12) + "</Sequence>\r\n";
+        s += t(12) + "<Sequence EndType=\"GoTo\" GoToDecision=\"menu\" SkillcheckCondition=\"Fail\" Name=\"threat_no\" ExitScript=\"" +
+             stage("refused threat") + "\">\r\n";
+        s += t(13) + "<UiPrompt StringName=\"" + hold + "\" Text=\"" + xml_escape(kHoldPrompt) + "\" />\r\n";
+        s += t(13) + "<Elements>\r\n";
+        s += line(14, role, "threat_no", quest.helper_threat_no);
+        s += t(13) + "</Elements>\r\n";
+        s += t(12) + "</Sequence>\r\n";
+        s += t(11) + "</Sequences>\r\n";
+        s += t(10) + "</Decision>\r\n";
+        s += t(9) + "</Sequence>\r\n";
+    }
     s += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"leave\" ExitScript=\"" + stage("row leave") + "\">\r\n";
     s += prompt(10, "leave", quest.helper_leave);
     s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"spoken\" />\r\n" + t(10) + "</Triggers>\r\n";
@@ -5286,7 +5449,105 @@ std::vector<std::pair<std::string, std::string>> helper_localization(const std::
         rows.emplace_back(key("key_yes"), quest.helper_key_yes);
         rows.emplace_back(key("key_no"), quest.helper_key_no);
     }
+    if (quest.has_helper_threat()) {
+        rows.emplace_back(key("threat"), quest.helper_threat);
+        rows.emplace_back(key("threat_yes"), quest.helper_threat_yes);
+        rows.emplace_back(key("threat_no"), quest.helper_threat_no);
+    }
     return rows;
+}
+
+std::string emit_counsel_dialogue(const std::string& modid, const Quest& raw) {
+    // The one with the argument (Blind Pride's Brother Thomas at Sedletz, bugs.txt 18 Nov
+    // 2026): a menu under a role of their own, offered while their optional objective is
+    // open (Port active: from the accept until Henry has asked, or the errand ends) and
+    // our held conversation is not up. One row that matters: Henry asks, they answer at
+    // length, the talk ends, the port fires (the graph's journal line and the objective
+    // closed) and the exit notes it in the store (QuestCounsel), which opens the holder
+    // menu's learned row. Then the way out.
+    if (!raw.has_counsel()) {
+        throw std::runtime_error("quest " + raw.id + " has no counsel");
+    }
+    const Quest quest = with_holder_lines(raw);
+    const std::string node = counsel_node(quest.id);
+    const std::string role = xml_escape(counsel_role(quest.id));
+    auto key = [&](const char* field) {
+        return xml_escape(quest_key(modid, quest.id, std::string("counsel_") + field));
+    };
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
+        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
+               t(depth + 1) + "<Text StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
+               "\" />\r\n" +
+               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
+               t(depth) + "</Response>\r\n";
+    };
+    auto prompt = [&](int depth, const char* field, const std::string& words) {
+        return t(depth) + "<UiPrompt StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
+               "\" />\r\n";
+    };
+    auto stage = [&](const std::string& what) {
+        return "Moonshine.QuestStage('" + quest.id + "', 'counsel " + what + "')";
+    };
+    std::string s = skald_header(modid);
+    s += t(2) + "<FaderDialog Name=\"" + node + "\">\r\n";
+    s += t(3) + "<Ports>\r\n";
+    s += t(4) + "<Port Name=\"active\" Direction=\"In\" Type=\"bool\" />\r\n";
+    s += t(4) + "<Port Name=\"asked\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    s += t(3) + "</Ports>\r\n";
+    s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (counsel)") + "\" />\r\n";
+    s += t(3) + kMenuDialogue;
+    s += t(4) + "<Decision Name=\"dec1\" Priority=\"General\">\r\n";
+    s += t(5) + "<Sequences>\r\n";
+    s += t(6) + "<Sequence EntryCondition=\"Port('active') AND gvar('" + xml_escape(talking_variable(modid)) +
+         "')!=1\" EndType=\"Decision\" Name=\"open\" ExitScript=\"" + stage("open") + "\">\r\n";
+    s += prompt(7, "open", quest.counsel_open);
+    s += t(7) + "<Elements>\r\n";
+    s += line(8, "HENRY", "open", quest.counsel_open);
+    s += line(8, role, "open_reply", quest.counsel_open_reply);
+    s += t(7) + "</Elements>\r\n";
+    s += t(7) + "<Decision Name=\"menu\" Priority=\"General\">\r\n";
+    s += t(8) + "<Sequences>\r\n";
+    s += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"ask\" ExitScript=\"Moonshine.QuestCounsel('" + quest.id +
+         "')\">\r\n";
+    s += prompt(10, "ask", quest.counsel_ask);
+    s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"asked\" />\r\n" + t(10) + "</Triggers>\r\n";
+    s += t(10) + "<Elements>\r\n";
+    s += line(11, "HENRY", "ask", quest.counsel_ask);
+    s += line(11, role, "ask_yes", quest.counsel_ask_yes);
+    s += t(10) + "</Elements>\r\n";
+    s += t(9) + "</Sequence>\r\n";
+    s += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"leave\" ExitScript=\"" + stage("row leave") + "\">\r\n";
+    s += prompt(10, "leave", quest.counsel_leave);
+    s += t(10) + "<Elements>\r\n";
+    s += line(11, "HENRY", "leave", quest.counsel_leave);
+    s += line(11, role, "leave_reply", quest.counsel_leave_reply);
+    s += t(10) + "</Elements>\r\n";
+    s += t(9) + "</Sequence>\r\n";
+    s += t(8) + "</Sequences>\r\n";
+    s += t(7) + "</Decision>\r\n";
+    s += t(6) + "</Sequence>\r\n";
+    s += t(5) + "</Sequences>\r\n";
+    s += t(4) + "</Decision>\r\n";
+    s += t(3) + "</Dialogue>\r\n";
+    s += t(2) + "</FaderDialog>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return voiced_dialogue(s, quest.counsel_gender.empty() ? "male" : quest.counsel_gender, quest.counsel_soul);
+}
+
+std::vector<std::pair<std::string, std::string>> counsel_localization(const std::string& modid,
+                                                                      const Quest& raw) {
+    if (!raw.has_counsel()) return {};
+    const Quest quest = with_holder_lines(raw);
+    auto key = [&](const char* field) {
+        return quest_key(modid, quest.id, std::string("counsel_") + field);
+    };
+    return {
+        {key("open"), quest.counsel_open},         {key("open_reply"), quest.counsel_open_reply},
+        {key("ask"), quest.counsel_ask},           {key("ask_yes"), quest.counsel_ask_yes},
+        {key("leave"), quest.counsel_leave},       {key("leave_reply"), quest.counsel_leave_reply},
+    };
 }
 
 std::string hail_alias(const std::string& modid, const std::string& quest_id) {
@@ -6925,7 +7186,13 @@ std::string state_lua(const std::string& g) {
     s += "\tif command == \"searching\" then facts.searching = true end\n";
     s += "\tif command == \"marklaid\" then facts.markLaid = true end\n";
     s += "\tif command == \"letin\" then facts.letin = true end\n";
+    // The door frightened open (the helper menu's threat row; letin besides, since the house
+    // is as open either way, and the letter S for the app to know it was fear, not coin).
+    s += "\tif command == \"scared\" then facts.letin = true; facts.scared = true end\n";
     s += "\tif command == \"keyed\" then facts.keyed = true end\n";
+    // The counsel asked (QuestCounsel; the letter C): the holder's learned row opens, through
+    // the quest's counsel global (QuestFlags).
+    s += "\tif command == \"counselled\" then facts.counselled = true end\n";
     s += "\tif command == \"chest\" then facts.chest = true end\n";
     s += "\tif command == \"taken\" then facts.taken = true end\n";
     // The paper out of the chest in Henry's pocket (flag j, for the giver's row about it),
@@ -6969,6 +7236,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
     s += "\t\t.. (facts.paper and \"j\" or \"\")\n";
+    s += "\t\t.. (facts.scared and \"S\" or \"\") .. (facts.counselled and \"C\" or \"\")\n";
     s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
     s += "end\n";
@@ -7069,6 +7337,10 @@ std::string state_lua(const std::string& g) {
     s += "\t\tend\n";
     s += "\t\tif q.denouncedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.denouncedVar, f.denounced and 1 or 0) end)\n";
+    s += "\t\tend\n";
+    // The counsel asked (QuestCounsel): the holder menu's learned row reads it.
+    s += "\t\tif q.counselVar ~= nil then\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.counselVar, f.counselled and 1 or 0) end)\n";
     s += "\t\tend\n";
     s += "\t\tif q.followedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, (f.followed and not f.followedSaid) and 1 or 0) end)\n";
@@ -8551,6 +8823,14 @@ std::string emit_conversation_lua(const std::string& modid,
                      lua_escape(read_class(q)) + "\"";
             }
         }
+        if (q.has_counsel()) {
+            // The one with the argument (Blind Pride's Brother Thomas): their soul, the
+            // metarole their menu speaks through (GrantHolder), their name for the log, and
+            // the global the holder menu's learned row reads (QuestFlags).
+            s += ", counsel = \"" + lua_escape(q.counsel_soul) + "\", counselMeta = \"" +
+                 lua_escape(counsel_metarole(q.id)) + "\", counselName = \"" + lua_escape(q.counsel_name) +
+                 "\", counselVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "counsel")) + "\"";
+        }
         if (q.has_helper()) {
             // The one who can let Henry in: her soul and the metarole her menu speaks through
             // (GrantHolder), her name for the log, what she asks for the door and the key
@@ -8605,8 +8885,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- what they asked for.\n";
     s += g + ".questsBySoul = {}\n";
     for (const Quest& q : quests) {
-        for (const std::string* soul : {&q.giver_soul, &q.target_soul, &q.onward_soul, &q.helper_soul}) {
-            if (soul->empty()) continue;   // a find's empty target; a word not carried on; no helper
+        for (const std::string* soul : {&q.giver_soul, &q.target_soul, &q.onward_soul, &q.helper_soul, &q.counsel_soul}) {
+            if (soul->empty()) continue;   // a find's empty target; a word not carried on; no helper, no counsel
             s += g + ".questsBySoul[\"" + lua_escape(*soul) + "\"] = " + g + ".questsBySoul[\"" +
                  lua_escape(*soul) + "\"] or {}\n";
             s += "table.insert(" + g + ".questsBySoul[\"" + lua_escape(*soul) + "\"], \"" +
@@ -13517,13 +13797,18 @@ std::string emit_conversation_lua(const std::string& modid,
     // taken token) or been handed in some other way.
     // An exposure's retrieve: until the holder is caught (WatchExpose) or the thing is handed
     // over some other way.
-    // And, with a paper in the chest, for as long as the errand is open once the chest
-    // stands: for the paper in Henry's pocket (flag j) and his word on reading it.
+    // And, with a paper in the chest, once the chest stands and until the paper has been
+    // read, done or not: for the paper in Henry's pocket (flag j) and his word on reading
+    // it. Past done too (bugs.txt 18 Nov 2026: the list read after the hand-in, and nothing
+    // said): the graph's trigger stays armed, since the story's graph is not over with the
+    // first errand, and the read token it makes would otherwise sit in his pocket unseen.
     s += "\t\t\tif q.kind == \"retrieve\" and ((not f.handed and ((q.chest ~= nil and not (f.chest and f.taken))\n";
-    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen))) or (q.paper ~= nil and f.chest)) then out[#out + 1] = id end\n";
+    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen))) or (q.paper ~= nil and f.chest and not f.paperRead)) then out[#out + 1] = id end\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"return\" and f.cursed and q.spot ~= nil then\n";
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"seek\" and q.spot ~= nil and not f.gone then\n";
+    s += "\t\t\tout[#out + 1] = id\n";
+    s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"retrieve\" and q.paper ~= nil and f.chest and not f.paperRead then\n";
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\tend\n";
     s += "\tend\n";
@@ -13765,7 +14050,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif f.laid then return true end\n";
     s += "\tlocal p = " + g + ".Player()\n";
     s += "\tif p == nil then return false end\n";
-    s += "\tlocal z = " + g + ".Ground(q.spot[1], q.spot[2], q.spot[3])\n";
+    // Set down a little above the ground hit (kKeepsakeLiftMetres), so it shows over the
+    // flowers (bugs.txt 18 Nov 2026).
+    s += "\tlocal z = " + g + ".Ground(q.spot[1], q.spot[2], q.spot[3]) + " + health_text(kKeepsakeLiftMetres) + "\n";
     s += "\tlocal spot = " + g + ".SpotEntity(\"moonshine_keepsake_\" .. id, q.spot[1], q.spot[2], z)\n";
     s += "\tif spot == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" keepsake not laid (\" .. tostring(why) .. \"): no spot entity\")\n";
@@ -16028,6 +16315,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\t\" granted to \" .. name .. \" -> \" .. tostring(" + g + ".HasMeta(npc, quest.onwardMeta)))\n";
     s += "\t\t\tgranted = true\n";
     s += "\t\tend\n";
+    // And the one with the argument, for their chapter and verse.
+    s += "\t\tif quest ~= nil and quest.counsel == name and not " + g + ".HasMeta(npc, quest.counselMeta)\n";
+    s += "\t\t\t\tand npc.soul ~= nil and npc.soul.AddMetaRoleByName ~= nil then\n";
+    s += "\t\t\t" + g + ".GrantName(npc, quest.counselMeta)\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" counsel role \" .. quest.counselMeta ..\n";
+    s += "\t\t\t\t\" granted to \" .. name .. \" -> \" .. tostring(" + g + ".HasMeta(npc, quest.counselMeta)))\n";
+    s += "\t\t\tgranted = true\n";
+    s += "\t\tend\n";
     // And the one who can let Henry in, for her door, her key and her way out.
     s += "\t\tif quest ~= nil and quest.helper == name and not " + g + ".HasMeta(npc, quest.helperMeta)\n";
     s += "\t\t\t\tand npc.soul ~= nil and npc.soul.AddMetaRoleByName ~= nil then\n";
@@ -16119,7 +16414,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // An exposure's row: the holder caught and the thing given up for silence (exposed); the
     // bedside's blackmail won is the thing and coin (exposed_paid), lost the thing alone.
     s += "\tlocal hows = { persuade = \"persuaded\", threaten = \"threatened\", pay = \"paid\", nested = \"nested\",\n";
-    s += "\t\texpose = \"exposed\", blackmail = \"exposed_paid\", blackmail_no = \"exposed\" }\n";
+    s += "\t\texpose = \"exposed\", blackmail = \"exposed_paid\", blackmail_no = \"exposed\", learned = \"persuaded\" }\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif how == \"brokered\" then f.how = f.apologised and \"brokered\" or \"lied\"\n";
     s += "\telse f.how = hows[how] end\n";
@@ -16214,7 +16509,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\t" + g + ".QuestStage(id, \"helper \" .. tostring(what))\n";
-    s += "\tlocal price = (what == \"key\") and (quest.keyPrice or 0) or (quest.doorPrice or 0)\n";
+    // 'scared' (the threat row won): the door for nothing, and the store told it was fear.
+    s += "\tlocal price = (what == \"key\") and (quest.keyPrice or 0) or (what == \"door\") and (quest.doorPrice or 0) or 0\n";
     s += "\tlocal helper = nil\n";
     s += "\tpcall(function() helper = System.GetEntityByName(quest.helper) end)\n";
     s += "\tif price > 0 then\n";
@@ -16234,7 +16530,23 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tpcall(" + g + ".StateQuest, id, \"keyed\")\n";
     s += "\telseif what == \"door\" then\n";
     s += "\t\tpcall(" + g + ".StateQuest, id, \"letin\")\n";
+    s += "\telseif what == \"scared\" then\n";
+    s += "\t\tpcall(" + g + ".StateQuest, id, \"scared\")\n";
     s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // Named in the ExitScript of the counsel menu's ask row (Blind Pride's Brother Thomas
+    // giving Henry chapter and verse): the store's counselled (letter C), which QuestFlags
+    // writes to the quest's counsel global for the holder menu's learned row.
+    s += "function " + g + ".QuestCounsel(id)\n";
+    s += "\tlocal quest = " + g + ".quests[id]\n";
+    s += "\tif quest == nil or quest.counsel == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest unknown id=\" .. tostring(id) .. \" counsel\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".QuestStage(id, \"counselled\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" counselled by \" .. tostring(quest.counselName) .. \" -- \" .. quest.name)\n";
+    s += "\tpcall(" + g + ".StateQuest, id, \"counselled\")\n";
     s += "end\n";
     s += "\n";
     // Named in the ExitScript of the two rows under an ask's winning branch when the ask

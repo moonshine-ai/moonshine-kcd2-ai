@@ -517,11 +517,32 @@ struct Quest {
     std::string helper_open, helper_open_reply;
     std::string helper_door, helper_door_yes;
     std::string helper_key, helper_key_yes, helper_key_no;
+    // The threat (bugs.txt 18 Nov 2026: Elsbeth frightened instead of paid): a coerce check
+    // at helper_skill, once a visit; won, the door for nothing (`letin` as the door row,
+    // the journal's `log_scared`); lost, `helper_threat_no`.
+    std::string helper_threat, helper_threat_yes, helper_threat_no;
     std::string helper_leave, helper_leave_reply;
     std::string log_named;
     std::string log_letin;
+    std::string log_scared;
     std::string log_keyed;
     std::string objective_helper;
+    // A third soul with the argument Henry needs (Blind Pride's Brother Thomas at Sedletz;
+    // bugs.txt 18 Nov 2026): npc_quest_lines `counsel_soul`/`counsel_name`, their menu
+    // (q_<id>_counsel.xml under a role of their own, offered while the errand is on and the
+    // holder has not given in: Henry's `counsel_open`, their `counsel_open_reply`, his
+    // `counsel_ask`, their `counsel_ask_yes`, which ends the talk -- the store's `counselled`,
+    // letter C, the journal's `log_counselled`, the optional objective `objective_counsel`
+    // with the marker on them from the accept until asked -- and `counsel_leave`,
+    // `counsel_leave_reply`), and the row the counsel unlocks in the holder's menu
+    // (`learned`, Henry's; `learned_yes`, the holder giving in: no check, the persuaded
+    // ending), gated on the quest's counsel global, which the Lua keeps from the store.
+    std::string counsel_soul, counsel_name, counsel_guid, counsel_gender;
+    std::string counsel_open, counsel_open_reply;
+    std::string counsel_ask, counsel_ask_yes;
+    std::string counsel_leave, counsel_leave_reply;
+    std::string log_counselled, objective_counsel;
+    std::string holder_learned, holder_learned_yes;
     // The holder's household (the `letin` contexts above): the holder and everyone who
     // sleeps under the same roof, by read_household's rule, with the helper beside them.
     std::vector<std::string> holder_household_guids;
@@ -798,6 +819,17 @@ struct Quest {
     bool has_key() const {
         return has_helper() && has_chest() && !helper_key.empty() && !helper_key_yes.empty() &&
                !helper_key_no.empty() && helper_key_price > 0;
+    }
+    // The helper's threat row: its three lines written.
+    bool has_helper_threat() const {
+        return has_helper() && !helper_threat.empty() && !helper_threat_yes.empty() && !helper_threat_no.empty();
+    }
+    // The one with the argument: a holder who can be talked round (not unyielding), the
+    // counsel's soul found, their ask row answered and the holder's learned row written.
+    bool has_counsel() const {
+        return has_holder() && !is_unyielding() && !counsel_soul.empty() && !counsel_guid.empty() &&
+               !counsel_ask.empty() && !counsel_ask_yes.empty() && !holder_learned.empty() &&
+               !holder_learned_yes.empty();
     }
     // Whether this favour waits on another's ending (a story's later scene).
     bool is_link() const { return !after_quest_id.empty(); }

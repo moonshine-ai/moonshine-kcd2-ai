@@ -356,6 +356,38 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
                 q.holder_household_guids.push_back(q.target_guid);
             }
         }
+        // The one with the argument (counsel_soul): a third party, found among the souls,
+        // with their menu's two rows and the holder's learned row written.
+        if (!q.counsel_soul.empty()) {
+            if (!q.has_holder() || q.is_unyielding()) {
+                throw std::runtime_error("quest " + q.id + " names counsel_soul but its holder has no menu to be talked round in");
+            }
+            if (q.counsel_soul == q.giver_soul || q.counsel_soul == q.target_soul) {
+                throw std::runtime_error("quest " + q.id + " names one of its own parties as counsel");
+            }
+            if (q.counsel_ask.empty() || q.counsel_ask_yes.empty() || q.holder_learned.empty() ||
+                q.holder_learned_yes.empty()) {
+                throw std::runtime_error("quest " + q.id + " names counsel_soul but lacks counsel_ask, "
+                                         "counsel_ask_yes, learned or learned_yes");
+            }
+            if (q.counsel_name.empty()) q.counsel_name = q.counsel_soul;
+            sqlite3_reset(stmt.get());
+            sqlite3_bind_text(stmt.get(), 1, q.counsel_soul.c_str(), -1, SQLITE_TRANSIENT);
+            const int rc = sqlite3_step(stmt.get());
+            if (rc == SQLITE_DONE) {
+                throw std::runtime_error("quest " + q.id + " counsel_soul names " + q.counsel_soul +
+                                         ", which npc does not have");
+            }
+            if (rc != SQLITE_ROW) fail(db, "reading counsel soul failed");
+            const unsigned char* p = sqlite3_column_text(stmt.get(), 0);
+            q.counsel_guid = p ? reinterpret_cast<const char*>(p) : "";
+            p = sqlite3_column_text(stmt.get(), 1);
+            q.counsel_gender = p ? reinterpret_cast<const char*>(p) : "";
+            if (q.counsel_guid.empty() || !renamed.count(q.counsel_soul)) {
+                it = quests.erase(it);
+                continue;
+            }
+        }
         if (q.helper_soul.empty()) { ++it; continue; }
         if (!q.is_unyielding()) {
             throw std::runtime_error("quest " + q.id + " names helper_soul but its holder can be moved; "
@@ -563,10 +595,26 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "helper_key") return &q.helper_key;
         if (field == "helper_key_yes") return &q.helper_key_yes;
         if (field == "helper_key_no") return &q.helper_key_no;
+        if (field == "helper_threat") return &q.helper_threat;
+        if (field == "helper_threat_yes") return &q.helper_threat_yes;
+        if (field == "helper_threat_no") return &q.helper_threat_no;
         if (field == "helper_leave") return &q.helper_leave;
         if (field == "helper_leave_reply") return &q.helper_leave_reply;
         if (field == "log_named") return &q.log_named;
         if (field == "log_letin") return &q.log_letin;
+        if (field == "log_scared") return &q.log_scared;
+        if (field == "counsel_soul") return &q.counsel_soul;
+        if (field == "counsel_name") return &q.counsel_name;
+        if (field == "counsel_open") return &q.counsel_open;
+        if (field == "counsel_open_reply") return &q.counsel_open_reply;
+        if (field == "counsel_ask") return &q.counsel_ask;
+        if (field == "counsel_ask_yes") return &q.counsel_ask_yes;
+        if (field == "counsel_leave") return &q.counsel_leave;
+        if (field == "counsel_leave_reply") return &q.counsel_leave_reply;
+        if (field == "log_counselled") return &q.log_counselled;
+        if (field == "objective_counsel") return &q.objective_counsel;
+        if (field == "learned") return &q.holder_learned;
+        if (field == "learned_yes") return &q.holder_learned_yes;
         if (field == "log_keyed") return &q.log_keyed;
         if (field == "objective_helper") return &q.objective_helper;
         // An exposure (npcdb.hpp, expose): the row, the journal's lines, the earlier quest

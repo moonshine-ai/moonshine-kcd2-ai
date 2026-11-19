@@ -170,6 +170,10 @@ struct Quest {
     // Henry's second question under the offer (npc_quest_lines `more_2`, `more_2_reply`):
     // "You want me to lie to a priest?" beside "Why?". Laid with `more`, answered the same way.
     std::string more_2, more_2_reply;
+    // Henry's row that takes the favour up, in the quest's own words (npc_quest_lines
+    // `accept`; bugs.txt 18 Nov 2026, A Beggar's Heart: "I'll go to Bylany and ask her,
+    // Father. Quietly."). Empty, and the app composes one from the kind (scripted.cpp).
+    std::string accept;
     // A find's count: how many of the thing the giver wants, and the hand-in takes. From
     // npc_quest_lines; 1 for everything else.
     int count = 1;
@@ -455,6 +459,11 @@ struct QuestFacts {
     bool named = false;
     bool letin = false;
     bool keyed = false;
+    // She let him in for fear rather than money (S, with i; the helper menu's threat row),
+    // and the one with the argument has been asked (C; Blind Pride's Brother Thomas, which
+    // opens the holder's learned row in the mod).
+    bool scared = false;
+    bool counselled = false;
     // A holder caught in the night and denounced at the bedside (flag d; notes.md 22 Oct
     // 2026): Henry walked out with nothing, and the thing is lost to the giver, who has
     // only his report to hear (the `denounced` how, settled by the mod at the row).

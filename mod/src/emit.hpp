@@ -180,12 +180,24 @@ std::vector<std::pair<std::string, std::string>> onward_localization(const std::
 // in Henry's pocket) and the way out. The key is a MiscItem row of the mod's own
 // (key_class) that the Lua's chest is keyed to.
 constexpr const char* kHelperObjective = "speak_helper";
+// The counsel's optional objective (Blind Pride's Brother Thomas): "Ask <counsel> for the
+// argument", marker on them from the accept until asked.
+constexpr const char* kCounselObjective = "ask_counsel";
 std::string helper_metarole(const std::string& quest_id);
 std::string helper_role(const std::string& quest_id);
 std::string helper_node(const std::string& quest_id);
+// The one with the argument (Blind Pride's Brother Thomas): their metarole, role and the
+// Talk node their menu is written to (q_<id>_counsel.xml).
+std::string counsel_metarole(const std::string& quest_id);
+std::string counsel_role(const std::string& quest_id);
+std::string counsel_node(const std::string& quest_id);
 std::string key_class(const Quest& quest);
 std::string key_name(const Quest& quest);
 std::string emit_helper_dialogue(const std::string& modid, const Quest& quest);
+// The counsel's menu (Blind Pride's Brother Thomas) and its strings.
+std::string emit_counsel_dialogue(const std::string& modid, const Quest& quest);
+std::vector<std::pair<std::string, std::string>> counsel_localization(const std::string& modid,
+                                                                      const Quest& quest);
 std::vector<std::pair<std::string, std::string>> helper_localization(const std::string& modid,
                                                                      const Quest& quest);
 
@@ -822,6 +834,12 @@ static_assert(sizeof kSeekKittenWobble / sizeof kSeekKittenWobble[0] == sizeof k
 // spot too far out to place at, a load that wiped it) laid again from the watch once Henry
 // is within kKeepsakeMetres of the spot without it.
 constexpr double kKeepsakeMetres = 120.0;
+// How far above the ground the keepsake is set down (bugs.txt 18 Nov 2026: the carved heart
+// lay flat in the marigolds and was hard to see). PlaceItem puts the item at the spot
+// entity; the spot is raised this much off the ground hit, so the thing sits proud of the
+// flowers rather than in them. A small figure on purpose: a placed item is a sleeping rigid
+// body, and if the engine wakes it, it has only this far to fall.
+constexpr double kKeepsakeLiftMetres = 0.35;
 // And Henry's word that he has come to the patch (Quest::arrived), once he is within
 // this of the spot: close enough to see the flowers, far enough that it is said as he
 // walks up rather than as he stoops.

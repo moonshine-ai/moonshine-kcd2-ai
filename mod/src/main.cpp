@@ -461,6 +461,13 @@ int main(int argc, char** argv) {
                         loc_extras.push_back(std::move(row));
                     }
                 }
+                // And the one with the argument (Blind Pride's Brother Thomas), their menu.
+                if (q.has_counsel()) {
+                    data_pak.add(level_dir + kcd2::counsel_node(q.id) + ".xml", kcd2::emit_counsel_dialogue(o.modid, q));
+                    for (auto& row : kcd2::counsel_localization(o.modid, q)) {
+                        loc_extras.push_back(std::move(row));
+                    }
+                }
                 // And the giver's hail as a bark of his own (In the Stocks' Benesh).
                 if (!q.hail.empty()) {
                     data_pak.add(level_dir + kcd2::hail_node(q.id) + ".xml", kcd2::emit_hail_dialogue(o.modid, q));
