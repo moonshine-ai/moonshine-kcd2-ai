@@ -685,6 +685,11 @@ constexpr int kHailAgainSeconds = 90;
 constexpr double kTravelJumpMetres = 30.0;
 constexpr int kTravelClockSeconds = 120;
 constexpr int kTravelGraceSeconds = 6;
+// The scene after, led on to (QuestLead; bugs.txt 19 Nov 2026): how often the Lua looks
+// for the game's Talk to have come down after the row that completed the scene before,
+// and how long it keeps looking before the lead is given up.
+constexpr int kLeadTickMs = 500;
+constexpr int kLeadWaitSeconds = 30;
 // The wave that goes with the shout (HailWave, 19 Nov 2026): the engine's urgeDialog
 // behaviour waves big past five metres and small within, and the clip is started on this
 // animation layer, which a probe on a standing townsman found takes an upper-body "_over"

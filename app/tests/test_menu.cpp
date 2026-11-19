@@ -2559,6 +2559,83 @@ TEST_CASE("an errand paid off on the greeting leads on to the giver's next scene
     CHECK(f.session.history().back().content == letter.offer_2);
 }
 
+TEST_CASE("a conversation the mod opened to have a scene offered opens on the offer, its accepting rows first") {
+    // bugs.txt 19 Nov 2026: Father Adam, Benesh's plea refused on the game's own Talk, is
+    // to put A Witness Before the Bailiff to Henry at once -- the user had to ask "Is there
+    // anything I can help you with". The mod opens the held conversation itself once the
+    // Talk is down, with `lead=<quest id>` on the begin line; the app opens on the giver's
+    // first-offer line and the offer, with the accepting rows laid, as a thanks that leads
+    // on does. Adam has been met before, so the ordinary first-meeting rule would not have
+    // said the offer unasked.
+    Quest witness;
+    witness.id = "506fd2dfa88c";
+    witness.kind = "ask";
+    witness.name = "A Witness Before the Bailiff";
+    witness.role = QuestRole::Giver;
+    witness.giver_soul = kBartel;
+    witness.giver_name = "Father Adam";
+    witness.target_soul = "kkut_additive_man_52";
+    witness.target_name = "Benesh";
+    witness.after_quest_id = "895f926a2b54";
+    witness.after_how = "truth";
+    witness.offer = "The bailiff will not take a priest's word against Paul without a witness. Go to Benesh.";
+    witness.offer_2 = "I had him in the stocks for two days, and all the while the cup was in Paul's chest.";
+    witness.greet_offer = "Stay a moment. There is something I would ask of you.";
+
+    Fixture f(false);
+    f.session.set_persona_source(
+        [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+            -> std::optional<Persona> {
+            const Standing standing = standing_of(record);
+            Persona persona{"Father Adam", "You are Father Adam, a priest in Kuttenberg.",
+                            "Walk steadfast in the light. What brings you to the church?"};
+            QuestFacts facts = standing.facts_of(witness.id);
+            persona.quest_of = witness;
+            // Met before: the state greeting would serve, and the offer wait to be asked.
+            persona.quest = plan_quest(witness, facts, approach, 3);
+            persona.scripted = plan_scripted("", {}, {}, witness, facts, standing, {witness}, {facts});
+            return persona;
+        });
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.game.begin_with(kBartel, " lead=" + witness.id);
+    f.drain(tailer);
+    CHECK(f.said("the mod opened this conversation for A Witness Before the Bailiff to be offered"));
+    CHECK(f.session.history().back().content == witness.greet_offer + "\n\n" + witness.offer);
+    CHECK(f.recorded.empty());
+    f.play_all(tailer);
+    // The list under it: the accepting row first, no offer of help.
+    REQUIRE_FALSE(f.game.menu().empty());
+    CHECK(f.offered[0].intent == "accept");
+    for (const std::string& row : f.game.menu()) CHECK(row != kFirstRoundSeeds[0]);
+    f.game.picked(1, "accept", f.game.menu()[0]);
+    f.drain(tailer);
+    REQUIRE(f.recorded.size() == 1);
+    CHECK(f.recorded[0] == std::make_pair(witness.id, std::string(kQuestAccept)));
+    CHECK(f.session.history().back().content == witness.offer_2);
+
+    // A lead for some other errand, or none, and the ordinary greeting serves.
+    Fixture g(false);
+    g.session.set_persona_source(
+        [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+            -> std::optional<Persona> {
+            const Standing standing = standing_of(record);
+            Persona persona{"Father Adam", "You are Father Adam, a priest in Kuttenberg.",
+                            "Walk steadfast in the light. What brings you to the church?"};
+            QuestFacts facts = standing.facts_of(witness.id);
+            persona.quest_of = witness;
+            persona.quest = plan_quest(witness, facts, approach, 3);
+            persona.scripted = plan_scripted("", {}, {}, witness, facts, standing, {witness}, {facts});
+            return persona;
+        });
+    LogTailer tailer2(g.game.log());
+    g.game.launch();
+    g.game.begin_with(kBartel, " lead=000000000000");
+    g.drain(tailer2);
+    CHECK_FALSE(g.said("the mod opened this conversation"));
+    CHECK(g.session.history().back().content == "Walk steadfast in the light. What brings you to the church?");
+}
+
 TEST_CASE("a letter's writer may be asked what is in it, and answers by Henry's Speech against his own") {
     // notes.md (9 Oct 2026, Holy Jest): Henry should be able to ask Benesh what the letter
     // says, and get it out of him on a speech check. The row is laid while the letter is in

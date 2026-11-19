@@ -399,6 +399,27 @@ void Session::open(std::string_view soul, const Approach& approach,
         answer("");
         return;
     }
+    // A conversation the mod opened to have an errand offered (`lead=` on the begin line;
+    // bugs.txt 19 Nov 2026: Father Adam is to put A Witness Before the Bailiff to Henry the
+    // moment his refusal of Benesh's plea is said, not wait to be asked "Is there anything I
+    // can help you with"). The giver's own line for a first offer where one is written, the
+    // offer under it, and the accepting rows laid first, as a thanks that leads on does.
+    if (!approach_.lead.empty() && approach_.lead == persona_.quest_of.id && !persona_.scripted.offer.empty() &&
+        !persona_.quest.question.empty()) {
+        const Scripted& coming = persona_.scripted;
+        persona_.greeting = persona_.quest_of.greet_offer.empty() ? coming.offer
+                                                                 : persona_.quest_of.greet_offer + "\n\n" + coming.offer;
+        preset_.clear();
+        if (!coming.accept_row.empty()) preset_.push_back({0, "accept", coming.accept_row});
+        if (!coming.more_row.empty()) preset_.push_back({0, "more", coming.more_row});
+        if (!coming.more_2_row.empty()) preset_.push_back({0, "more_2", coming.more_2_row});
+        told_.emplace_back("help");
+        status("the mod opened this conversation for " + persona_.quest_of.name +
+               " to be offered, so the opening line is the offer, with its accepting rows first");
+        greet();
+        if (!drew_.empty()) drew_.back().item_id = "quest:" + persona_.quest_of.id;
+        return;
+    }
     if (written_opening(persona_)) {
         if (!persona_.quest.greeting.empty()) {
             // The visit's own line, whichever the source put in `greeting`: the two are the

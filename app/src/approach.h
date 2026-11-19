@@ -91,6 +91,15 @@ struct Approach {
     // 2 Nov 2026): her card has her indoors, and nothing told the model otherwise.
     int indoors = -1;
 
+    // The quest the mod opened this conversation to have offered (`lead=<quest id>` on the
+    // begin line; bugs.txt 19 Nov 2026): Father Adam, his refusal of Benesh's plea just said
+    // on the game's own Talk, is to put A Witness Before the Bailiff to Henry at once, not
+    // "come to me presently" and wait to be asked. The mod opens the held conversation
+    // itself once the Talk is down, and the app opens on the offer with the accepting rows
+    // laid (session.cpp, open), as a thanks that leads on does. Empty on a conversation the
+    // player opened.
+    std::string lead;
+
     // Which deal the game's mod was built from (`qset=` on the begin and look lines): the
     // fingerprint the emitter writes as Moonshine.questSet, for main.cpp to set against
     // PersonaDb::quest_set(). Empty from a mod too old to send it.

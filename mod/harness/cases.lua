@@ -1520,6 +1520,101 @@ case("Onward: the telling pays and sends Henry on; the word said completes and p
     check(E.find("fired by the row's own port"), "and the log says why")
 end)
 
+-- bugs.txt 19 Nov 2026: Father Adam, Benesh's plea refused on the game's Talk, is to put
+-- A Witness Before the Bailiff to Henry at once. The scene before carries `leadNext`, the
+-- scene after it at the very soul its last row is said to; once that row's complete has
+-- fired, the Lua waits for the Talk to come down and opens the held conversation with
+-- that soul itself, `lead=<id>` on the begin line.
+case("Lead: the scene after is opened by the mod at the soul the last row was said to, once the Talk is down, with lead= on the begin line", function(E, M, check)
+    local id, q = byName(M, "Back on the Altar")
+    if q == nil then check(true, "no Back on the Altar in this data"); return end
+    local nextId = q.leadNext
+    check(nextId ~= nil and M.quests[nextId] ~= nil and M.quests[nextId].name == "A Witness Before the Bailiff",
+          "Back on the Altar leads on to A Witness Before the Bailiff, got " .. tostring(nextId))
+    local nq = M.quests[nextId]
+    check(nq.giver == q.onward and nq.after == id, "the scene after is the onward soul's, and follows this one")
+    local leads = 0
+    for _, oq in pairs(M.quests) do if oq.leadNext ~= nil then leads = leads + 1 end end
+    check(leads >= 1, leads .. " scene(s) lead on")
+    local giver = E.soul(q.giver)
+    local adam = E.soul(q.onward, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 101, y = 100, z = 0 })
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.holderGave(id, "persuade")
+    M.QuestCommand(id, "onward")
+    E.firePort(id .. " accept")
+    E.firePort(id .. " onward")
+    -- The plea said on the game's Talk: the row's complete, and the lead armed while the
+    -- Talk is still up.
+    E.dialog.open = true
+    M.npc = adam
+    local mark = E.mark()
+    E.carried(id)
+    check(M.state.quests[id].done == true, "done where it was said")
+    check(M.QuestLinkState(nextId) == "open" and M.QuestOfferable(nextId), "the scene after is open to offer")
+    check(E.find("BRIDGE quest " .. nextId .. " to be led on to from " .. id, mark), "the lead armed")
+    check(M.leadQuest == nextId, "the lead remembered")
+    E.advance(2000)
+    check(not E.find("BRIDGE begin npc=", mark), "nothing opened while the Talk is up")
+    -- The Talk comes down: the held conversation opens with Adam, lead= on its begin line.
+    E.dialog.open = false
+    E.advance(1100)
+    check(E.find("BRIDGE quest " .. nextId .. " lead: opening with " .. q.onward, mark), "opened by the mod")
+    local begin = E.find("BRIDGE begin npc=" .. q.onward, mark)
+    check(begin ~= nil and string.find(begin, " lead=" .. nextId, 1, true) ~= nil, "lead= on the begin line: " .. tostring(begin))
+    check(M.active == true and M.leadQuest == nil, "the conversation is up, the lead spent")
+    -- And not again: a second conversation with him has no lead on it.
+    M.Leave("test")
+    M.OnClosed()
+    mark = E.mark()
+    M.OnConversation(adam, player, nil)
+    begin = E.find("BRIDGE begin npc=" .. q.onward, mark)
+    check(begin ~= nil and string.find(begin, " lead=", 1, true) == nil, "no lead on the next begin line")
+    M.Leave("test")
+    M.OnClosed()
+end)
+
+case("Lead: nothing is opened for a scene that is not offerable, nor when the Talk never comes down", function(E, M, check)
+    local id, q = byName(M, "Back on the Altar")
+    if q == nil or q.leadNext == nil then check(true, "no lead in this data"); return end
+    local nextId = q.leadNext
+    local giver = E.soul(q.giver)
+    local adam = E.soul(q.onward, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 101, y = 100, z = 0 })
+    -- Already taken up: nothing to lead on to.
+    M.state.quests[nextId] = { accepted = true }
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.holderGave(id, "persuade")
+    M.QuestCommand(id, "onward")
+    E.firePort(id .. " accept")
+    E.firePort(id .. " onward")
+    M.npc = adam
+    local mark = E.mark()
+    E.carried(id)
+    check(E.find("BRIDGE quest " .. nextId .. " not led on to: not offerable", mark) and M.leadQuest == nil, "an accepted scene is not led on to")
+    E.advance(3000)
+    check(not E.find("BRIDGE begin npc=", mark), "nothing opened")
+    -- Offerable, but the Talk stays up past the wait: given up.
+    M.state.quests[nextId] = nil
+    M.state.quests[id] = nil
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.holderGave(id, "persuade")
+    M.QuestCommand(id, "onward")
+    E.dialog.open = true
+    M.npc = adam
+    mark = E.mark()
+    E.carried(id)
+    check(M.leadQuest == nextId, "armed")
+    E.advance(31000)
+    check(E.find("BRIDGE quest " .. nextId .. " lead given up", mark) and M.leadQuest == nil, "given up after the wait")
+    E.dialog.open = false
+    E.advance(2000)
+    check(not E.find("BRIDGE begin npc=", mark), "and nothing opened after")
+end)
+
 case("QuestDelivered: the letter moves to the receiver and how is delivered", function(E, M, check)
     local id, q = byLetter(M)
     local receiver = E.soul(q.target)

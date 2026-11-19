@@ -8900,6 +8900,23 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", onward = \"" + lua_escape(q.onward_soul) + "\", onwardMeta = \"" +
                  lua_escape(onward_metarole(q.id)) + "\"";
         }
+        {
+            // The scene that follows this one at the very soul its last row is said to
+            // (bugs.txt 19 Nov 2026: Father Adam, Benesh's plea refused, is to offer A
+            // Witness Before the Bailiff at once): once the row's complete has fired, the
+            // Lua opens the held conversation with that soul itself, with `lead=` on the
+            // begin line for the app to open on the offer (QuestLead). The soul is the
+            // onward one for a word carried on, the target for a word delivered.
+            const std::string& said_to = q.carries_on() ? q.onward_soul : q.target_soul;
+            if (!said_to.empty() && (q.carries_on() || q.carries_word())) {
+                for (const Quest& after : quests) {
+                    if (after.after_quest_id == q.id && after.giver_soul == said_to) {
+                        s += ", leadNext = \"" + lua_escape(after.id) + "\"";
+                        break;
+                    }
+                }
+            }
+        }
         if (!q.reward_class.empty()) {
             s += ", rewardClass = \"" + lua_escape(q.reward_class) + "\"";
         }
@@ -17101,6 +17118,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif quest.item == \"\" then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" word carried to \" .. quest.target .. \", complete on the spot\")\n";
     s += "\t\t" + g + ".QuestCommand(id, \"complete\", true)\n";
+    s += "\t\t" + g + ".QuestLead(id)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tlocal receiver = nil\n";
@@ -17138,6 +17156,56 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "\t" + g + ".QuestCommand(id, \"complete\", true)\n";
+    s += "\t" + g + ".QuestLead(id)\n";
+    s += "end\n";
+    s += "\n";
+    // The scene after, offered on the spot (quest.leadNext; bugs.txt 19 Nov 2026): the
+    // soul Henry has just said the last row to is the next scene's giver, and rather than
+    // "come to me presently" and a second press, the mod waits for the game's Talk to
+    // come down and opens the held conversation with them itself, `lead=<id>` on its begin
+    // line, which the app opens on the offer with the accepting rows first. Only while the
+    // scene is offerable (its link open, its switch on, nothing of it taken up), and only if
+    // the Talk is down within kLeadWaitSeconds; a player who walked off in the meantime is
+    // not pulled back (Near stops the pump on its first step), and the prompt on the giver
+    // still offers it, as before.
+    s += g + ".leadQuest = nil\n";
+    s += g + ".leadTries = 0\n";
+    s += "function " + g + ".QuestLead(id)\n";
+    s += "\tlocal quest = " + g + ".quests[id]\n";
+    s += "\tif quest == nil or quest.leadNext == nil then return end\n";
+    s += "\tif not " + g + ".QuestOfferable(quest.leadNext) then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. quest.leadNext .. \" not led on to: not offerable (\" .. " + g +
+         ".QuestLinkState(quest.leadNext) .. \")\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. quest.leadNext .. \" to be led on to from \" .. id .. \" once the Talk is down\")\n";
+    s += "\t" + g + ".leadQuest = quest.leadNext\n";
+    s += "\t" + g + ".leadTries = 0\n";
+    s += "\tScript.SetTimer(" + std::to_string(kLeadTickMs) + ", " + g + ".LeadTick)\n";
+    s += "end\n";
+    s += "function " + g + ".LeadTick()\n";
+    s += "\tlocal id = " + g + ".leadQuest\n";
+    s += "\tif id == nil then return end\n";
+    s += "\t" + g + ".leadTries = " + g + ".leadTries + 1\n";
+    s += "\tif " + g + ".leadTries > " + std::to_string(kLeadWaitSeconds * 1000 / kLeadTickMs) + " then\n";
+    s += "\t\t" + g + ".leadQuest = nil\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" lead given up: the Talk did not come down\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif " + g + ".active or " + g + ".InDialog() then\n";
+    s += "\t\tScript.SetTimer(" + std::to_string(kLeadTickMs) + ", " + g + ".LeadTick)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.giver) end)\n";
+    s += "\tif e == nil or not " + g + ".QuestOfferable(id) then\n";
+    s += "\t\t" + g + ".leadQuest = nil\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" lead dropped: \" .. (e == nil and \"no giver entity\" or \"not offerable\"))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" lead: opening with \" .. q.giver)\n";
+    s += "\t" + g + ".OnConversation(e, " + g + ".Player(), nil)\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".OnConversation(npc, user, slotId)\n";
@@ -17162,6 +17230,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(function() holding = holding .. " + g + ".AlmsLine(npc, user) end)\n";
     s += "\tlocal scene = " + g + ".Seen(user) .. " + g + ".SoulState(npc) .. " + g + ".World() .. holding"
          " .. \" qset=\" .. tostring(" + g + ".questSet)\n";
+    // Opened by the mod for a scene to be offered (QuestLead): the scene named, once, and
+    // only on its own giver.
+    s += "\tif " + g + ".leadQuest ~= nil then\n";
+    s += "\t\tlocal lq = " + g + ".quests[" + g + ".leadQuest]\n";
+    s += "\t\tif lq ~= nil and lq.giver == EntityUtils.GetName(npc) then scene = scene .. \" lead=\" .. " + g + ".leadQuest end\n";
+    s += "\t\t" + g + ".leadQuest = nil\n";
+    s += "\tend\n";
     // The store first: met goes up, this conversation's gap entry is written with the same
     // readings the begin line carries, and the soul's whole record is dumped, so that by
     // the time the app reads the begin line it already holds everything it needs to plan
