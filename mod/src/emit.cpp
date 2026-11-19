@@ -4995,7 +4995,11 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
         c += t(9) + "</Sequence>\r\n";
         return c;
     };
-    if (quest.is_unyielding()) {
+    // A disputation (has_debate; Blind Pride, bugs.txt 19 Nov 2026): the argument is the
+    // only way. No persuade, no threat and no coin beside it -- a man at prayer is not
+    // talked, scared or bought out of his pride, and the three stages are the test.
+    if (quest.has_debate()) {
+    } else if (quest.is_unyielding()) {
         s += rebuff("persuade", "persuade", quest.holder_persuade, "persuade_no", quest.holder_persuade_no);
         if (quest.target_gender != "female") {
             s += rebuff("threaten", "threaten", quest.holder_threaten, "threaten_no", quest.holder_threaten_no);
@@ -5018,7 +5022,7 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     // would fail for want of coin. Left off altogether when the errand has no price
     // (pay_groschen 0): the giver is paying money, and a man who pays Henry to fetch a
     // thing would sooner have paid the holder himself. And off for an unyielding holder.
-    if (quest.pay_groschen > 0 && !quest.is_unyielding()) {
+    if (quest.pay_groschen > 0 && !quest.is_unyielding() && !quest.has_debate()) {
         s += t(9) + "<Sequence EntryCondition=\"!ThisSequenceUsed() AND GetActorMoney()[0] &gt;= " +
              std::to_string(quest.pay_groschen) + "\" EndType=\"" + won_end + "\" Name=\"pay\" ExitScript=\"" +
              gave("pay") + "\">\r\n";
