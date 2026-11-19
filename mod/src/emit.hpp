@@ -745,6 +745,10 @@ std::string routine_tag(const std::string& modid, const std::string& quest_id);
 // (has_follow): the scheduler override's split of his sleep links reads it, his own bed
 // under the tag and the witness's under it inverted. The same script writes the name.
 std::string alert_tag(const std::string& modid, const std::string& quest_id);
+// The tag the graph turns on at a holder's handover and never off (Quest::has_gone): the
+// scheduler override's added link on his NPC hub, to a wrapper by the camp he goes to,
+// reads it. The same script writes the name.
+std::string gone_tag(const std::string& modid, const std::string& quest_id);
 // A travel with a brawl stages it on that same match: the brawlers are set at odds with the
 // one looked at, told to fight bare-handed and to be nobody's business (`combat_invisible`,
 // so neither Henry nor a guard is drawn in), and each is sent the game's own first-punch

@@ -789,6 +789,11 @@ std::string alert_tag(const std::string& modid, const std::string& quest_id) {
     return modid + "_alert_" + quest_id;
 }
 
+std::string gone_tag(const std::string& modid, const std::string& quest_id) {
+    require_identifier(quest_id, "quest id");
+    return modid + "_gone_" + quest_id;
+}
+
 std::string quest_port(const QuestBeat& beat) {
     require_identifier(beat.command, "quest command");
     return quest_node(beat.quest_id) + "_" + beat.command;
@@ -3150,6 +3155,21 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(6) + "<SkillReward Type=\"scholarship\" ExperienceChange=\"2-minor\" />\r\n";
         s += t(5) + "</Rewards>\r\n";
         s += t(4) + "</AddReward>\r\n";
+    }
+    // The holder gone for good once he has given in (routine_gone_target; bugs.txt 19 Nov
+    // 2026: Benesh up from his prayers and away to Ellen's camp): the gone tag on from the
+    // handover, which the scheduler override's added link on his NPC hub reads
+    // (build_scheduler.py, HaltOnInvalid and Urgency, so the prayer is dropped at once and
+    // the camp is where he goes). Never off: he lives there now. The shape is the routine's
+    // (routineLink, behaviors.md §4.6) and the alert's (alertLink).
+    if (quest.has_gone()) {
+        s += t(4) + "<State Name=\"gone\" TypeT=\"bool\">\r\n";
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetTrue\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<SchedulerLinkActivation Name=\"goneLink\">\r\n";
+        s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(gone_tag(modid, quest.id)) + "\" />\r\n";
+        s += t(5) + "<Edge From=\"gone.State\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</SchedulerLinkActivation>\r\n";
     }
     // An exposure (Words Must Not Fail): the house the holder is caught in -- the witness's
     // household, and him -- expects Henry from the catching on, the giver's welcome shape,

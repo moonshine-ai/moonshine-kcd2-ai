@@ -389,6 +389,13 @@ struct Quest {
     // so nobody weeping on a bench says "At your service, sir" or "What a good doggy".
     // Empty for every other quest.
     std::string routine;
+    // Where the holder goes for good once he has given in (bugs.txt 19 Nov 2026: Blind
+    // Pride's Benesh, up from his prayers and off to Ellen's camp at Bylany): a point
+    // `<x>,<y>`, the scheduler script's spec (build_scheduler.py routine_gone_target: a
+    // link added to his NPC hub, to a wrapper by the point, under the graph's gone tag),
+    // which the graph turns on at the handover and never off. Empty for every other quest.
+    std::string routine_gone_target;
+    bool has_gone() const { return has_holder() && !routine_gone_target.empty(); }
     // How near a bed is to count as the same roof: the next room of the same house (Joan's
     // catchpoles sleep 5.3 m from her) and not the neighbours (the nearest other house in
     // Horany is 30 m off).

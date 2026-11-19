@@ -204,6 +204,20 @@ def alert_tag(modid: str, quest_id: str) -> str:
     return f"{modid}_alert_{quest_id}"
 
 
+def gone_tag(modid: str, quest_id: str) -> str:
+    """emit.cpp gone_tag(): the LinkTag the graph turns on at the holder's handover and never
+    off (routine_gone_target), under which the link added to his NPC hub is live."""
+    return f"{modid}_gone_{quest_id}"
+
+
+# The added link's priority (routine_gone_target): above the holder's own routine and a
+# routine_day's work link (0-5) and the routine's own 10, under the game's quest links.
+GONE_PRIORITY = 20
+# Which wrappers by the point a man gone to a camp may take, first preferred: a seat on a
+# bench (`use`, what Ellen herself does at hers), a loitering spot, the camp bench's fun.
+GONE_BEHAVIOURS = ("use", "waiting", "drinking", "use_withBark", "lookingAround")
+
+
 # ------------------------------------------------------------------ specs (needs the DB)
 
 
@@ -343,6 +357,29 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
             raise SystemExit(f"{quest_id}: routine_home_at wants HH:MM, got {text!r}")
         specs.append({"quest_id": quest_id, "home_at": int(m.group(1)) * 60 + int(m.group(2)),
                       "soul": soul, "name": name, "hub": hub, "gender": "", "tag": ""})
+    # Where the holder goes for good once he has given in (routine_gone_target, `<x>,<y>`;
+    # 19 Nov 2026 -- bugs.txt: Blind Pride's Benesh, up from his prayers and off to Ellen's
+    # camp at Bylany): a link *added* to his NPC hub (behaviors.md §4.7: an added link on
+    # the NPC hub is taken in the override form), all day at GONE_PRIORITY, to a wrapper
+    # by the point he can use, under the graph's gone tag with HaltOnInvalid and Urgency, so
+    # the tag's turning on drops what he was doing and sends him there at once.
+    for quest_id, text, soul, name, hub, gender in conn.execute(
+            "SELECT l.quest_id, l.text, q.target_soul, q.target_name, h.hub_guid, "
+            "COALESCE((SELECT gender FROM npc WHERE soul_name = q.target_soul LIMIT 1), '') "
+            "FROM npc_quest_lines l JOIN npc_quest q USING (quest_id) "
+            "LEFT JOIN npc_routine_hub h ON h.soul_name = q.target_soul AND h.level = ? "
+            "WHERE l.field = 'routine_gone_target' AND l.text <> '' ORDER BY l.quest_id", (level,)).fetchall():
+        if not soul:
+            raise SystemExit(f"{quest_id}: routine_gone_target on a quest with no target")
+        if not hub:
+            print(f"  {quest_id}: {name} ({soul}) has no scheduler hub on {level}; skipped", file=sys.stderr)
+            continue
+        m = re.fullmatch(r"\s*([-\d.]+)\s*,\s*([-\d.]+)\s*", text)
+        if not m:
+            raise SystemExit(f"{quest_id}: routine_gone_target wants <x>,<y>, got {text!r}")
+        specs.append({"quest_id": quest_id, "gone": (float(m.group(1)), float(m.group(2))),
+                      "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
+                      "tag": gone_tag(modid, quest_id)})
     return specs
 
 
@@ -631,6 +668,54 @@ def resolve_home_at(spec: dict, hubs: dict) -> dict:
             "late": [(l.target, l.start, l.end) for l in late]}
 
 
+def resolve_gone(spec: dict, hubs: dict) -> dict:
+    """The wrapper by the point the holder goes to (routine_gone_target): a positioned hub
+    within POINT_METRES of it carrying an ungated link (no role, buff or tag) with one of
+    GONE_BEHAVIOURS that fits his gender -- the first behaviour preferred, then the nearest
+    to the point -- and his NPC hub, which must be in the table."""
+    who = f"{spec['name']} ({spec['soul']}, hub {spec['hub']})"
+    if spec["hub"] not in hubs:
+        raise ValueError(f"{who}: no such hub in the table")
+    px, py = spec["gone"]
+    best = None
+    for guid, (hub, links) in hubs.items():
+        pos = position(hub)
+        if not pos:
+            continue
+        d = math.hypot(pos[0] - px, pos[1] - py)
+        if d > POINT_METRES:
+            continue
+        for l in links:
+            b = l.get("BehaviorName")
+            if b not in GONE_BEHAVIOURS or not gender_fits(l, spec["gender"]):
+                continue
+            if l.get("RequiredRole") or l.get("BuffTag") or l.get("LinkTag"):
+                continue
+            rank = (GONE_BEHAVIOURS.index(b), d)
+            if best is None or rank < best[0]:
+                best = (rank, guid, pos, b, d)
+    if best is None:
+        raise ValueError(f"{who}: no wrapper within {POINT_METRES:.0f} m of {px:.1f},{py:.1f} with one of "
+                         f"{', '.join(GONE_BEHAVIOURS)} he could take")
+    return {"npc_hub": spec["hub"], "wrapper": best[1], "wrapper_pos": best[2], "behaviour": best[3],
+            "metres": best[4]}
+
+
+def add_link(hub_block: str, target: str, attrs: dict[str, str]) -> str:
+    """A link appended to one hub's text (behaviors.md §4.7: an added link on the NPC hub is
+    taken in the override form), in the exporter's shape, before the hub's closing
+    </Links>. Once: a hub that already links to the target is left alone."""
+    if re.search(LINK_RE.format(target=re.escape(target)), hub_block):
+        raise ValueError(f"the hub already links to {target}")
+    at = hub_block.rfind("</Links>")
+    if at < 0:
+        raise ValueError("the hub has no </Links> to add before")
+    body = " ".join(f'{k}="{v}"' for k, v in sorted(attrs.items()))
+    link = (f'<S_ActivityLink PositioningDelegate="0" TargetGuid="{target}">'
+            f'<Parameters {body} /></S_ActivityLink>')
+    return hub_block[:at] + link + hub_block[at:]
+
+
 LINK_RE = r'(<S_ActivityLink\b[^>]*\bTargetGuid=")({target})("[^>]*>\s*<Parameters\b)([^>]*?)(\s*/>)'
 
 
@@ -905,6 +990,29 @@ def apply(table: bytes, specs: list[dict]) -> tuple[bytes, list[str]]:
             report.append(
                 f"{spec['quest_id']} {spec['name']} ({spec['soul']}): home at {minute // 60:02d}:{minute % 60:02d} for good\n"
                 f"    home hub {r['home_hub']}: day link(s) -> {moved} now end at {minute // 60:02d}:{minute % 60:02d}")
+            continue
+        if spec.get("gone"):
+            # The holder gone for good once he has given in: one link added to his NPC hub,
+            # all day, above his own routine, to a wrapper by the camp, live under the gone
+            # tag the graph turns on at the handover (emit.cpp goneLink). HaltOnInvalid and
+            # Urgency are what make the flip act at once (behaviors.md §4.6, Joan off her
+            # round as the conversation closed): the prayer he is at is dropped, and the
+            # link, valid from that moment, is the best he has. All day, so the night is at
+            # the camp too; the game's own quest links (40+) still outbid it.
+            r = resolve_gone(spec, hubs)
+            tag = spec["tag"]
+            text = edit_hub(text, r["npc_hub"], lambda block: add_link(
+                block, r["wrapper"], {
+                    "Priority": str(GONE_PRIORITY), "TimeOfDayStart": "0", "TimeOfDayEnd": "1440",
+                    "TimeVariation": "0", "AllowedGenders": "0", "Attraction": str(ROUTINE_ATTRACTION),
+                    "LinkTag": tag, "InvertLinkTagRequirement": "false",
+                    "HaltOnInvalid": "true", "Urgency": ROUTINE_URGENCY}))
+            px, py = spec["gone"]
+            report.append(
+                f"{spec['quest_id']} {spec['name']} ({spec['soul']}): gone to {px:.1f},{py:.1f} for good under tag {tag}\n"
+                f"    NPC hub {r['npc_hub']}: link added -> wrapper {r['wrapper']} (`{r['behaviour']}`) at "
+                f"{r['wrapper_pos'][0]:.1f},{r['wrapper_pos'][1]:.1f} ({r['metres']:.0f} m from the point), "
+                f"prio {GONE_PRIORITY}, all day, live while the tag is on")
             continue
         r = resolve(spec, hubs)
         tag = spec["tag"]
