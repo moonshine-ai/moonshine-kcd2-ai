@@ -854,10 +854,12 @@ TEST_CASE("a thing carried back to its owner is a deliver in the owner's words, 
     CHECK(how_matches("covered", "truth|covered"));
 }
 
-TEST_CASE("a thing's giver with a plea to send back sends Henry on at the truth told, and the receiver is not moved") {
+TEST_CASE("a thing's giver with a plea to send back begs at the truth told, Henry answers yes or no, and the receiver is not moved") {
     // In the Stocks (bugs.txt 19 Nov 2026): told the chalice went back with the whole truth,
     // Benesh begs Henry to go back to Father Adam and plead for Paul Schmidt. The truth's
-    // report row says `onward`, the other endings end as before, and the giver then waits.
+    // report row says `plead` (the giver pays, and waits), and Henry's answer is the next
+    // list: yes sends him on (`onward`), no ends the errand (the plain complete). The other
+    // endings end as before.
     Quest quest = chalice_back(QuestRole::Giver);
     CHECK_FALSE(quest.carries_on());
     quest.onward_soul = quest.target_soul;
@@ -870,15 +872,50 @@ TEST_CASE("a thing's giver with a plea to send back sends Henry on at the truth 
     handed.have = 0;
     handed.how = "truth";
     QuestPlan told = plan_quest(quest, handed, {});
-    REQUIRE(told.rows.size() == 1);
+    REQUIRE(told.rows.size() == 3);
     CHECK(told.rows[0].intent == "report");
     CHECK(told.rows[0].reply == "You told him. Christ.");
-    CHECK(told.rows[0].command == kQuestOnward);
+    CHECK(told.rows[0].command == kQuestPlead);
+    CHECK(told.rows[0].after_intent.empty());
     CHECK(told.block.find("plead with him to let the matter rest") != std::string::npos);
+    // The two answers wait on the report row, and close the conversation.
+    CHECK(told.rows[1].intent == "plea_yes");
+    CHECK(told.rows[1].command == kQuestOnward);
+    CHECK(told.rows[1].after_intent == "report");
+    CHECK(told.rows[1].closes);
+    CHECK(told.rows[2].intent == "plea_no");
+    CHECK(told.rows[2].command == kQuestComplete);
+    CHECK(told.rows[2].after_intent == "report");
+    CHECK(told.rows[2].closes);
+    // Plain words where none are written; the writer's where they are.
+    CHECK(told.rows[1].text.find("I'll go back to him") != std::string::npos);
+    quest.plea_yes = "I'll go. I'll ask him.";
+    quest.plea_yes_reply = "Bless you.";
+    quest.plea_no = "No. Paul should answer for it.";
+    quest.plea_no_reply = "Then God help me.";
+    told = plan_quest(quest, handed, {});
+    CHECK(told.rows[1].text == quest.plea_yes);
+    CHECK(told.rows[1].reply == quest.plea_yes_reply);
+    CHECK(told.rows[2].text == quest.plea_no);
+    CHECK(told.rows[2].reply == quest.plea_no_reply);
     handed.how = "pinned";
     CHECK(plan_quest(quest, handed, {}).rows[0].command == kQuestComplete);
+    CHECK(plan_quest(quest, handed, {}).rows.size() == 1);
     handed.how = "covered";
     CHECK(plan_quest(quest, handed, {}).rows[0].command == kQuestComplete);
+
+    // Back with the begging unanswered (the letter P): the two answers laid at once, and
+    // the paragraph says he waits.
+    QuestFacts pleaded = at("handed");
+    pleaded.have = 0;
+    pleaded.how = "truth";
+    pleaded.pleaded = true;
+    QuestPlan asked = plan_quest(quest, pleaded, {});
+    REQUIRE(asked.rows.size() == 2);
+    CHECK(asked.rows[0].intent == "plea_yes");
+    CHECK(asked.rows[0].after_intent.empty());
+    CHECK(asked.rows[1].intent == "plea_no");
+    CHECK(asked.block.find("You wait on their answer") != std::string::npos);
 
     // Sent back and not yet heard from: no rows, the begging in the paragraph, and the
     // giver's own opening line for it.

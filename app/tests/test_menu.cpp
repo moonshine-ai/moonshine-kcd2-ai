@@ -2900,6 +2900,84 @@ TEST_CASE("a writer with a question back asks it with the thanks, and Henry's an
     CHECK(f.llm.calls.empty());
 }
 
+TEST_CASE("a plea's giver begs at the truth told, and Henry's yes or no is the next list, each closing the conversation") {
+    // bugs.txt 19 Nov 2026 (In the Stocks): Benesh's begging should be a question Henry can
+    // say no to. The truth's report row owes `plead` (the giver pays, the mod notes the
+    // letter P), the begging is the reply, the two answers are the next list and nothing
+    // else of the errand's; yes owes `onward` and closes, no owes the plain complete and
+    // closes. Both as written: the model is never asked.
+    for (const bool goes : {true, false}) {
+        Fixture f(false);
+        f.session.set_persona_source(
+            [](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+                -> std::optional<Persona> {
+                QuestFacts facts = standing_of(record).facts_of("895f926a2b54");
+                if (!facts.done) {
+                    facts.accepted = true;
+                    facts.handed = true;
+                    facts.how = "truth";
+                    facts.have = 0;
+                }
+                Persona persona = written_bartel(first_meeting(), facts);
+                persona.quest_of.id = "895f926a2b54";
+                persona.quest_of.kind = "deliver";
+                persona.quest_of.item_class = "6dc80a04-dad0-4259-a854-e085caa74cc1";
+                persona.quest_of.item_name = "silver chalice";
+                persona.quest_of.item_kind = "thing";
+                persona.quest_of.target_soul = "kkut_additive_man_135";
+                persona.quest_of.target_name = "Father Adam";
+                persona.quest_of.onward_soul = persona.quest_of.target_soul;
+                persona.quest_of.onward_name = persona.quest_of.target_name;
+                persona.quest_of.told_by_how = {{"truth", "I told him the whole of it.", "You told him. Christ. Go back to him, I beg you."}};
+                persona.quest_of.plea_yes = "All right. I'll go back and ask him.";
+                persona.quest_of.plea_yes_reply = "God bless you. I'll be here.";
+                persona.quest_of.plea_no = "No. Paul should answer for it.";
+                persona.quest_of.plea_no_reply = "Then God help me.";
+                persona.quest = plan_quest(persona.quest_of, facts, approach);
+                persona.scripted = plan_scripted("Bartel. I dig where I'm told.", {}, {}, persona.quest_of, facts,
+                                                 first_meeting());
+                return persona;
+            });
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.llm.replies = {""};
+        f.game.begin_with(kBartel, " spc=15 nspc=10 have=0");
+        f.drain(tailer);
+        f.play_all(tailer);
+        int report = 0;
+        for (std::size_t i = 0; i < f.offered.size(); ++i) {
+            if (f.offered[i].intent == "report") report = static_cast<int>(i) + 1;
+            CHECK(f.offered[i].intent != "plea_yes");
+            CHECK(f.offered[i].intent != "plea_no");
+        }
+        REQUIRE(report > 0);
+        f.game.picked(report, "report", "I told him the whole of it.");
+        f.drain(tailer);
+        REQUIRE(f.recorded.size() == 1);
+        CHECK(f.recorded[0] == std::make_pair(std::string("895f926a2b54"), std::string(kQuestPlead)));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == "You told him. Christ. Go back to him, I beg you.");
+        CHECK_FALSE(f.game.directives().back() == "@end");
+        // The two answers, first on the list; nothing else of the errand's.
+        REQUIRE(f.game.menu().size() >= 2);
+        CHECK(f.game.menu()[0] == "All right. I'll go back and ask him.");
+        CHECK(f.game.menu()[1] == "No. Paul should answer for it.");
+        for (const std::string& row : f.game.menu()) {
+            CHECK(row != "I told him the whole of it.");
+            CHECK(row != kGiveUpRow);
+            CHECK(row != kRemindRow);
+        }
+        f.game.picked(goes ? 1 : 2, goes ? "plea_yes" : "plea_no", f.game.menu()[goes ? 0 : 1]);
+        f.drain(tailer);
+        REQUIRE(f.recorded.size() == 2);
+        CHECK(f.recorded[1].second == (goes ? kQuestOnward : kQuestComplete));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == (goes ? "God bless you. I'll be here." : "Then God help me."));
+        CHECK(f.game.directives().back() == "@end");
+        CHECK(f.llm.calls.empty());
+    }
+}
+
 TEST_CASE("the chest's paper in Henry's pocket is a row at the giver, answered as written, while the errand is open") {
     // bugs.txt 18 Nov 2026 (In the Stocks): with the list of names on him, Henry should be
     // able to ask Benesh about it, and Benesh will only say Paul drinks with the guards.

@@ -308,6 +308,9 @@ private:
     AskState ask_state() const;
     // Records what the reply just said drew on, for the follow-up reading of the next line.
     void drew(std::string item_id, std::string_view reply);
+    // Whether a director's row is due on the list: one laid for after another
+    // (DirectorRow::after_intent) waits until that one has been picked.
+    bool row_due(const DirectorRow& row) const;
     // Asks the model for the four replies the player will choose between after the line
     // just said, and sends each to the game as it passes the checker. Blocks like answer().
     void offer();

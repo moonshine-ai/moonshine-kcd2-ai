@@ -650,6 +650,8 @@ Args parse(int argc, char** argv, bool* stop) {
                 else if (state == "checked") { ++args.facts.checks; args.facts.accepted = true; }
                 // An ask's whose word is carried on: the giver told and paid, Henry sent on.
                 else if (state == "onward") args.facts.onward = args.facts.handed = args.facts.accepted = true;
+                // A plea's: the truth told and the giver's begging unanswered.
+                else if (state == "pleaded") args.facts.pleaded = args.facts.handed = args.facts.accepted = true;
                 // A find's keepsake in Henry's pocket.
                 else if (state == "keepsake") args.facts.keepsake = args.facts.accepted = true;
                 // An unyielding holder's: Henry refused to his face; the giver has named the

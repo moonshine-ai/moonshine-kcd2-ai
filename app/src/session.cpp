@@ -624,6 +624,7 @@ void Session::preview_opening_list(const Persona& persona) {
     int reserved = 0;
     for (const DirectorRow& row : persona_.quest.rows) {
         if (row.after_yes && !persona_.quest.question.empty()) continue;
+        if (!row_due(row)) continue;
         if (std::find(told_.begin(), told_.end(), row.intent) == told_.end()) ++reserved;
     }
     if (!persona_.quest.apologise_row.empty()) ++reserved;
@@ -664,6 +665,7 @@ void Session::preview_opening_list(const Persona& persona) {
     for (const DirectorRow& row : persona_.quest.rows) {
         if (&row == give_up) continue;
         if (row.after_yes && !persona_.quest.question.empty()) continue;
+        if (!row_due(row)) continue;
         if (static_cast<int>(rows_.size()) >= room) break;
         rows_.push_back({static_cast<int>(rows_.size()) + 1, row.intent, row.text});
     }
@@ -1881,7 +1883,12 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
                     if (other.group == row.group) out.spent.emplace_back(other.intent);
                 }
             } else if (row.command != kQuestNamed) {
-                for (const DirectorRow& other : persona_.quest.rows) out.spent.emplace_back(other.intent);
+                // All but the rows laid for after this one (DirectorRow::after_intent: the
+                // plea's yes and no after the truth told).
+                for (const DirectorRow& other : persona_.quest.rows) {
+                    if (other.after_intent == row.intent) continue;
+                    out.spent.emplace_back(other.intent);
+                }
                 // And the reminder: an errand just settled is not one to be reminded of, and the
                 // row stood on the list after Anna had been told where her cat was (notes.md,
                 // 8 Oct 2026).
@@ -2003,6 +2010,11 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
     preset_ = std::move(found->next);
     offer();
     return true;
+}
+
+bool Session::row_due(const DirectorRow& row) const {
+    if (row.after_intent.empty()) return true;
+    return std::find(told_.begin(), told_.end(), row.after_intent) != told_.end();
 }
 
 Session::Settled Session::settle(std::string_view command) {
@@ -2298,8 +2310,10 @@ void Session::offer() {
     for (const DirectorRow& row : persona_.quest.rows) {
         if (std::find(told_.begin(), told_.end(), row.intent) != told_.end()) continue;
         // A row for after the yes (the giver's carrying) waits for it: on the list once the
-        // question is answered, and only then.
+        // question is answered, and only then. A row for after another (the plea's answers)
+        // waits for that one to be picked.
         if (row.after_yes && !persona_.quest.question.empty()) continue;
+        if (!row_due(row)) continue;
         if (row.intent == "give_up") {
             give_up = &row;
             continue;

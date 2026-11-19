@@ -216,6 +216,11 @@ struct Quest {
     // giver's `thanks` is the sending; `greet_onward` their opening line to Henry back before
     // he has been. Empty for an ask that ends at the giver.
     std::string onward_soul, onward_name, greet_onward;
+    // A plea's answer rows (Quest::pleads; bugs.txt 19 Nov 2026: Henry chooses whether to
+    // carry Benesh's plea): laid after the truth's report row, `plea_yes` sends him back
+    // (kQuestOnward) on `plea_yes_reply`, `plea_no` ends the errand where it stands
+    // (kQuestComplete) on `plea_no_reply`. Plain words stand in for any left unwritten.
+    std::string plea_yes, plea_yes_reply, plea_no, plea_no_reply;
     // A find's keepsake (npc_quest_lines `keepsake_class`, `keepsake_name`; Forget Me Not's
     // carved wooden heart in the grass among the marigolds, notes.md 5 Oct 2026): a thing the
     // mod lays where the flowers grow and marks, and which Henry may bring back with them.
@@ -450,6 +455,9 @@ struct QuestFacts {
     // An ask whose word is carried on: the giver has been told, has paid, and has sent Henry
     // on to the onward soul (flag w). The errand is still open until that soul is told.
     bool onward = false;
+    // A plea begged and not yet answered (kQuestPlead; the letter P): the giver waits on
+    // Henry's yes or no.
+    bool pleaded = false;
     // A find's keepsake is in Henry's pocket (flag e): the giver's thanks at the hand-in are
     // `thanks_keepsake`. The mod's Watch sets and clears it.
     bool keepsake = false;
@@ -572,6 +580,10 @@ inline constexpr std::string_view kQuestConfess = "confess";
 // to the onward soul. Said with `tell` in place of `complete`; the journal's objective is
 // updated and the last one opened, and the errand completes on the onward soul's own menu.
 inline constexpr std::string_view kQuestOnward = "onward";
+// A plea begged (Quest::pleads; bugs.txt 19 Nov 2026): the truth told, the giver has paid and
+// begged Henry to go back, and waits on his answer -- the plea rows, `onward` for yes, the
+// plain complete for no. The mod pays here and queues no beat; the letter P in the dump.
+inline constexpr std::string_view kQuestPlead = "plead";
 // An unyielding holder's retrieve: the giver, told the holder refused, names the one who
 // keeps the holder's house. Owed on the opening line (greet_rebuffed) the first time Henry
 // is back with the refusal; the mod sets the store's a, opens her menu and marks her.
@@ -626,6 +638,10 @@ struct DirectorRow {
     // Spent alone, with the rows that share its `group` (empty: the rest of the
     // director's rows go with it, the errand being settled; see Session::written_answer).
     std::string group;
+    // Laid only once the row named has been picked, and kept when that row spends the
+    // rest (the plea's yes and no after the truth told; bugs.txt 19 Nov 2026). Empty for
+    // a row laid from the start.
+    std::string after_intent;
 };
 
 // Everything the director decided for one conversation, fixed when it opens so the sheet

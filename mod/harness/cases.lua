@@ -1755,6 +1755,61 @@ case("Plea: a deliver's truth told sends Henry back to the receiver, whose refus
     check(E.find("word carried on; paid at the telling"), "nothing paid again")
 end)
 
+-- bugs.txt 19 Nov 2026: Henry chooses whether to carry the plea. The app's `plead` at the
+-- truth told pays the giver's reward and queues no beat (the letter P); his yes is the
+-- `onward` as before, paying nothing again; his no is the plain complete, paying nothing
+-- again either, and the scene gated on the truth still opens.
+case("Plea: the begging pays once and waits (the letter P); yes sends Henry on and no completes, neither paying again", function(E, M, check)
+    local id, q = byPlea(M)
+    if id == nil then check(true, "no deliver carries a plea in this data"); return end
+    local giver = E.soul(q.giver)
+    local receiver = E.soul(q.target)
+    local function paid(mark) return E.count("BRIDGE quest reward given", mark) end
+    -- Yes.
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    M.npc = receiver
+    E.delivered(id, "truth")
+    M.npc = giver
+    local mark = E.mark()
+    local queued, code = #M.questQueue, M.questCode
+    M.QuestCommand(id, "plead")
+    local f = M.state.quests[id]
+    check(f.pleaded == true and f.onward ~= true and f.done ~= true, "begged, not sent, not done")
+    check(M.QuestFlagLetters(f):find("P") ~= nil, "the letter P, got " .. M.QuestFlagLetters(f))
+    check(paid(mark) == 1 or (q.reward == 0 and q.rewardClass == nil), "paid at the plea")
+    check(#M.questQueue == queued and M.questCode == code, "no beat for the begging")
+    M.QuestCommand(id, "onward")
+    check(M.state.quests[id].onward == true, "sent on")
+    check(E.find("sent on after the plea; paid at the plea", mark) and paid(mark) <= 1, "not paid again at the yes")
+    check(armedOrQueued(M, id, "onward"), "the onward beat armed")
+    E.firePort(id .. " onward")
+    M.npc = receiver
+    E.carried(id)
+    check(M.state.quests[id].done == true and paid(mark) <= 1, "done at the refusal, still the one payment")
+    -- No.
+    M.SetQuestCode(0)
+    M.questQueue = {}
+    M.state.quests[id] = nil
+    E.questState[id] = nil
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    M.npc = receiver
+    E.delivered(id, "truth")
+    M.npc = giver
+    mark = E.mark()
+    M.QuestCommand(id, "plead")
+    check(paid(mark) == 1 or (q.reward == 0 and q.rewardClass == nil), "paid at the plea")
+    M.QuestCommand(id, "complete")
+    f = M.state.quests[id]
+    check(f.done == true and f.onward ~= true and f.how == "truth", "done where it stands, as the truth")
+    check(E.find("plea refused; paid at the plea", mark) and paid(mark) <= 1, "not paid again at the no")
+    check(armedOrQueued(M, id, "complete"), "the plain complete armed for the conversation")
+    check(M.QuestHowMatches(f.how, "truth"), "the scene gated on the truth opens")
+end)
+
 case("QuestCommand: a retrieve's lie with the thing kept pays nothing and takes nothing back", function(E, M, check)
     local id, q = nil, nil
     for cid, cq in pairs(M.quests) do

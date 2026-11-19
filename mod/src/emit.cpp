@@ -7357,6 +7357,10 @@ std::string state_lua(const std::string& g) {
     // An ask's word carried on: the giver told and paid, Henry sent on (the app's `onward`
     // directive; the letter w). The quest is not done until the one sent to is told.
     s += "\tif command == \"onward\" then facts.accepted = true; facts.onward = true end\n";
+    // A plea begged and not yet answered (the app's `plead`; bugs.txt 19 Nov 2026: Henry
+    // chooses whether to carry it): the giver has heard the truth and paid, and waits on
+    // Henry's yes (onward) or no (complete). The letter P.
+    s += "\tif command == \"plead\" then facts.accepted = true; facts.pleaded = true end\n";
     // A find's keepsake in Henry's pocket, or out of it again (WatchKeepsake; the letter e).
     s += "\tif command == \"keepsake\" then facts.keepsake = true end\n";
     s += "\tif command == \"keepsake_gone\" then facts.keepsake = false end\n";
@@ -7437,7 +7441,8 @@ std::string state_lua(const std::string& g) {
     // is knelt; one c per visit a mind has made; l, a leave's or a return's thing is put
     // down, h, its cue was heard; o, a return's grave was robbed, u, its curse is on him now;
     // g, an ambush's directions are given, m, its trap is sprung; w, an ask's giver has
-    // been told and sent Henry on with the word; e, a find's keepsake is in Henry's pocket;
+    // been told and sent Henry on with the word; P, a plea's giver has begged and waits on
+    // Henry's answer; e, a find's keepsake is in Henry's pocket;
     // n, an unyielding holder has rebuffed Henry; a, the giver has named the one who can
     // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
     // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
@@ -7454,6 +7459,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.ambushed and \"m\" or \"\") .. string.rep(\"c\", facts.checks or 0)\n";
     s += "\t\t.. (facts.gift == \"took\" and \"t\" or \"\") .. (facts.gift == \"refused\" and \"f\" or \"\")\n";
     s += "\t\t.. (facts.onward and \"w\" or \"\") .. (facts.keepsake and \"e\" or \"\")\n";
+    s += "\t\t.. (facts.pleaded and \"P\" or \"\")\n";
     s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.named and \"a\" or \"\")\n";
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
@@ -16293,8 +16299,21 @@ std::string emit_conversation_lua(const std::string& modid,
     // and sending Henry on -- and its complete, fired by the one sent to's own hand row
     // (QuestCarried), pays nothing again. The one sent to is granted their menu's metarole
     // here too, for a soul an old save made before the mod.
-    s += "\tif command == \"onward\" then\n";
+    // A plea begged (the app's `plead`; bugs.txt 19 Nov 2026): the truth is told and the
+    // giver pays here, as the telling would; Henry's answer comes as `onward` (he goes) or
+    // the plain `complete` (he will not), neither paying again. No beat: the graph hears
+    // the answer.
+    s += "\tif command == \"plead\" then\n";
     s += "\t\t" + g + ".PayReward(quest)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif command == \"onward\" then\n";
+    s += "\t\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\t\tif f.pleaded then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" sent on after the plea; paid at the plea\")\n";
+    s += "\t\telse\n";
+    s += "\t\t\t" + g + ".PayReward(quest)\n";
+    s += "\t\tend\n";
     s += "\t\t" + g + ".GrantOnwardByName(quest)\n";
     s += "\tend\n";
     // Given up: nothing paid, nothing taken back (a letter or a thing stays where it is);
@@ -16379,6 +16398,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tend\n";
     s += "\t\tif quest.onward ~= nil and f.onward then\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" word carried on; paid at the telling\")\n";
+    s += "\t\telseif f.pleaded then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" plea refused; paid at the plea\")\n";
     s += "\t\telse\n";
     s += "\t\t\t" + g + ".PayReward(quest)\n";
     s += "\t\tend\n";

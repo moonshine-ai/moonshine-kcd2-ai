@@ -180,7 +180,45 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                 plan.block += " When they told you they had told " + to + " the whole truth of it, you sent "
                               "them back to beg him to let the matter rest; they have been, and whatever " +
                               to + " said to that is said. You do not ask them to go again.";
+            } else if (plea && facts.pleaded) {
+                // Begged and refused to your face (bugs.txt 19 Nov 2026).
+                plan.block += " When they told you they had told " + to + " the whole truth of it, you begged "
+                              "them to go back and plead with him to let the matter rest, and they would not. "
+                              "You do not ask it again, and you are afraid of what comes of it.";
             }
+            return plan;
+        }
+        // The plea's two answers (bugs.txt 19 Nov 2026: Henry is to have the choice): his
+        // yes sends him back (`onward`), his no ends the errand where it stands (the plain
+        // complete). Laid after the truth's report row, or at once on a visit back with the
+        // begging unanswered.
+        const auto plea_rows = [&](const std::string& after) {
+            DirectorRow yes{"plea_yes",
+                            quest.plea_yes.empty() ? "All right. I'll go back to him and ask it, for you." : quest.plea_yes,
+                            quest.plea_yes_reply.empty()
+                                ? "God bless you for it. Go on, then; I'll be here."
+                                : quest.plea_yes_reply,
+                            std::string(kQuestOnward)};
+            yes.closes = true;
+            yes.after_intent = after;
+            DirectorRow no{"plea_no",
+                           quest.plea_no.empty() ? "No. He knows the truth now, and the thief should answer for it. I'll not beg for him."
+                                                 : quest.plea_no,
+                           quest.plea_no_reply.empty() ? "... No. No, I suppose you won't. Well. God keep you, then."
+                                                       : quest.plea_no_reply,
+                           std::string(kQuestComplete)};
+            no.closes = true;
+            no.after_intent = after;
+            plan.rows.push_back(std::move(yes));
+            plan.rows.push_back(std::move(no));
+        };
+        if (plea && facts.pleaded && !facts.onward) {
+            plan.block = "This person took " + letter + " back to " + to + " for you and told him the whole "
+                         "truth of how it was come by, which you had asked them not to. You have given them "
+                         "what you promised, " + pay + ", and begged one thing more: that they go back to " +
+                         to + " and plead with him to let the matter rest. They have not said whether they "
+                         "will. You wait on their answer and do not give twice.";
+            plea_rows("");
             return plan;
         }
         if (plea && facts.onward) {
@@ -245,11 +283,13 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                                   "rest. That is in your written answer.";
                 }
                 row("report", told.empty() ? quest.report : told,
-                    told_reply.empty() ? quest.thanks : told_reply, sends_back ? kQuestOnward : kQuestComplete,
+                    told_reply.empty() ? quest.thanks : told_reply, sends_back ? kQuestPlead : kQuestComplete,
                     (thing ? "The " + quest.item_name + " is" : "Your letter is") + " with " + to + ".",
                     sends_back ? "You told him. God help us. Here, " + pay + ", as I said. Now go back to him, I beg "
                                  "you, and ask him to let it rest."
                                : "Is it. Good. Here is what I said: " + pay + ".");
+                // The begging is a question, and Henry's answer the next list (plea_rows).
+                if (sends_back) plea_rows("report");
                 if (!quest.lie_soft.empty() && !quest.lie_soft_reply.empty()) {
                     row("lie_soft", "(Lie) " + quest.lie_soft, quest.lie_soft_reply, kQuestComplete, "", "");
                 }
