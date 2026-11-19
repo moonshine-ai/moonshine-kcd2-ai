@@ -3975,12 +3975,25 @@ case("Unyielding: her door frightened open is the door for nothing, the letter S
     M.npc = E.soul(bq.giver)
     M.QuestCommand(bid, "accept")
     check((E.gvar(bq.counselVar) or 0) == 0, "the global down before the asking")
-    M.QuestCounsel(bid)
+    -- Left before the end (the "I must go" row; bugs.txt 19 Nov 2026): counselled all the
+    -- same, and the notes in Henry's pocket.
+    check(bq.counselNotes ~= nil, "the counsel's notes have a class")
+    local mark = E.mark()
+    M.QuestCounsel(bid, false)
     local bf = M.state.quests[bid]
     check(bf.counselled == true, "counselled, in the store")
     check(string.find(M.QuestFlagLetters(bf), "C", 1, true) ~= nil, "the letter C")
     check(E.gvar(bq.counselVar) == 1, "the holder menu's global up")
-    check(E.find("BRIDGE quest " .. bid .. " counselled by Brother Thomas"), "said in the log")
+    check(E.find("BRIDGE quest " .. bid .. " counselled by Brother Thomas", mark), "said in the log")
+    check(E.find("(left before the end)", mark), "and that he left early")
+    check(M.Count(player, bq.counselNotes) == 1, "the notes in his pocket")
+    check(E.find("BRIDGE quest " .. bid .. " counsel notes given, have=1", mark), "the notes said")
+    -- Asked again and heard out: no second copy of the notes.
+    mark = E.mark()
+    M.QuestCounsel(bid, true)
+    check(E.find("(heard out)", mark), "heard out, said")
+    check(M.Count(player, bq.counselNotes) == 1, "still one copy of the notes")
+    check(not E.find("counsel notes given", mark), "no second copy given")
     -- The role for his menu: granted when the soul is sighted (GrantHolder).
     local thomas = E.soul(bq.counsel)
     check(bq.counselMeta ~= nil and string.find(bq.counselMeta, "_COUNSEL", 1, true) ~= nil, "a metarole of his own")

@@ -629,6 +629,11 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "counsel_ask_yes") return &q.counsel_ask_yes;
         if (field == "counsel_leave") return &q.counsel_leave;
         if (field == "counsel_leave_reply") return &q.counsel_leave_reply;
+        if (field == "counsel_more") return &q.counsel_more;
+        if (field == "counsel_go") return &q.counsel_go;
+        if (field == "counsel_go_reply") return &q.counsel_go_reply;
+        if (field == "counsel_notes_name") return &q.counsel_notes_name;
+        if (field == "counsel_notes") return &q.counsel_notes;
         if (field == "log_counselled") return &q.log_counselled;
         if (field == "objective_counsel") return &q.objective_counsel;
         if (field == "learned") return &q.holder_learned;
@@ -1060,6 +1065,47 @@ void read_household(sqlite3* db, std::vector<Quest>& quests) {
 }
 
 }  // namespace
+
+std::vector<std::string> Quest::counsel_parts() const {
+    // The answer cut at its blank lines (a line of nothing but spaces counts), each part
+    // trimmed; an answer written in one breath is one part, and the talk is as it was.
+    std::vector<std::string> parts;
+    std::string part;
+    auto flush = [&]() {
+        const std::size_t a = part.find_first_not_of(" \t\r\n");
+        if (a == std::string::npos) {
+            part.clear();
+            return;
+        }
+        const std::size_t b = part.find_last_not_of(" \t\r\n");
+        parts.push_back(part.substr(a, b - a + 1));
+        part.clear();
+    };
+    std::size_t i = 0;
+    while (i < counsel_ask_yes.size()) {
+        if (counsel_ask_yes[i] == '\n') {
+            // A blank line: the newline, then only spaces up to another newline.
+            std::size_t j = i + 1;
+            while (j < counsel_ask_yes.size() && (counsel_ask_yes[j] == ' ' || counsel_ask_yes[j] == '\t' ||
+                                                  counsel_ask_yes[j] == '\r')) {
+                ++j;
+            }
+            if (j < counsel_ask_yes.size() && counsel_ask_yes[j] == '\n') {
+                flush();
+                i = j + 1;
+                continue;
+            }
+            part += ' ';
+            ++i;
+            continue;
+        }
+        part += counsel_ask_yes[i];
+        ++i;
+    }
+    flush();
+    if (parts.empty()) parts.push_back(counsel_ask_yes);
+    return parts;
+}
 
 std::vector<std::string> Quest::dictation_variants() const {
     // Every combination of the parts' outcomes, first part slowest, so "000" comes first

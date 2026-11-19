@@ -543,6 +543,16 @@ struct Quest {
     std::string counsel_leave, counsel_leave_reply;
     std::string log_counselled, objective_counsel;
     std::string holder_learned, holder_learned_yes;
+    // The answer in parts (bugs.txt 19 Nov 2026: Brother Thomas's filled the screen):
+    // `counsel_ask_yes` is cut at its blank lines into parts, and after each but the last
+    // Henry has `counsel_more` ("Go on.") for the next or `counsel_go` ("I've got to go")
+    // to leave with `counsel_go_reply`. Either way out the counsel is asked (QuestCounsel)
+    // and the notes are his: a Document under counsel_notes_class, named `counsel_notes_name`,
+    // whose page is `counsel_notes` (the whole answer when none is written). Hearing every
+    // part is a small Scholarship reward besides (the graph's counselTalk.heard).
+    std::string counsel_more, counsel_go, counsel_go_reply;
+    std::string counsel_notes_name, counsel_notes;
+    std::vector<std::string> counsel_parts() const;
     // The disputation (Blind Pride's Benesh, bugs.txt 19 Nov 2026): the holder is argued
     // round in three stages, each his objection and three of Henry's answers -- the sound
     // one (Scripture and the Fathers), a plausible one with nothing under it, and a plain

@@ -1171,6 +1171,20 @@ std::string paper_class(const Quest& quest) {
 
 std::string paper_name(const Quest& quest) { return "paper_" + quest_node(quest.id); }
 
+std::string counsel_notes_class(const Quest& quest) {
+    // The counsel's notes: the same shape under 4e (the letter N).
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4e00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string counsel_notes_name(const Quest& quest) { return "notes_" + quest_node(quest.id); }
+
+std::string counsel_notes_page_key(const std::string& modid, const Quest& quest) {
+    return modid + "_" + counsel_notes_name(quest) + "_page";
+}
+
 std::string read_class(const Quest& quest) {
     // The paper's read token: the same shape under 72 (the letter r).
     require_identifier(quest.id, "quest id");
@@ -1377,6 +1391,13 @@ Quest with_holder_lines(Quest q) {
         fill(q.counsel_leave_reply, "Go with God.");
         fill(q.log_counselled, q.counsel_name + " gave me chapter and verse. Now to put it to " + q.target_name + ".");
         fill(q.objective_counsel, "Ask " + q.counsel_name + " for the argument");
+        // The answer in parts (bugs.txt 19 Nov 2026): Henry's two rows between them, the
+        // counsel's word to one who leaves early, and the notes he writes either way.
+        fill(q.counsel_more, "Go on.");
+        fill(q.counsel_go, "I've got to go, Brother.");
+        fill(q.counsel_go_reply, "Then take the notes and read the rest on the road. God keep you.");
+        fill(q.counsel_notes_name, q.counsel_name + "'s notes");
+        fill(q.counsel_notes, q.counsel_ask_yes);
     }
     if (q.has_helper()) {
         const std::string& who = q.target_name;
@@ -3120,6 +3141,15 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<" + counsel_node(quest.id) + " Name=\"counselTalk\">\r\n";
         s += t(5) + "<Edge From=\"counselOpen.State\" To=\"active\" />\r\n";
         s += t(4) + "</" + counsel_node(quest.id) + ">\r\n";
+        // The answer heard out to its last part (bugs.txt 19 Nov 2026): a small Scholarship
+        // reward, in the shape the shipped quests pay a lesson (SkillReward; the step under
+        // a training reward's 3-small).
+        s += t(4) + "<AddReward Name=\"counselHeard\">\r\n";
+        s += t(5) + "<Edge From=\"counselTalk.heard\" To=\"AddReward\" />\r\n";
+        s += t(5) + "<Rewards>\r\n";
+        s += t(6) + "<SkillReward Type=\"scholarship\" ExperienceChange=\"2-minor\" />\r\n";
+        s += t(5) + "</Rewards>\r\n";
+        s += t(4) + "</AddReward>\r\n";
     }
     // An exposure (Words Must Not Fail): the house the holder is caught in -- the witness's
     // household, and him -- expects Henry from the catching on, the giver's welcome shape,
@@ -5705,6 +5735,7 @@ std::string emit_counsel_dialogue(const std::string& modid, const Quest& raw) {
     s += t(3) + "<Ports>\r\n";
     s += t(4) + "<Port Name=\"active\" Direction=\"In\" Type=\"bool\" />\r\n";
     s += t(4) + "<Port Name=\"asked\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    s += t(4) + "<Port Name=\"heard\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     s += t(3) + "</Ports>\r\n";
     s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (counsel)") + "\" />\r\n";
     s += t(3) + kMenuDialogue;
@@ -5719,15 +5750,61 @@ std::string emit_counsel_dialogue(const std::string& modid, const Quest& raw) {
     s += t(7) + "</Elements>\r\n";
     s += t(7) + "<Decision Name=\"menu\" Priority=\"General\">\r\n";
     s += t(8) + "<Sequences>\r\n";
-    s += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"ask\" ExitScript=\"Moonshine.QuestCounsel('" + quest.id +
-         "')\">\r\n";
-    s += prompt(10, "ask", quest.counsel_ask);
-    s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"asked\" />\r\n" + t(10) + "</Triggers>\r\n";
-    s += t(10) + "<Elements>\r\n";
-    s += line(11, "HENRY", "ask", quest.counsel_ask);
-    s += line(11, role, "ask_yes", quest.counsel_ask_yes);
-    s += t(10) + "</Elements>\r\n";
-    s += t(9) + "</Sequence>\r\n";
+    // The answer in parts (bugs.txt 19 Nov 2026: Brother Thomas's filled the screen). The
+    // ask row gives the first part; after each part but the last a decision of two rows,
+    // "Go on" for the next part and "I've got to go" to leave with the counsel's word and
+    // the notes; the last part ends the talk with the notes and the Scholarship reward
+    // (the heard port). Every way out is the counsel asked (QuestCounsel, the asked port):
+    // the notes say the rest. One part, and the talk is as it was: the ask row ends it.
+    const std::vector<std::string> parts = quest.counsel_parts();
+    const int n = static_cast<int>(parts.size());
+    auto part_field = [](int k) { return "part_" + std::to_string(k); };
+    auto heard = [&](int depth) {
+        return t(depth) + "<Triggers>\r\n" + t(depth + 1) + "<Port Name=\"asked\" />\r\n" + t(depth + 1) +
+               "<Port Name=\"heard\" />\r\n" + t(depth) + "</Triggers>\r\n";
+    };
+    auto asked = [&](int depth) {
+        return t(depth) + "<Triggers>\r\n" + t(depth + 1) + "<Port Name=\"asked\" />\r\n" + t(depth) + "</Triggers>\r\n";
+    };
+    // The part k (1-based) under its row: the last ends the dialogue heard out; the others
+    // open the next decision. `depth` is the row's own.
+    std::function<void(int, int, const char*, const std::string&)> part_row =
+        [&](int k, int depth, const char* henry_field, const std::string& henry_words) {
+            const bool last = k == n;
+            const std::string name = k == 1 ? "ask" : "more_" + std::to_string(k);
+            if (last) {
+                s += t(depth) + "<Sequence EndType=\"EndDialogue\" Name=\"" + name +
+                     "\" ExitScript=\"Moonshine.QuestCounsel('" + quest.id + "', true)\">\r\n";
+            } else {
+                s += t(depth) + "<Sequence EndType=\"Decision\" Name=\"" + name + "\" ExitScript=\"" +
+                     stage("part " + std::to_string(k)) + "\">\r\n";
+            }
+            s += prompt(depth + 1, henry_field, henry_words);
+            if (last) s += heard(depth + 1);
+            s += t(depth + 1) + "<Elements>\r\n";
+            s += line(depth + 2, "HENRY", henry_field, henry_words);
+            const std::string pf = n == 1 ? std::string("ask_yes") : part_field(k);
+            s += line(depth + 2, role, pf.c_str(), parts[static_cast<std::size_t>(k - 1)]);
+            s += t(depth + 1) + "</Elements>\r\n";
+            if (!last) {
+                s += t(depth + 1) + "<Decision Name=\"more_dec_" + std::to_string(k) + "\" Priority=\"General\">\r\n";
+                s += t(depth + 2) + "<Sequences>\r\n";
+                part_row(k + 1, depth + 3, "more", quest.counsel_more);
+                s += t(depth + 3) + "<Sequence EndType=\"EndDialogue\" Name=\"go_" + std::to_string(k) +
+                     "\" ExitScript=\"Moonshine.QuestCounsel('" + quest.id + "', false)\">\r\n";
+                s += prompt(depth + 4, "go", quest.counsel_go);
+                s += asked(depth + 4);
+                s += t(depth + 4) + "<Elements>\r\n";
+                s += line(depth + 5, "HENRY", "go", quest.counsel_go);
+                s += line(depth + 5, role, "go_reply", quest.counsel_go_reply);
+                s += t(depth + 4) + "</Elements>\r\n";
+                s += t(depth + 3) + "</Sequence>\r\n";
+                s += t(depth + 2) + "</Sequences>\r\n";
+                s += t(depth + 1) + "</Decision>\r\n";
+            }
+            s += t(depth) + "</Sequence>\r\n";
+        };
+    part_row(1, 9, "ask", quest.counsel_ask);
     s += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"leave\" ExitScript=\"" + stage("row leave") + "\">\r\n";
     s += prompt(10, "leave", quest.counsel_leave);
     s += t(10) + "<Elements>\r\n";
@@ -5754,11 +5831,22 @@ std::vector<std::pair<std::string, std::string>> counsel_localization(const std:
     auto key = [&](const char* field) {
         return quest_key(modid, quest.id, std::string("counsel_") + field);
     };
-    return {
+    std::vector<std::pair<std::string, std::string>> rows{
         {key("open"), quest.counsel_open},         {key("open_reply"), quest.counsel_open_reply},
         {key("ask"), quest.counsel_ask},           {key("ask_yes"), quest.counsel_ask_yes},
         {key("leave"), quest.counsel_leave},       {key("leave_reply"), quest.counsel_leave_reply},
     };
+    // The answer in parts, and Henry's rows between them (emit_counsel_dialogue).
+    const std::vector<std::string> parts = quest.counsel_parts();
+    if (parts.size() > 1) {
+        for (std::size_t k = 0; k < parts.size(); ++k) {
+            rows.emplace_back(key(("part_" + std::to_string(k + 1)).c_str()), parts[k]);
+        }
+        rows.emplace_back(key("more"), quest.counsel_more);
+        rows.emplace_back(key("go"), quest.counsel_go);
+        rows.emplace_back(key("go_reply"), quest.counsel_go_reply);
+    }
+    return rows;
 }
 
 std::string hail_alias(const std::string& modid, const std::string& quest_id) {
@@ -6129,12 +6217,13 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
                             const std::vector<Persona>& personas) {
     const std::vector<const CustomItem*> used = custom_items_used(quests);
     const std::vector<const RepricedItem*> repriced = repriced_items_used(quests);
-    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads, clued;
+    std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads, clued, counsels;
     for (const Quest& q : quests) {
         if (q.has_document()) letters.push_back(&q);
         if (q.has_token()) tokens.push_back(&q);
         if (q.has_chest()) keys.push_back(&q);
         if (q.has_paper()) papers.push_back(&q);
+        if (q.has_counsel()) counsels.push_back(&q);
         if (!q.hail.empty()) hails.push_back(&q);
         if (q.has_follow()) follows.push_back(&q);
         if (q.is_seek() && !q.clues.empty()) clued.push_back(&q);
@@ -6145,7 +6234,7 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
     // beggar's thanks is a token of his own, no quest's: thanks_class).
     const bool beggars = std::any_of(personas.begin(), personas.end(), [](const Persona& p) { return p.beggar; });
     if (used.empty() && repriced.empty() && letters.empty() && tokens.empty() && keys.empty() && hails.empty() &&
-        follows.empty() && heads.empty() && clued.empty() && !beggars) {
+        follows.empty() && heads.empty() && clued.empty() && counsels.empty() && !beggars) {
         return {};
     }
     // The shape of item__aux.xml and the other shipped fragments: the same root as
@@ -6349,6 +6438,19 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
                  "\" Name=\"" + xml_escape(modid + "_" + cname) + "\" />\r\n";
         }
     }
+    // The counsel's notes (bugs.txt 19 Nov 2026): a Document of the letters' shape, made in
+    // Henry's pocket by the Lua as the counsel's talk ends (QuestCounsel), its page the
+    // answer written down; worth nothing, and his to keep or lose.
+    for (const Quest* q : counsels) {
+        const std::string name = counsel_notes_name(*q);
+        s += "\t\t<Document Type=\"5\" IconId=\"letter_simple\" UIInfo=\"" + xml_escape(item_info_key(modid, name)) +
+             "\" UIName=\"" + xml_escape(item_ui_key(modid, name)) + "\" PickpocketInPouch=\"true\" "
+             "Model=\"characters/assets/parchment_folded/parchment_folded.cdf\" EntityScript=\"Book\" "
+             "Weight=\"0\" Price=\"0\" FadeCoef=\"1.333333\" VisibilityCoef=\"1\" Id=\"" +
+             xml_escape(counsel_notes_class(*q)) + "\" Name=\"" + xml_escape(modid + "_" + name) + "\">\r\n";
+        s += "\t\t\t<DocumentContent Parts=\"" + xml_escape(counsel_notes_page_key(modid, *q)) + "\" />\r\n";
+        s += "\t\t</Document>\r\n";
+    }
     // A chest's paper: a Document of the letters' shape (a loose sheet rather than a folded
     // one), laid in the chest beside the thing by the watch, and worth nothing.
     for (const Quest* q : papers) {
@@ -6508,6 +6610,15 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
                                   "Henry has read the sheet out of " + q.target_name + "'s chest.");
             }
         }
+    }
+    for (const Quest& raw : quests) {
+        if (!raw.has_counsel()) continue;
+        const Quest q = with_holder_lines(raw);
+        rows.emplace_back(item_ui_key(modid, counsel_notes_name(q)), q.counsel_notes_name);
+        rows.emplace_back(item_info_key(modid, counsel_notes_name(q)),
+                          "What " + q.counsel_name + " had to say on the matter, written down for Henry to " +
+                              "read again.");
+        rows.emplace_back(counsel_notes_page_key(modid, q), page_markup(q.counsel_notes));
     }
     return rows;
 }
@@ -9089,6 +9200,8 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", counsel = \"" + lua_escape(q.counsel_soul) + "\", counselMeta = \"" +
                  lua_escape(counsel_metarole(q.id)) + "\", counselName = \"" + lua_escape(q.counsel_name) +
                  "\", counselVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "counsel")) + "\"";
+            // The notes they hand over as their talk ends (QuestCounsel).
+            s += ", counselNotes = \"" + lua_escape(counsel_notes_class(q)) + "\"";
         }
         if (q.has_debate()) {
             // The disputation (npcdb.hpp DebateStage): the globals the holder menu reads --
@@ -17068,15 +17181,28 @@ std::string emit_conversation_lua(const std::string& modid,
     // Named in the ExitScript of the counsel menu's ask row (Blind Pride's Brother Thomas
     // giving Henry chapter and verse): the store's counselled (letter C), which QuestFlags
     // writes to the quest's counsel global for the holder menu's learned row.
-    s += "function " + g + ".QuestCounsel(id)\n";
+    // `heard`: every part of the answer was listened to (the last part's row; the graph's
+    // heard port pays the Scholarship), or Henry left early (bugs.txt 19 Nov 2026). Either
+    // way the notes are his: the Document made in his pocket, once -- a second asking is
+    // no second copy.
+    s += "function " + g + ".QuestCounsel(id, heard)\n";
     s += "\tlocal quest = " + g + ".quests[id]\n";
     s += "\tif quest == nil or quest.counsel == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest unknown id=\" .. tostring(id) .. \" counsel\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\t" + g + ".QuestStage(id, \"counselled\")\n";
-    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" counselled by \" .. tostring(quest.counselName) .. \" -- \" .. quest.name)\n";
+    s += "\t" + g + ".QuestStage(id, heard == false and \"counselled early\" or \"counselled\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" counselled by \" .. tostring(quest.counselName) .. \" -- \" .. quest.name\n";
+    s += "\t\t.. (heard == false and \" (left before the end)\" or (heard == true and \" (heard out)\" or \"\")))\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"counselled\")\n";
+    s += "\tif quest.counselNotes ~= nil then\n";
+    s += "\t\tlocal p = " + g + ".Player()\n";
+    s += "\t\tif p ~= nil and p.inventory ~= nil and " + g + ".Count(p, quest.counselNotes) <= 0 then\n";
+    s += "\t\t\tlocal ok, err = pcall(function() p.inventory:CreateItem(quest.counselNotes, 100, 1) end)\n";
+    s += "\t\t\tif ok then " + g + ".Log(\"BRIDGE quest \" .. id .. \" counsel notes given, have=\" .. " + g + ".Count(p, quest.counselNotes))\n";
+    s += "\t\t\telse " + g + ".Log(\"BRIDGE quest \" .. id .. \" counsel notes could not be made: \" .. tostring(err)) end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
     // Whether Henry can give chapter and verse (the disputation, npcdb.hpp DebateStage): the

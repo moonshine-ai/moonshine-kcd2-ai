@@ -90,6 +90,12 @@ std::string letter_class_suffix(const Quest& quest);
 std::string letter_class(const Quest& quest, const std::string& wrote);
 std::string letter_variant_name(const Quest& quest, const std::string& wrote);
 std::string paper_page_key(const std::string& modid, const Quest& quest);
+// The counsel's notes (Quest::has_counsel; bugs.txt 19 Nov 2026): the Document the
+// counsel gives Henry at the end of their answer, whichever way he takes out of it
+// (notes_q_<id>), and its page's localisation key.
+std::string counsel_notes_class(const Quest& quest);
+std::string counsel_notes_name(const Quest& quest);
+std::string counsel_notes_page_key(const std::string& modid, const Quest& quest);
 
 // Data/Quests/<modid>/q_<id>_holder.xml -- the holder's side of a quest as the game's
 // own dialogue menu, offered on them while the quest is Active and the thing has not
