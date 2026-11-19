@@ -1218,6 +1218,17 @@ Quest with_holder_lines(Quest q) {
         fill(q.holder_leave_reply, "As you like.");
         fill(q.letter, "To " + q.target_name + ".\nThe bearer of this has it from me, " + owner +
                        ", and is to be trusted with the answer.\n" + owner);
+        // The plea carried back to the receiver once the giver hears the truth was told
+        // (Quest::pleads): plain words at the receiver's, and the journal's for the last
+        // leg, until the generator has written them.
+        if (q.pleads()) {
+            fill(q.onward_hand, owner + " sent me back to you. He begs you to let the matter rest, and name nobody.");
+            fill(q.onward_hand_reply, "Does he. No. What was done was done, and the one who did it will answer for it.");
+            fill(q.onward_hand_read, "Tell him so, and tell him I am sorry for his part in it. Go on.");
+            fill(q.log_onward, owner + " went white when he heard what I had told " + q.onward_name +
+                               ", and begged me to go back and plead with him to let the matter rest.");
+            fill(q.objective_onward, "Plead with " + q.onward_name);
+        }
         return q;
     }
     if (q.is_beat()) {
@@ -4737,9 +4748,104 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     // Henry has asked the one with the argument (the store's counselled, written to the
     // quest's counsel global by QuestFlags), and the holder is talked round without a check
     // -- the persuaded ending, with lines of its own.
-    if (quest.has_counsel()) {
+    if (quest.has_counsel() && !quest.has_debate()) {
         s += plain("learned", "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "counsel")) + "')==1",
                    "learned", quest.holder_learned, "learned_yes", quest.holder_learned_yes);
+    }
+    // The disputation (npcdb.hpp DebateStage; Blind Pride, bugs.txt 19 Nov 2026). Henry's
+    // row is always on the menu while the errand is on. Under it an Autoselected decision
+    // of the three stages, each gated on the quest's debate global (stages won, from the
+    // store), so a talk that ended on a lost stage opens on that stage's objection next
+    // time. A stage is the holder's objection and a menu of three: the sound answer's
+    // exit (QuestDebateSound) weighs Henry -- the counsel asked, or Scholarship of
+    // kDebateScholarship -- and writes the quest's versed global, which the nested
+    // Autoselected decision reads at once (the shipped DialogUtils pattern: set in an
+    // ExitScript, read in an EntryCondition): versed, Henry gives chapter and verse and
+    // the holder concedes the stage, a GoTo back to the stages for the next (the global
+    // already moved on), or on the last the handover and the persuaded ending, on
+    // learned_yes; unversed, the holder's sound_no ends the talk. The plausible and the
+    // plain man's answers end it on his rebuttal. Nothing here is ThisSequenceUsed: he can
+    // be argued with again.
+    if (quest.has_debate()) {
+        const std::string debate_var = xml_escape(quest_flag_variable(modid, quest.id, "debate"));
+        const std::string versed_var = xml_escape(quest_flag_variable(modid, quest.id, "versed"));
+        auto field = [](int k, const char* part) { return "debate_" + std::to_string(k + 1) + "_" + part; };
+        s += t(9) + "<Sequence EndType=\"Decision\" Name=\"debate\" ExitScript=\"" + stage("row debate") + "\">\r\n";
+        s += prompt(10, "debate_open", quest.debate_open);
+        s += t(10) + "<Elements>\r\n";
+        s += line(11, "HENRY", "debate_open", quest.debate_open);
+        s += t(10) + "</Elements>\r\n";
+        s += t(10) + "<Decision Name=\"debate_stages\" Autoselect=\"true\">\r\n";
+        s += t(11) + "<Sequences>\r\n";
+        for (int k = 0; k < Quest::kDebateStages; ++k) {
+            const Quest::DebateStage& d = quest.debate[k];
+            const bool last = k == Quest::kDebateStages - 1;
+            const std::string n = std::to_string(k + 1);
+            s += t(12) + "<Sequence EntryCondition=\"gvar('" + debate_var + "')==" + std::to_string(k) +
+                 "\" EndType=\"Decision\" Name=\"debate_" + n + "\" ExitScript=\"" + stage("debate " + n) + "\">\r\n";
+            s += t(13) + "<Elements>\r\n";
+            s += line(14, role, field(k, "objection").c_str(), d.objection);
+            s += t(13) + "</Elements>\r\n";
+            s += t(13) + "<Decision Name=\"debate_" + n + "_menu\" Priority=\"General\">\r\n";
+            s += t(14) + "<Sequences>\r\n";
+            // The sound answer, weighed on its exit.
+            s += t(15) + "<Sequence EndType=\"Decision\" Name=\"debate_" + n + "_sound\" ExitScript=\"Moonshine.QuestDebateSound('" +
+                 quest.id + "', " + n + ")\">\r\n";
+            s += prompt(16, field(k, "sound").c_str(), d.sound);
+            s += t(16) + "<Elements>\r\n";
+            s += line(17, "HENRY", field(k, "sound").c_str(), d.sound);
+            s += t(16) + "</Elements>\r\n";
+            s += t(16) + "<Decision Name=\"debate_" + n + "_out\" Autoselect=\"true\">\r\n";
+            s += t(17) + "<Sequences>\r\n";
+            if (last) {
+                s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"" + won_end +
+                     "\" Name=\"debate_" + n + "_yes\" ExitScript=\"" + gave("learned") + "\">\r\n";
+                s += t(19) + "<Triggers>\r\n" + t(20) + "<Port Name=\"handover\" />\r\n" + t(19) + "</Triggers>\r\n";
+                s += t(19) + "<Elements>\r\n";
+                s += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
+                s += line(20, role, "learned_yes", quest.holder_learned_yes);
+                s += t(19) + "</Elements>\r\n";
+                s += gift_nest(19, "learned");
+                s += t(18) + "</Sequence>\r\n";
+            } else {
+                s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')==1\" EndType=\"GoTo\" GoToDecision=\"debate_stages\" Name=\"debate_" +
+                     n + "_yes\">\r\n";
+                s += t(19) + "<Elements>\r\n";
+                s += line(20, "HENRY", field(k, "sound_cite").c_str(), d.sound_cite);
+                s += line(20, role, field(k, "sound_reply").c_str(), d.sound_reply);
+                s += t(19) + "</Elements>\r\n";
+                s += t(18) + "</Sequence>\r\n";
+            }
+            s += t(18) + "<Sequence EntryCondition=\"gvar('" + versed_var + "')!=1\" EndType=\"EndDialogue\" Name=\"debate_" + n +
+                 "_no\" ExitScript=\"" + stage("debate " + n + " lost") + "\">\r\n";
+            s += t(19) + "<Elements>\r\n";
+            s += line(20, role, field(k, "sound_no").c_str(), d.sound_no);
+            s += t(19) + "</Elements>\r\n";
+            s += t(18) + "</Sequence>\r\n";
+            s += t(17) + "</Sequences>\r\n";
+            s += t(16) + "</Decision>\r\n";
+            s += t(15) + "</Sequence>\r\n";
+            // The two that lose the stage on the holder's rebuttal.
+            for (const char* way : {"plausible", "common"}) {
+                const std::string reply = std::string(way) + "_reply";
+                const std::string& henry_words = std::string(way) == "plausible" ? d.plausible : d.common;
+                const std::string& reply_words = std::string(way) == "plausible" ? d.plausible_reply : d.common_reply;
+                s += t(15) + "<Sequence EndType=\"EndDialogue\" Name=\"debate_" + n + "_" + way + "\" ExitScript=\"" +
+                     stage("debate " + n + " lost") + "\">\r\n";
+                s += prompt(16, field(k, way).c_str(), henry_words);
+                s += t(16) + "<Elements>\r\n";
+                s += line(17, "HENRY", field(k, way).c_str(), henry_words);
+                s += line(17, role, field(k, reply.c_str()).c_str(), reply_words);
+                s += t(16) + "</Elements>\r\n";
+                s += t(15) + "</Sequence>\r\n";
+            }
+            s += t(14) + "</Sequences>\r\n";
+            s += t(13) + "</Decision>\r\n";
+            s += t(12) + "</Sequence>\r\n";
+        }
+        s += t(11) + "</Sequences>\r\n";
+        s += t(10) + "</Decision>\r\n";
+        s += t(9) + "</Sequence>\r\n";
     }
 
     // A check is a sequence with SkillCheckType and a tier, whose nested decision holds
@@ -5033,6 +5139,25 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
     auto key = [&](const char* field) {
         return quest_key(modid, quest.id, std::string("holder_") + field);
     };
+    // The disputation's rows (npcdb.hpp DebateStage), as the holder menu names them.
+    auto debate_rows = [&](std::vector<std::pair<std::string, std::string>>& rows) {
+        if (!quest.has_debate()) return;
+        rows.emplace_back(key("debate_open"), quest.debate_open);
+        for (int k = 0; k < Quest::kDebateStages; ++k) {
+            const Quest::DebateStage& d = quest.debate[k];
+            auto f = [&](const char* part) { return ("debate_" + std::to_string(k + 1) + "_" + part); };
+            rows.emplace_back(key(f("objection").c_str()), d.objection);
+            rows.emplace_back(key(f("sound").c_str()), d.sound);
+            rows.emplace_back(key(f("sound_cite").c_str()), d.sound_cite);
+            if (k != Quest::kDebateStages - 1) rows.emplace_back(key(f("sound_reply").c_str()), d.sound_reply);
+            rows.emplace_back(key(f("sound_no").c_str()), d.sound_no);
+            rows.emplace_back(key(f("plausible").c_str()), d.plausible);
+            rows.emplace_back(key(f("plausible_reply").c_str()), d.plausible_reply);
+            rows.emplace_back(key(f("common").c_str()), d.common);
+            rows.emplace_back(key(f("common_reply").c_str()), d.common_reply);
+        }
+        if (!quest.has_counsel()) rows.emplace_back(key("learned_yes"), quest.holder_learned_yes);
+    };
     if (quest.is_deliver()) {
         std::vector<std::pair<std::string, std::string>> rows = {
             {key("hand"), quest.receiver_hand}, {key("hand_reply"), quest.receiver_hand_reply}};
@@ -5132,6 +5257,7 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
             rows.emplace_back(key("learned"), quest.holder_learned);
             rows.emplace_back(key("learned_yes"), quest.holder_learned_yes);
         }
+        debate_rows(rows);
         return rows;
     }
     std::vector<std::pair<std::string, std::string>> rows = {
@@ -5166,6 +5292,7 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
         rows.emplace_back(key("learned"), quest.holder_learned);
         rows.emplace_back(key("learned_yes"), quest.holder_learned_yes);
     }
+    debate_rows(rows);
     if (quest.has_follow()) {
         rows.emplace_back(key("followed"), quest.holder_followed);
         rows.emplace_back(key("followed_reply"), quest.holder_followed_reply);
@@ -5770,12 +5897,13 @@ const CustomItem kCustomItems[] = {
      "leaks of twenty years marked in another hand.",
      "characters/assets/parchment_folded/parchment_folded.cdf", "letter_fancy", "0.1", "20"},
     // *Widow's View*'s keepsake (notes.md 5 Oct 2026): laid in the grass among the marigolds
-    // by the Lua, the objective's marker on it (keepsake_class). The tables have no carved
-    // heart; the carved duck is the one small whittled thing the game ships, and the name
-    // says what it is. uuid5 of "moonshine:item:wooden_heart".
-    {"874897b3-25c3-5a55-8857-aa400e4399b6", "moonshine_wooden_heart", "Carved wooden heart",
-     "A small heart whittled from limewood, smooth with handling, a hole bored for a cord that has "
-     "rotted away. Somebody's summer's work, lost in the grass.",
+    // by the Lua, the objective's marker on it (keepsake_class). The carved duck is the one
+    // small whittled thing the game ships, so what is laid is a bird, and since 19 Nov 2026
+    // (bugs.txt) the words say so: a songbird, Humphrey's joke on Joan's singing. The class
+    // keeps its old name, since the data names it. uuid5 of "moonshine:item:wooden_heart".
+    {"874897b3-25c3-5a55-8857-aa400e4399b6", "moonshine_wooden_heart", "Carved wooden songbird",
+     "A little bird whittled from limewood, smooth with handling, its beak open to sing, a hole bored "
+     "through the tail for a cord that has rotted away. Somebody's summer's work, lost in the grass.",
      "manmade/task_specific_props/entertainment/art/carved_figure_duck.cgf", "loot_dogToy_duck", "0.1", "2"},
     // A seek's search mark (emit.hpp kSearchMarkClass; bugs.txt 9 Nov 2026): laid by the
     // Lua where the animal is first heard once a neighbour has said where, the search
@@ -6925,6 +7053,9 @@ std::string state_lua(const std::string& g) {
     s += "\tif via == \"OnInit\" then\n";
     s += "\t\t" + g + ".state = " + g + ".FreshState()\n";
     s += "\t\t" + g + ".stateSoul = nil\n";
+    // The world's entities are new with it: a keepsake scaled in the last one is not
+    // scaled in this (ScaleKeepsake).
+    s += "\t\t" + g + ".keepsakeScaled = {}\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving\")\n";
     s += "\tend\n";
     s += "\tif not " + g + ".worldHooks[via] then\n";
@@ -7193,6 +7324,9 @@ std::string state_lua(const std::string& g) {
     // The counsel asked (QuestCounsel; the letter C): the holder's learned row opens, through
     // the quest's counsel global (QuestFlags).
     s += "\tif command == \"counselled\" then facts.counselled = true end\n";
+    // A stage of the disputation won (QuestDebateSound): debate_<k>, the count kept.
+    s += "\tlocal won = string.match(command, \"^debate_(%d+)$\")\n";
+    s += "\tif won ~= nil then facts.debate = math.max(facts.debate or 0, tonumber(won)) end\n";
     s += "\tif command == \"chest\" then facts.chest = true end\n";
     s += "\tif command == \"taken\" then facts.taken = true end\n";
     // The paper out of the chest in Henry's pocket (flag j, for the giver's row about it),
@@ -7341,6 +7475,11 @@ std::string state_lua(const std::string& g) {
     // The counsel asked (QuestCounsel): the holder menu's learned row reads it.
     s += "\t\tif q.counselVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.counselVar, f.counselled and 1 or 0) end)\n";
+    s += "\t\tend\n";
+    // The disputation (QuestDebateSound): stages won, and whether Henry is versed as of now.
+    s += "\t\tif q.debateVar ~= nil then\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.debateVar, f.debate or 0) end)\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.versedVar, " + g + ".Versed(id) and 1 or 0) end)\n";
     s += "\t\tend\n";
     s += "\t\tif q.followedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, (f.followed and not f.followedSaid) and 1 or 0) end)\n";
@@ -8830,6 +8969,14 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", counsel = \"" + lua_escape(q.counsel_soul) + "\", counselMeta = \"" +
                  lua_escape(counsel_metarole(q.id)) + "\", counselName = \"" + lua_escape(q.counsel_name) +
                  "\", counselVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "counsel")) + "\"";
+        }
+        if (q.has_debate()) {
+            // The disputation (npcdb.hpp DebateStage): the globals the holder menu reads --
+            // stages won, and whether Henry can give chapter and verse -- and the
+            // Scholarship that makes him versed on his own (QuestDebateSound).
+            s += ", debateVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "debate")) + "\", versedVar = \"" +
+                 lua_escape(quest_flag_variable(modid, q.id, "versed")) + "\", debateSkill = " +
+                 std::to_string(kDebateScholarship);
         }
         if (q.has_helper()) {
             // The one who can let Henry in: her soul and the metarole her menu speaks through
@@ -11580,6 +11727,8 @@ std::string emit_conversation_lua(const std::string& modid,
     // Returns true for an action that was ours and is not to reach the shipped handler:
     // the keys of the typing maps, which exist only in this mod's XML and mean nothing
     // to the game.
+    s += g + ".skipLineAt = -1\n";
+    s += g + ".skipLineDebounce = " + health_text(kSkipLineDebounceSeconds) + "\n";
     s += "function " + g + ".OnPlayerAction(action, activation)\n";
     // First and unconditionally, since the maps are ours by name whether or not a
     // conversation is up, and a stray F9 between conversations should do nothing at all
@@ -11606,8 +11755,19 @@ std::string emit_conversation_lua(const std::string& modid,
     // Adam and Brother Thomas in the same log). Now the mouth armed stops and the next
     // queued is armed in its place (LipNext), and the app drops the one line it is
     // speaking (Speaker::hush_line). On the press, as the game takes it.
+    //
+    // Once a press (skipLineAt; bugs.txt 19 Nov 2026, Brother Thomas silent after a skip):
+    // one tap of the key arrives as both of the button actions above, dialog_cancel and
+    // dialog_skip, in the same frame, and each was taken for a skip of its own -- the
+    // first dropped Henry's line, the second dropped Thomas's answer the moment it was
+    // armed (the app's log of 18 Nov: two "skipped a line" at the same millisecond, then a
+    // 10.8 s line dropped 0.2 s after it started). A second action within skipLineDebounce
+    // seconds of the first is the same tap, and says nothing.
     s += "\tif not " + g + ".active then\n";
     s += "\t\tif " + g + ".voicedTalk and " + g + ".buttonActions[action] == true and activation == \"press\" then\n";
+    s += "\t\t\tlocal now = " + g + ".Now()\n";
+    s += "\t\t\tif " + g + ".skipLineAt >= 0 and now - " + g + ".skipLineAt < " + g + ".skipLineDebounce then return false end\n";
+    s += "\t\t\t" + g + ".skipLineAt = now\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE skipped line\")\n";
     s += "\t\t\tpcall(" + g + ".LipStop, \"skipped\")\n";
     s += "\t\t\t" + g + ".lipKey = nil\n";
@@ -14092,9 +14252,39 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\treturn false\n";
     s += "\tend\n";
     s += "\tf.laid = true\n";
+    s += "\tf.laidZ = z\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" keepsake laid at \" .. string.format(\"%.1f,%.1f,%.1f\", q.spot[1], q.spot[2], z) .. \" (\" .. tostring(why) .. \")\")\n";
     s += "\tpcall(" + g + ".QuestFlags)\n";
+    s += "\t" + g + ".ScaleKeepsake(id, q, f)\n";
     s += "\treturn true\n";
+    s += "end\n";
+    s += "\n";
+    // The keepsake drawn bigger than its model (emit.hpp kKeepsakeScale; bugs.txt 19 Nov
+    // 2026): the placed item's entity, found near the spot once it is laid -- the one
+    // entity there that is neither the spot nor a soul -- and scaled. The scale is the
+    // entity's, not the save's, so it is done again each session from the watch (f.scaled
+    // is this session's); and the engine may make the entity a frame after PlaceItem, so a
+    // miss is tried again from the watch while Henry is near and has not got it.
+    s += g + ".keepsakeScale = " + health_text(kKeepsakeScale) + "\n";
+    s += g + ".keepsakeScaleMetres = " + health_text(kKeepsakeScaleMetres) + "\n";
+    s += g + ".keepsakeScaled = {}\n";
+    s += "function " + g + ".ScaleKeepsake(id, q, f)\n";
+    s += "\tif " + g + ".keepsakeScaled[id] then return true end\n";
+    s += "\tif " + g + ".keepsakeScale == 1 or q.spot == nil then return false end\n";
+    s += "\tlocal z = f.laidZ or q.spot[3]\n";
+    s += "\tlocal item = nil\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tfor _, e in ipairs(System.GetEntitiesInSphere({ x = q.spot[1], y = q.spot[2], z = z }, " + g + ".keepsakeScaleMetres) or {}) do\n";
+    s += "\t\t\tif e.class ~= \"AudioTriggerSpot\" and e.soul == nil and e.actor == nil and e.SetScale ~= nil then item = e end\n";
+    s += "\t\tend\n";
+    s += "\tend)\n";
+    s += "\tif item == nil then return false end\n";
+    s += "\tlocal ok, err = pcall(function() item:SetScale(" + g + ".keepsakeScale) end)\n";
+    s += "\tlocal now = nil\n";
+    s += "\tpcall(function() now = item:GetScale() end)\n";
+    s += "\t" + g + ".keepsakeScaled[id] = ok\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" keepsake scaled x\" .. tostring(" + g + ".keepsakeScale) .. \" -> \" .. tostring(ok) .. \" \" .. tostring(err or now))\n";
+    s += "\treturn ok\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".WatchKeepsake(id, q, pp)\n";
@@ -14108,6 +14298,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif not f.laid and not has then\n";
     s += "\t\tif d <= " + g + ".keepsakeMetres then " + g + ".LayKeepsake(id, \"near\") end\n";
     s += "\tend\n";
+    s += "\tif f.laid and not has and d <= " + g + ".keepsakeMetres then " + g + ".ScaleKeepsake(id, q, f) end\n";
     // Henry's word as he comes to the patch (q.arrived; bugs.txt 18 Nov 2026): once, within
     // arriveMetres, before he has the keepsake in hand -- with it he has been here.
     s += "\tif q.arrived ~= nil and not f.arrived and not has and d <= " + g + ".arriveMetres then\n";
@@ -16569,6 +16760,41 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".QuestStage(id, \"counselled\")\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" counselled by \" .. tostring(quest.counselName) .. \" -- \" .. quest.name)\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"counselled\")\n";
+    s += "end\n";
+    s += "\n";
+    // Whether Henry can give chapter and verse (the disputation, npcdb.hpp DebateStage): the
+    // counsel asked, or his Scholarship at the quest's bar. Read off the player's soul each
+    // time, so a book read since counts.
+    s += "function " + g + ".Versed(id)\n";
+    s += "\tlocal quest = " + g + ".quests[id]\n";
+    s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\tif f.counselled then return true end\n";
+    s += "\tif quest == nil or quest.debateSkill == nil then return false end\n";
+    s += "\tlocal level = 0\n";
+    s += "\tpcall(function() level = " + g + ".Player().soul:GetSkillLevel(\"scholarship\") or 0 end)\n";
+    s += "\treturn type(level) == \"number\" and level >= quest.debateSkill\n";
+    s += "end\n";
+    s += "\n";
+    // Named in the ExitScript of a disputation stage's sound answer, before the engine
+    // picks between the holder's concession and his sound_no: the versed global written for
+    // that pick, and, versed, the stage counted won (the store's debate, the debate global),
+    // so the GoTo that follows the concession opens the next stage, and a later talk does.
+    s += "function " + g + ".QuestDebateSound(id, k)\n";
+    s += "\tlocal quest = " + g + ".quests[id]\n";
+    s += "\tif quest == nil or quest.debateVar == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest unknown id=\" .. tostring(id) .. \" debate\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal versed = " + g + ".Versed(id)\n";
+    s += "\tlocal f = (" + g + ".state.quests or {})[id] or {}\n";
+    s += "\tlocal level = -1\n";
+    s += "\tpcall(function() level = " + g + ".Player().soul:GetSkillLevel(\"scholarship\") or -1 end)\n";
+    s += "\t" + g + ".QuestStage(id, \"debate \" .. tostring(k) .. (versed and \" won\" or \" unversed\"))\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" debate \" .. tostring(k) .. \" sound: versed=\" .. tostring(versed) ..\n";
+    s += "\t\t\" counselled=\" .. tostring(f.counselled == true) .. \" scholarship=\" .. tostring(level) .. \" of \" .. tostring(quest.debateSkill))\n";
+    s += "\tif versed then pcall(" + g + ".StateQuest, id, \"debate_\" .. tostring(k)) end\n";
+    s += "\tpcall(function() Variables.SetGlobal(quest.versedVar, versed and 1 or 0) end)\n";
+    s += "\tpcall(" + g + ".QuestFlags)\n";
     s += "end\n";
     s += "\n";
     // Named in the ExitScript of the two rows under an ask's winning branch when the ask

@@ -673,6 +673,15 @@ constexpr int kHailAgainSeconds = 90;
 // clip without upsetting his idle.
 constexpr int kHailWaveBigMetres = 5;
 constexpr int kHailWaveLayer = 1;
+// One tap of the skip key in a voiced Talk of the game's own arrives as two button actions
+// (dialog_cancel and dialog_skip) in the same frame; a second within this many seconds of
+// the first is the same tap (OnPlayerAction; bugs.txt 19 Nov 2026). Well under the fastest
+// a player taps through two rows, which is a fifth of a second or more.
+constexpr double kSkipLineDebounceSeconds = 0.1;
+// The disputation (npcdb.hpp DebateStage; bugs.txt 19 Nov 2026): Henry gives chapter and
+// verse on his own if his Scholarship is this or more (soul:GetSkillLevel, the game's own
+// scale of 1-30), or on the counsel's word whatever his learning.
+constexpr int kDebateScholarship = 25;
 // With the shout goes the game's own "hold to look" hint (emit_leg, hailLook): "Look at
 // <giver>" at the lower right, Left Alt or LB held turning Henry's view to him. It is up
 // this many seconds, or until Henry has looked or taken the errand: long enough to find
@@ -846,6 +855,13 @@ constexpr double kKeepsakeMetres = 120.0;
 // flowers rather than in them. A small figure on purpose: a placed item is a sleeping rigid
 // body, and if the engine wakes it, it has only this far to fall.
 constexpr double kKeepsakeLiftMetres = 0.35;
+// And how much bigger than the item table's model it is drawn (bugs.txt 19 Nov 2026:
+// "double the size of the object"). The item table has no scale of its own, so the placed
+// item's entity is found in the world after PlaceItem (within kKeepsakeScaleMetres of the
+// spot, the one entity there that is neither the spot nor a soul) and scaled
+// (entity:SetScale), tried again from the watch until it is, and said in the log.
+constexpr double kKeepsakeScale = 2.0;
+constexpr double kKeepsakeScaleMetres = 1.5;
 // And Henry's word that he has come to the patch (Quest::arrived), once he is within
 // this of the spot: close enough to see the flowers, far enough that it is said as he
 // walks up rather than as he stoops.

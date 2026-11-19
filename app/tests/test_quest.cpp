@@ -854,6 +854,62 @@ TEST_CASE("a thing carried back to its owner is a deliver in the owner's words, 
     CHECK(how_matches("covered", "truth|covered"));
 }
 
+TEST_CASE("a thing's giver with a plea to send back sends Henry on at the truth told, and the receiver is not moved") {
+    // In the Stocks (bugs.txt 19 Nov 2026): told the chalice went back with the whole truth,
+    // Benesh begs Henry to go back to Father Adam and plead for Paul Schmidt. The truth's
+    // report row says `onward`, the other endings end as before, and the giver then waits.
+    Quest quest = chalice_back(QuestRole::Giver);
+    CHECK_FALSE(quest.carries_on());
+    quest.onward_soul = quest.target_soul;
+    quest.onward_name = quest.target_name;
+    quest.greet_onward = "Have you been to him? What did he say?";
+    CHECK(quest.carries_on());
+    CHECK(quest.pleads());
+
+    QuestFacts handed = at("handed");
+    handed.have = 0;
+    handed.how = "truth";
+    QuestPlan told = plan_quest(quest, handed, {});
+    REQUIRE(told.rows.size() == 1);
+    CHECK(told.rows[0].intent == "report");
+    CHECK(told.rows[0].reply == "You told him. Christ.");
+    CHECK(told.rows[0].command == kQuestOnward);
+    CHECK(told.block.find("plead with him to let the matter rest") != std::string::npos);
+    handed.how = "pinned";
+    CHECK(plan_quest(quest, handed, {}).rows[0].command == kQuestComplete);
+    handed.how = "covered";
+    CHECK(plan_quest(quest, handed, {}).rows[0].command == kQuestComplete);
+
+    // Sent back and not yet heard from: no rows, the begging in the paragraph, and the
+    // giver's own opening line for it.
+    QuestFacts sent = at("handed");
+    sent.have = 0;
+    sent.how = "truth";
+    sent.onward = true;
+    QuestPlan waiting = plan_quest(quest, sent, {});
+    // Nothing of the errand's own on the list (the give-up row is every open errand's).
+    CHECK(std::none_of(waiting.rows.begin(), waiting.rows.end(),
+                       [](const DirectorRow& row) { return row.intent != "give_up"; }));
+    CHECK(waiting.block.find("begged one thing more") != std::string::npos);
+    CHECK(waiting.block.find("do not give twice") != std::string::npos);
+    CHECK(waiting.greeting == quest.greet_onward);
+    CHECK(quest_aside(quest, sent, {quest}, {sent}).find("plead with him to let the matter rest") != std::string::npos);
+
+    // Done: settled, and the plea made, whatever came of it.
+    QuestFacts done = at("done");
+    done.how = "truth";
+    done.onward = true;
+    CHECK(plan_quest(quest, done, {}).block.find("You do not ask them to go again") != std::string::npos);
+
+    // The receiver, with the plea on its way: he knows nothing of it, and will not be moved.
+    Quest owner = chalice_back(QuestRole::Target);
+    owner.onward_soul = owner.target_soul;
+    owner.onward_name = owner.target_name;
+    QuestPlan firm = plan_quest(owner, sent, {});
+    CHECK(firm.block.find("do not be moved from it") != std::string::npos);
+    CHECK(plan_quest(owner, done, {}).block.find("do not be moved") == std::string::npos);
+}
+
 namespace {
 
 // Words Must Not Fail: Christine's prayer, written at her dictation in three parts, each

@@ -388,6 +388,17 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
                 continue;
             }
         }
+        // The disputation (debate_*): all of it or none, on a holder who can be talked round.
+        if (q.debate_any()) {
+            if (!q.has_holder() || q.is_unyielding()) {
+                throw std::runtime_error("quest " + q.id + " has debate rows but its holder has no menu to be argued in");
+            }
+            if (!q.has_debate()) {
+                throw std::runtime_error("quest " + q.id + " has a debate half written: debate_open, learned_yes and, "
+                                         "for each of the three stages, objection, sound, sound_cite, sound_no "
+                                         "(sound_reply but the last), plausible, plausible_reply, common, common_reply");
+            }
+        }
         if (q.helper_soul.empty()) { ++it; continue; }
         if (!q.is_unyielding()) {
             throw std::runtime_error("quest " + q.id + " names helper_soul but its holder can be moved; "
@@ -446,12 +457,19 @@ void read_onward(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
     for (auto it = quests.begin(); it != quests.end();) {
         Quest& q = *it;
         if (q.onward_soul.empty()) { ++it; continue; }
-        if (!q.is_ask()) {
+        // An ask carries its word on to a third soul; a deliver whose receiver asked how
+        // the thing was come by carries a plea back to that receiver (Quest::pleads), and
+        // nowhere else.
+        if (!q.is_ask() && !q.has_interrogation()) {
             throw std::runtime_error("quest " + q.id + " names onward_soul but is a " + q.kind +
-                                     ", and only an ask carries its word on");
+                                     ", and only an ask, or a deliver whose receiver asks, carries its word on");
         }
-        if (q.onward_soul == q.giver_soul || q.onward_soul == q.target_soul) {
+        if (q.onward_soul == q.giver_soul || (q.is_ask() && q.onward_soul == q.target_soul)) {
             throw std::runtime_error("quest " + q.id + " carries its word on to one of its own parties");
+        }
+        if (q.is_deliver() && q.onward_soul != q.target_soul) {
+            throw std::runtime_error("quest " + q.id + " is a deliver whose plea goes to " + q.onward_soul +
+                                     ", not to the receiver " + q.target_soul);
         }
         if (q.log_onward.empty() || q.objective_onward.empty() || q.onward_hand.empty()) {
             throw std::runtime_error("quest " + q.id + " carries its word on but lacks log_onward, "
@@ -615,6 +633,22 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "objective_counsel") return &q.objective_counsel;
         if (field == "learned") return &q.holder_learned;
         if (field == "learned_yes") return &q.holder_learned_yes;
+        // The disputation (npcdb.hpp, DebateStage): debate_open and debate_<k>_<field>.
+        if (field == "debate_open") return &q.debate_open;
+        if (field.rfind("debate_", 0) == 0 && field.size() > 9 && field[7] >= '1' &&
+            field[7] <= char('0' + Quest::kDebateStages) && field[8] == '_') {
+            Quest::DebateStage& d = q.debate[field[7] - '1'];
+            const std::string part = field.substr(9);
+            if (part == "objection") return &d.objection;
+            if (part == "sound") return &d.sound;
+            if (part == "sound_cite") return &d.sound_cite;
+            if (part == "sound_reply") return &d.sound_reply;
+            if (part == "sound_no") return &d.sound_no;
+            if (part == "plausible") return &d.plausible;
+            if (part == "plausible_reply") return &d.plausible_reply;
+            if (part == "common") return &d.common;
+            if (part == "common_reply") return &d.common_reply;
+        }
         if (field == "log_keyed") return &q.log_keyed;
         if (field == "objective_helper") return &q.objective_helper;
         // An exposure (npcdb.hpp, expose): the row, the journal's lines, the earlier quest

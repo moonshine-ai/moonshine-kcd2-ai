@@ -349,7 +349,12 @@ struct Quest {
     // An unyielding holder with a secret to be caught in (above).
     bool has_expose() const { return unyielding && !seen_with_name.empty(); }
     bool has_keepsake() const { return is_find() && !keepsake_name.empty(); }
-    bool carries_on() const { return is_ask() && !onward_soul.empty(); }
+    // An ask whose word is carried on to a third soul once the giver is told; or a deliver
+    // of a thing whose giver, told the truth was told at the hand-in, sends Henry back to
+    // the receiver with a plea (In the Stocks: Benesh begs Father Adam not to accuse Paul
+    // Schmidt; the priest refuses). The onward soul of a plea is the receiver (pleads).
+    bool carries_on() const { return (is_ask() || carries_thing()) && !onward_soul.empty(); }
+    bool pleads() const { return carries_thing() && !onward_soul.empty(); }
     bool pays_money() const { return reward_groschen > 0; }
     bool is_deliver() const { return kind == "deliver"; }
     // A deliver with no letter: word carried from the giver to the one it is for (Fox for

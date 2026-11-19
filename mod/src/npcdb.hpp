@@ -543,6 +543,42 @@ struct Quest {
     std::string counsel_leave, counsel_leave_reply;
     std::string log_counselled, objective_counsel;
     std::string holder_learned, holder_learned_yes;
+    // The disputation (Blind Pride's Benesh, bugs.txt 19 Nov 2026): the holder is argued
+    // round in three stages, each his objection and three of Henry's answers -- the sound
+    // one (Scripture and the Fathers), a plausible one with nothing under it, and a plain
+    // man's. The sound answer wins the stage only if Henry can give chapter and verse: he
+    // has asked the counsel (the store's counselled) or his Scholarship is kDebateScholarship
+    // or more (QuestDebateSound, the quest's versed global); then he says `sound_cite` and
+    // the holder concedes with `sound_reply` (the last stage's concession is `learned_yes`,
+    // the persuaded ending). Unversed, the holder's `sound_no` ends the talk; the other two
+    // answers end it with their replies. A stage won is kept (the store's debate, the quest's
+    // debate global), so the next visit opens on the next objection. npc_quest_lines
+    // `debate_open` (Henry's row on the menu) and `debate_<k>_<field>` for k 1..3. With a
+    // debate written the menu's plain learned row is not offered: the debate is the road to
+    // learned_yes.
+    struct DebateStage {
+        std::string objection, sound, sound_cite, sound_reply, sound_no;
+        std::string plausible, plausible_reply, common, common_reply;
+        bool complete(bool last) const {
+            return !objection.empty() && !sound.empty() && !sound_cite.empty() && !sound_no.empty() &&
+                   (last || !sound_reply.empty()) && !plausible.empty() && !plausible_reply.empty() &&
+                   !common.empty() && !common_reply.empty();
+        }
+    };
+    static constexpr int kDebateStages = 3;
+    std::string debate_open;
+    DebateStage debate[kDebateStages];
+    bool debate_any() const {
+        if (!debate_open.empty()) return true;
+        for (const auto& d : debate) {
+            if (!d.objection.empty() || !d.sound.empty() || !d.sound_cite.empty() || !d.sound_reply.empty() ||
+                !d.sound_no.empty() || !d.plausible.empty() || !d.plausible_reply.empty() || !d.common.empty() ||
+                !d.common_reply.empty()) {
+                return true;
+            }
+        }
+        return false;
+    }
     // The holder's household (the `letin` contexts above): the holder and everyone who
     // sleeps under the same roof, by read_household's rule, with the helper beside them.
     std::vector<std::string> holder_household_guids;
@@ -743,8 +779,16 @@ struct Quest {
     std::vector<std::string> dictation_variants() const;
     // The letter's page for one combination: open, the parts as chosen, close.
     std::string dictated_letter(const std::string& wrote) const;
-    // An ask whose word is carried on to a third soul once the giver has been told (above).
-    bool carries_on() const { return is_ask() && !onward_soul.empty(); }
+    // An ask whose word is carried on to a third soul once the giver has been told (above);
+    // or a deliver whose receiver asked how the thing was come by (has_interrogation),
+    // whose giver, told the truth was told, sends Henry back to the receiver with a plea
+    // (bugs.txt 19 Nov 2026, In the Stocks: Benesh begs Father Adam not to accuse Paul
+    // Schmidt, and the priest refuses). The same leg -- the `onward` beat at the telling,
+    // the journal's Updated line, the last objective with the marker on the one sent to,
+    // their own hand row completing the quest -- with onward_soul the receiver's.
+    bool carries_on() const { return (is_ask() || has_interrogation()) && !onward_soul.empty(); }
+    // The plea: a deliver's word carried back to the receiver (above).
+    bool pleads() const { return has_interrogation() && !onward_soul.empty(); }
     // A find whose marker is a keepsake laid at the spot the things grow (above).
     bool has_keepsake() const { return is_find() && !keepsake_class.empty() && !spot_pos.empty(); }
     // A seek with clue-holders (above) and the place named for its search objective, whose
@@ -830,6 +874,15 @@ struct Quest {
         return has_holder() && !is_unyielding() && !counsel_soul.empty() && !counsel_guid.empty() &&
                !counsel_ask.empty() && !counsel_ask_yes.empty() && !holder_learned.empty() &&
                !holder_learned_yes.empty();
+    }
+    // The disputation: a holder who can be talked round, Henry's row and every stage
+    // written (the loader throws on a stage half written), and the concession it ends on.
+    bool has_debate() const {
+        if (!has_holder() || is_unyielding() || debate_open.empty() || holder_learned_yes.empty()) return false;
+        for (int k = 0; k < kDebateStages; ++k) {
+            if (!debate[k].complete(k == kDebateStages - 1)) return false;
+        }
+        return true;
     }
     // Whether this favour waits on another's ending (a story's later scene).
     bool is_link() const { return !after_quest_id.empty(); }

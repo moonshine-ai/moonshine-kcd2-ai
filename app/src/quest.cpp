@@ -162,6 +162,12 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
     const std::string carry = thing ? "take " + letter + " back to " + to
                               : dictated ? "write your letter down and carry it to " + to
                               : "carry your letter to " + to;
+    // The plea (Quest::pleads): told the truth was told, the giver sends Henry back to the
+    // receiver to beg, and the errand ends there, on the receiver's own menu (the game's
+    // Talk, not this conversation). So the truth's report row says `onward` rather than
+    // `complete`, and the giver has one more state -- Henry sent back, and not yet heard
+    // from -- which opens on `greet_onward`.
+    const bool plea = quest.pleads();
     if (quest.role == QuestRole::Giver) {
         if (facts.done) {
             plan.block = thing
@@ -170,6 +176,21 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                 : "This person carried your letter to " + to + " for you, or told you they "
                   "had, and that is settled between you";
             plan.block += money ? "; you paid them " + pay + " for it." : "; you gave them " + pay + " for it.";
+            if (plea && facts.onward) {
+                plan.block += " When they told you they had told " + to + " the whole truth of it, you sent "
+                              "them back to beg him to let the matter rest; they have been, and whatever " +
+                              to + " said to that is said. You do not ask them to go again.";
+            }
+            return plan;
+        }
+        if (plea && facts.onward) {
+            plan.block = "This person took " + letter + " back to " + to + " for you and told him the whole "
+                         "truth of how it was come by, which you had asked them not to. You have given them "
+                         "what you promised, " + pay + ", and begged one thing more: that they go back to " +
+                         to + " and plead with him to let the matter rest. You have no way of knowing whether "
+                         "they have been; ask whether they have, and what " + to + " said, and say again "
+                         "where " + to + " is to be found if they seem unsure. Nothing more is owed, and "
+                         "you do not give twice.";
             return plan;
         }
         if (facts.accepted) {
@@ -213,10 +234,22 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                     if (!t.row.empty()) told = t.row;
                     if (!t.reply.empty()) told_reply = t.reply;
                 }
+                // The truth told where the giver has a plea to send back with it: the row
+                // sends Henry on (`onward`) rather than ending the errand, and the giver's
+                // written answer is the begging.
+                const bool sends_back = plea && facts.how == "truth";
+                if (sends_back) {
+                    plan.block += " They told " + to + " the whole truth of it, which you asked them not to; "
+                                  "when they tell you so you give what you promised, and in the same breath "
+                                  "beg them to go back to " + to + " and plead with him to let the matter "
+                                  "rest. That is in your written answer.";
+                }
                 row("report", told.empty() ? quest.report : told,
-                    told_reply.empty() ? quest.thanks : told_reply, kQuestComplete,
+                    told_reply.empty() ? quest.thanks : told_reply, sends_back ? kQuestOnward : kQuestComplete,
                     (thing ? "The " + quest.item_name + " is" : "Your letter is") + " with " + to + ".",
-                    "Is it. Good. Here is what I said: " + pay + ".");
+                    sends_back ? "You told him. God help us. Here, " + pay + ", as I said. Now go back to him, I beg "
+                                 "you, and ask him to let it rest."
+                               : "Is it. Good. Here is what I said: " + pay + ".");
                 if (!quest.lie_soft.empty() && !quest.lie_soft_reply.empty()) {
                     row("lie_soft", "(Lie) " + quest.lie_soft, quest.lie_soft_reply, kQuestComplete, "", "");
                 }
@@ -300,6 +333,13 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
               "it is settled between you, however it was settled, and you do not go over it again."
             : "This person brought you a letter from " + from + ", which you have. What "
               "it says is between you and " + from + ", and you do not read it out to them.";
+        // The plea on its way back to him (Quest::pleads): he knows nothing of it until it
+        // is said, on the game's Talk, and he will not be begged off in any case.
+        if (plea && facts.onward && !facts.done) {
+            plan.block += " They told you the truth of how it was come by, and you mean to see the one who "
+                          "took it answer for it; if this person has anything to say to that, let them say "
+                          "it plainly, and do not be moved from it.";
+        }
         return plan;
     }
     plan.block = thing
@@ -1353,10 +1393,13 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
         // The errand open and nothing being settled on this very turn: Henry can give it up,
         // on a row that is on every list (notes.md 13 Oct 2026). Not once the other party is
         // dead: the confession is the only honest end of that, and the row for it is laid.
+        // The word sent on (kQuestOnward: an ask's telling, a plea's truth told) settles
+        // the giver's side as a complete does.
         const bool settling = std::find(plan.opening_commands.begin(), plan.opening_commands.end(),
                                         std::string(kQuestComplete)) != plan.opening_commands.end() ||
-                              std::any_of(plan.rows.begin(), plan.rows.end(),
-                                          [](const DirectorRow& row) { return row.command == kQuestComplete; });
+                              std::any_of(plan.rows.begin(), plan.rows.end(), [](const DirectorRow& row) {
+                                  return row.command == kQuestComplete || row.command == kQuestOnward;
+                              });
         if (facts.accepted && !facts.done && !facts.locked && !facts.dead && !settling) {
             plan.rows.push_back({"give_up", std::string(kGiveUpRow), quest.give_up_reply, std::string(kQuestAbandon)});
         }
@@ -1927,6 +1970,11 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
                 return quest.carries_thing()
                     ? "This person also took " + what + " back to " + quest.target_name + " for you, which is settled."
                     : "This person also carried your " + what + " to " + quest.target_name + " for you, which is settled.";
+            }
+            if (quest.pleads() && facts.onward) {
+                return "They also took " + what + " back to " + quest.target_name + " for you and told him the "
+                       "truth of it; you have begged them to go back and plead with him to let the matter rest, "
+                       "and have not yet heard what he said.";
             }
             if (facts.accepted) {
                 return quest.carries_thing()

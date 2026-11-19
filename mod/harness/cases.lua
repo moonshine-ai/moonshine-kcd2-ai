@@ -1172,6 +1172,11 @@ case("Keepsake: accept lays it at the spot, picking it up flags e, the hand-in t
     check(E.find("keepsake laid at"), "logged as laid")
     check(player.inventory:GetCountOfClass(q.keepsake) == 0, "not left in Henry's pocket")
     check(#E.ground == 1 and E.ground[1].class == q.keepsake, "one on the ground")
+    -- Drawn bigger than its model (bugs.txt 19 Nov 2026): the placed item's entity, found
+    -- by the spot, is scaled, and the log says so.
+    check(E.ground[1].entity ~= nil and E.ground[1].entity:GetScale() == M.keepsakeScale,
+          "the placed item scaled x" .. tostring(M.keepsakeScale) .. ", got " .. tostring(E.ground[1].entity and E.ground[1].entity:GetScale()))
+    check(E.find("keepsake scaled x"), "logged as scaled")
     check(M.watching == true, "the watch is armed for it")
     E.advance(2100)
     check(M.state.quests[id].keepsake ~= true, "not his while it lies there")
@@ -1216,6 +1221,28 @@ case("Keepsake: a laying that fails is tried again from the watch once Henry is 
     E.advance(2100)
     check(M.state.quests[id].laid == true, "laid once near")
     check(#E.ground == 1 and E.ground[1].class == q.keepsake, "one on the ground")
+end)
+
+case("Keepsake: the scaling is tried again from the watch when the engine makes the item's entity late", function(E, M, check)
+    local id, q = byName(M, "Forget Me Not")
+    check(q and q.keepsake ~= nil and q.spot ~= nil, "a find with a keepsake and its spot")
+    M.npc = E.soul(q.giver)
+    -- Nothing is in the world yet when the laying looks.
+    local sphere = System.GetEntitiesInSphere
+    System.GetEntitiesInSphere = function() return {} end
+    M.QuestCommand(id, "accept")
+    check(M.state.quests[id].laid == true, "laid")
+    check(E.ground[1].entity:GetScale() == 1, "not scaled while the entity is not to be found")
+    check(not E.find("keepsake scaled x"), "nothing logged")
+    System.GetEntitiesInSphere = sphere
+    -- Near and without it, the watch finds the entity and scales it; once.
+    player:SetWorldPos({ x = q.spot[1] + 10, y = q.spot[2], z = q.spot[3] })
+    E.advance(2100)
+    check(E.ground[1].entity:GetScale() == M.keepsakeScale, "scaled from the watch")
+    E.advance(2100)
+    local n = 0
+    for _, line in ipairs(E.lines) do if line:find("keepsake scaled x", 1, true) then n = n + 1 end end
+    check(n == 1, "scaled once, logged once, got " .. n)
 end)
 
 case("Keepsake: Henry says he has come to the place once, within arriveMetres, in his own voice", function(E, M, check)
@@ -1579,6 +1606,52 @@ case("QuestDelivered with a how: the interrogation's answer is the handover's ho
     M.QuestCommand(id, "complete")
     check(armedOrQueued(M, id, "complete"), "the plain complete")
     check(M.QuestHowMatches(M.state.quests[id].how, "truth") == true, "a truth for the scene after")
+end)
+
+-- The plea (bugs.txt 19 Nov 2026, In the Stocks): a deliver whose receiver asks carries a
+-- word back to that receiver once the giver hears the truth was told -- Benesh begging
+-- Father Adam not to accuse Paul Schmidt. The ask's onward leg, with the receiver as the
+-- one sent to: the app's `onward` at the telling, the last objective with the marker on
+-- him, his own menu's hand row completing the quest as the plain truth (so the scene gated
+-- on the truth opens from the refusal).
+local function byPlea(M)
+    for id, q in pairs(M.quests) do
+        if q.kind == "deliver" and q.onward ~= nil and q.onward ~= "" then return id, q end
+    end
+    return nil
+end
+
+case("Plea: a deliver's truth told sends Henry back to the receiver, whose refusal completes it as the truth", function(E, M, check)
+    local id, q = byPlea(M)
+    if id == nil then check(true, "no deliver carries a plea in this data"); return end
+    check(q.onward == q.target, "the plea goes back to the receiver")
+    check(M.questCodes[id .. " onward"] ~= nil, "the onward beat has a code")
+    local giver = E.soul(q.giver)
+    local receiver = E.soul(q.target)
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    M.npc = receiver
+    E.delivered(id, "truth")
+    check(M.state.quests[id].how == "truth" and M.state.quests[id].handed, "the truth told at the hand-in")
+    -- The receiver's own hand menu is shut once the thing is handed; the plea's menu is
+    -- not yet open.
+    check(E.holderMenuOpen(q.target) == false, "no menu of ours on the receiver between the hand-in and the plea")
+    M.npc = giver
+    M.QuestCommand(id, "onward")
+    check(M.state.quests[id].onward == true and M.state.quests[id].done ~= true, "sent back, not done")
+    check(M.QuestFlagLetters(M.state.quests[id]):find("w") ~= nil, "the letter w, got " .. M.QuestFlagLetters(M.state.quests[id]))
+    check(armedOrQueued(M, id, "onward"), "the onward beat armed")
+    check(M.HasMeta(receiver, q.onwardMeta), "the receiver has the plea menu's metarole")
+    E.firePort(id .. " onward")
+    check(E.holderMenuOpen(q.target) == true, "the plea's menu on the receiver once sent back")
+    M.npc = receiver
+    E.carried(id)
+    check(E.holderMenuOpen(q.target) == false, "and shut once the plea is made")
+    check(M.state.quests[id].done == true and M.state.quests[id].carried == true, "done at the refusal")
+    check(M.state.quests[id].how == "truth", "and still the truth")
+    check(armedOrQueued(M, id, "complete"), "the plain complete queued: the scene gated on the truth opens")
+    check(E.find("word carried on; paid at the telling"), "nothing paid again")
 end)
 
 case("QuestCommand: a retrieve's lie with the thing kept pays nothing and takes nothing back", function(E, M, check)
@@ -3705,6 +3778,44 @@ case("Unyielding: her door frightened open is the door for nothing, the letter S
     check(M.HasMeta(thomas, bq.counselMeta), "his menu's role granted")
 end)
 
+case("Debate: a stage's sound answer is won on the counsel's word or on Scholarship, kept in the store, and lost otherwise", function(E, M, check)
+    -- The disputation (Blind Pride's Benesh, bugs.txt 19 Nov 2026): the holder menu's
+    -- sound answers call QuestDebateSound on their exit, which writes the versed global
+    -- the nested Autoselect reads and, versed, counts the stage won.
+    local id, q = byName(M, "Blind Pride")
+    check(q ~= nil and q.debateVar ~= nil and q.versedVar ~= nil and q.debateSkill == 25,
+        "Blind Pride has a debate, its two globals and the Scholarship bar")
+    if q == nil or q.debateVar == nil then return end
+    M.npc = E.soul(q.giver)
+    M.QuestCommand(id, "accept")
+    check((E.gvar(q.debateVar) or 0) == 0 and (E.gvar(q.versedVar) or 0) == 0, "no stage won, not versed, after the accept")
+    -- Unlearned and uncounselled: the sound answer is lost, nothing counted.
+    player.soul.skills.scholarship = 12
+    local mark = E.mark()
+    M.QuestDebateSound(id, 1)
+    check(E.gvar(q.versedVar) == 0 and E.gvar(q.debateVar) == 0, "unversed: the globals say so")
+    check((M.state.quests[id].debate or 0) == 0, "no stage in the store")
+    check(E.find("BRIDGE quest " .. id .. " debate 1 sound: versed=false counselled=false scholarship=12 of 25", mark), "the weighing in the log")
+    check(E.find("BRIDGE quest stage " .. id .. " debate 1 unversed", mark), "staged for the runner")
+    -- A scholar: won, and the stage kept.
+    player.soul.skills.scholarship = 25
+    M.QuestDebateSound(id, 1)
+    check(E.gvar(q.versedVar) == 1 and E.gvar(q.debateVar) == 1, "versed at the bar: stage one won")
+    check(M.state.quests[id].debate == 1, "kept in the store")
+    M.QuestDebateSound(id, 2)
+    check(E.gvar(q.debateVar) == 2, "stage two won")
+    -- A stage won is not unwon by an answer at a lower stage (a GoTo back after a load).
+    M.QuestDebateSound(id, 1)
+    check(E.gvar(q.debateVar) == 2, "the count does not go back")
+    -- Unlearned but counselled: versed all the same.
+    player.soul.skills.scholarship = 3
+    check(M.Versed(id) == false, "not versed on learning alone")
+    M.QuestCounsel(id)
+    check(M.Versed(id) == true and E.gvar(q.versedVar) == 1, "versed on the counsel's word, and the global says so from QuestFlags")
+    M.QuestDebateSound(id, 3)
+    check(E.gvar(q.debateVar) == 3, "the last stage won on Thomas's word")
+end)
+
 case("Clues: a seek's clue asked at a holder makes that holder's own token, and only at a holder", function(E, M, check)
     -- A seek whose giver cannot say where (Plump as a Friar): the neighbours who can each
     -- have an objective of their own in the graph, closed by a token of their own class
@@ -5042,7 +5153,14 @@ case("Mouth: the skip button in the game's own voiced Talk drops the line being 
     check(not E.find("BRIDGE skipped turn=", mark), "not the session's marker")
     check(M.lipKey == M.LipKey("male", "For the soul of her brother Matthew, abandoned at Nicopolis.") and #M.lipQueue == 0,
         "their mouth armed in Henry's place, the queue empty")
+    -- The same tap arrives again as the other button action in the same frame (bugs.txt
+    -- 19 Nov 2026, Brother Thomas silent): not a second skip, their mouth stays armed.
+    M.OnPlayerAction("dialog_cancel", "press")
+    check(E.count("BRIDGE skipped line", mark) == 1, "the second action of the one tap says nothing")
+    check(M.lipKey == M.LipKey("male", "For the soul of her brother Matthew, abandoned at Nicopolis."), "their mouth still armed")
+    M.OnPlayerAction("dialog_cancel", "release")
     M.OnPlayerAction("dialog_skip", "release")
+    E.advance(300)
     -- A second tap, through theirs: the mouth off, nothing left to arm.
     mark = E.mark and E.mark() or nil
     M.OnPlayerAction("dialog_skip", "press")

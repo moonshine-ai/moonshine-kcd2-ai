@@ -282,6 +282,9 @@ local function soulComponent(e)
     -- mod's own key on a renamed soul); nil until a case or makePlayer says.
     function soul:GetNameStringId() return self.nameKey end
     function soul:GetStatLevel() return 1 end
+    -- Skills by the game's names (scholarship, speech...), 1 unless a case says.
+    soul.skills = {}
+    function soul:GetSkillLevel(name) return self.skills[name] or 1 end
     function soul:GetSocialClass() return { Id = 1, Name = "townsman" } end
     function soul:DealDamage(hp) e.alive = false end
     function soul:GetRelationship() return 0 end
@@ -397,6 +400,33 @@ function Engine.soul(name, opts)
     return e
 end
 
+-- A thing in the world with nobody in it (a placed item): a position, a class, a scale,
+-- and no soul or actor -- what the mod tells it from a soul by.
+function Engine.item(name, pos)
+    Engine.entitySeq = Engine.entitySeq + 1
+    local e = { name = name, id = Engine.entitySeq, class = "PickableItem", scale = 1,
+                pos = { x = pos.x, y = pos.y, z = pos.z } }
+    function e:GetName() return self.name end
+    function e:GetWorldPos() return { x = self.pos.x, y = self.pos.y, z = self.pos.z } end
+    function e:SetScale(s) self.scale = s end
+    function e:GetScale() return self.scale end
+    Engine.entities[name] = e
+    return e
+end
+
+-- Everything within r of a point, the engine's System.GetEntitiesInSphere.
+function Engine.entitiesInSphere(pos, r)
+    local out = {}
+    for _, e in pairs(Engine.entities) do
+        local p = e.pos
+        if p ~= nil then
+            local d = math.sqrt((p.x - pos.x) ^ 2 + (p.y - pos.y) ^ 2 + (p.z - pos.z) ^ 2)
+            if d <= r then out[#out + 1] = e end
+        end
+    end
+    return out
+end
+
 -- ---------------------------------------------------------------------------
 -- The player. One entity with a human component the dialogue state lives on.
 function Engine.makePlayer()
@@ -419,6 +449,15 @@ function Engine.makePlayer()
         if type(wuid) ~= "table" then error("PlaceItem: no such item") end
         Engine.inventories[wuid.inv]:DeleteItemOfClass(wuid.class, 1)
         Engine.ground[#Engine.ground + 1] = { class = wuid.class, spot = spotId }
+        -- And the item's own entity in the world at the spot (what GetEntitiesInSphere
+        -- finds there besides the spot), with the engine's scale on it.
+        local at = nil
+        for _, e in pairs(Engine.entities) do if e.id == spotId then at = e end end
+        if at ~= nil then
+            local item = Engine.item("placed_" .. wuid.class .. "_" .. #Engine.ground, at.pos)
+            item.itemClass = wuid.class
+            Engine.ground[#Engine.ground].entity = item
+        end
     end
     p.inventory:CreateItem(Engine.moneyClass, 100, 63807) -- 6380.7 groschen, the Windows laptop's purse
     return p
@@ -750,6 +789,7 @@ function Engine.installGlobals()
         LoadTextFile = function(path) return Engine.loadTextFile(path) end,
         GetCurrAsyncTime = function() return Engine.seconds() end,
         GetEntityByName = function(name) return Engine.entities[name] end,
+        GetEntitiesInSphere = function(pos, r) return Engine.entitiesInSphere(pos, r) end,
         GetCVar = function(name) return Engine.cvars[name] end,
         SetCVar = function(name, value) Engine.cvars[name] = value end,
         -- The last frame's length in seconds; 60 fps unless a case says otherwise.
