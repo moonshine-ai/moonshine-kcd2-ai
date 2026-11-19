@@ -667,6 +667,12 @@ constexpr int kTravelMoodMetres = 40;
 constexpr int kHailMetres = 15;
 constexpr int kHailBubbleMetres = 25;
 constexpr int kHailAgainSeconds = 90;
+// The wave that goes with the shout (HailWave, 19 Nov 2026): the engine's urgeDialog
+// behaviour waves big past five metres and small within, and the clip is started on this
+// animation layer, which a probe on a standing townsman found takes an upper-body "_over"
+// clip without upsetting his idle.
+constexpr int kHailWaveBigMetres = 5;
+constexpr int kHailWaveLayer = 1;
 // With the shout goes the game's own "hold to look" hint (emit_leg, hailLook): "Look at
 // <giver>" at the lower right, Left Alt or LB held turning Henry's view to him. It is up
 // this many seconds, or until Henry has looked or taken the errand: long enough to find

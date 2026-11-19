@@ -3252,6 +3252,10 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     if q == nil or q.hail == nil then return end
     check(q.hailToken == "6d6f6f6e-7368-4800-8000-" .. id, "the hail's token is the quest's own class under the hail prefix")
     local benesh = E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    -- The engine's wave clips (the pickpocket event's GreetingsUpperBody, 19 Nov 2026),
+    -- as the male and female animation sets have them.
+    E.clipLengths["greetings_wave_big_over"] = 4.2
+    E.clipLengths["greetings_wave_small_over"] = 2.83
     player:SetWorldPos({ x = 100 + M.hailMetres + 20, y = 100, z = 0 })
     M.WatchArm("world")
     check(M.watching == true, "the watch is armed with nothing accepted")
@@ -3263,6 +3267,11 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed within hailMetres")
     check(E.find("BRIDGE voice male soul=" .. q.giver .. " " .. q.hail, mark), "voiced as the man's stand-in, the giver named for the app's mouth")
     check(M.voicedSoul == q.giver, "the shout's mouth is the giver's")
+    -- And he waves with the shout: the big wave from this far, once, not looped, on the
+    -- upper-body layer (HailWave).
+    check(#benesh.anims == 1 and benesh.anims[1].clip == "greetings_wave_big_over" and benesh.anims[1].layer == 1
+        and benesh.anims[1].speed == 1.0, "the big wave started on the giver with the shout, from past five metres")
+    check(#benesh.stops == 0, "no layer stopped for it: the clip runs out on its own")
     check(E.find("BRIDGE quest token made", mark), "the hail's token made for the graph's bark, which turns him to Henry")
     check(M.Count(player, q.hailToken) == 1, "one of the hail's class in Henry's pocket")
     -- The words are the engine's: the bark's bubble over his head, for the line's
@@ -3304,6 +3313,16 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     mark = E.mark()
     E.advance(2100)
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 1, "hailed again after being away")
+    check(#benesh.anims == 2 and benesh.anims[2].clip == "greetings_wave_small_over", "the small wave from two metres")
+    -- A set without the clips (an animal, a build before the wave): the shout alone.
+    E.clipLengths["greetings_wave_big_over"] = nil
+    E.clipLengths["greetings_wave_small_over"] = nil
+    player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
+    E.advance(M.hailAgain * 1000 + 100)
+    player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
+    mark = E.mark()
+    E.advance(2100)
+    check(E.count("BRIDGE quest " .. id .. " hail", mark) == 1 and #benesh.anims == 2, "hailed with no wave when the set has no clip")
     -- Not while a conversation is open, and not once the errand is taken up.
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(M.hailAgain * 1000 + 100)

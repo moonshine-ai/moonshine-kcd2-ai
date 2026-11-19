@@ -13927,11 +13927,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // Her day (hail_hours; notes.md 25 Oct 2026): asleep or at her supper she does not call
     // Henry over, and her marker is off the map (the graph's giverDay).
     s += "\tif q.hailHours ~= nil and not " + g + ".HourIn(q.hailHours) then return end\n";
-    s += "\tlocal gp = nil\n";
+    s += "\tlocal gp, ge = nil, nil\n";
     s += "\tpcall(function()\n";
     s += "\t\tlocal e = System.GetEntityByName(q.giver)\n";
     s += "\t\tif e == nil or (e.actor ~= nil and e.actor:IsDead()) then return end\n";
     s += "\t\tgp = e:GetWorldPos()\n";
+    s += "\t\tge = e\n";
     s += "\tend)\n";
     s += "\tif gp == nil then return end\n";
     s += "\tlocal d = math.sqrt((pp.x - gp.x) ^ 2 + (pp.y - gp.y) ^ 2)\n";
@@ -13946,7 +13947,28 @@ std::string emit_conversation_lua(const std::string& modid,
     // The giver named as the third argument, so the shout's mouth is his (LipEntity): without
     // it the mouth was armed and found no entity (14 Oct 2026).
     s += "\t" + g + ".Voice(q.hailVoice or \"male\", q.hail, q.giver)\n";
+    s += "\t" + g + ".HailWave(ge, d)\n";
     s += "\tif q.hailToken ~= nil then " + g + ".Token(q, q.hailToken) end\n";
+    s += "end\n";
+    s += "\n";
+    // The wave with the shout (19 Nov 2026). The pickpocket random event's "Kind fellow,
+    // could you help me with something?" waves Henry over through the engine's urgeDialog
+    // behaviour (AI/speech/urgedialog.xml): the Mannequin fragment GreetingsUpperBody,
+    // waveBig past five metres and waveSmall within, which the male and female databases
+    // resolve to the clips greetings_wave_big_over and greetings_wave_small_over. We have no
+    // smart entity to run the behaviour on, so the clip is started by hand, the way the
+    // travel's face is: an upper-body clip over whatever the body is doing (a townsman
+    // waved on layer 1 from his idle, hook probe 19 Nov 2026, without a hitch in his
+    // stance), once, not looped, at the clip's own pace. Nothing of the mod's rides on it
+    // landing -- a giver with a sword out or his hands full does not wave in the engine's
+    // version either, and here he merely fails to.
+    s += "function " + g + ".HailWave(e, d)\n";
+    s += "\tif e == nil then return end\n";
+    s += "\tlocal clip = d > " + std::to_string(kHailWaveBigMetres) + " and \"greetings_wave_big_over\" or \"greetings_wave_small_over\"\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tif (e:GetAnimationLength(0, clip) or 0) <= 0 then return end\n";
+    s += "\t\te:StartAnimation(0, clip, " + std::to_string(kHailWaveLayer) + ", 0.3, 1.0, false)\n";
+    s += "\tend)\n";
     s += "end\n";
     s += "\n";
     // Somebody else's line outside a conversation, other than a hail (a holder's row said
