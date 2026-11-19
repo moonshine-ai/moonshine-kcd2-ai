@@ -3,5 +3,5 @@
 # made by export_drop.py in moonshine-voice-characters and named for its date and that
 # repository's commit; the manifest's sha256 pins the exact files. Moving to a new drop is
 # an edit here.
-drop=2026-11-16-2ea0052
-manifest_sha256=19717259bb62eda65e04a1d0a45b830a24db8ecced6c67aee4c9ed696814bcc3
+drop=2026-11-18-7ce72a9
+manifest_sha256=95323a2a46d43ef9bcf9210d5c2965aba8c4bcef9a05c3c56ca55b8bc6ecee5d
