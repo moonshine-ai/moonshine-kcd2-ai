@@ -1184,8 +1184,17 @@ struct Speaker::Impl {
     Facials facials;
     LipSink lips;
     std::mutex lips_mutex;
-    // The cue files of the line being spoken, taken away when the next line's cue goes.
+    // The cue files of the line being spoken, and the line's before it. Taken away a line
+    // late: the first cue of a line took the previous line's files away at once, and its
+    // stop cue with them -- written as that line's audio ended, a few milliseconds before
+    // the next line's first cue when one was queued behind it, inside the mod's 100 ms
+    // poll. The mod then waited a minute for a stop that was gone, with the finished line
+    // on the caption and the next line's voice heard over it with its mouth still (bugs.txt
+    // 20 Nov 2026: Benesh's "How dare you speak of my mother" and his Lombard reply, both
+    // queued behind a line of Henry's). The mod also takes the next line's first cue as
+    // the end of the one before it (LipPoll), so either road finds the line over.
     std::vector<std::string> lip_files;
+    std::vector<std::string> lip_files_before;
 
     // The words' sounds: the lexicon beside the voices (visemes.h, Lexicon), then, in a
     // build with the Moonshine library, the G2P the Kokoro voice uses for a word it lacks,
@@ -1257,13 +1266,19 @@ struct Speaker::Impl {
             double planned_until = 0;  // the second of the audio the plan's cuts are known to; past it, speech is assumed
         };
         auto line = std::make_shared<Line>();
-        // Under line->mutex. The first cue of the line takes the previous line's files away.
+        // Under line->mutex. The first cue of the line takes away the files of the line
+        // before the previous one; the previous line's stay until the next first cue, so the
+        // mod has a whole line's time to see its stop (lip_files_before).
         const auto write = [this, tag, line](const std::string& body) {
             std::vector<std::string> previous;
             const std::string file = lip_file(tag.key, ++line->seq);
             {
                 std::lock_guard<std::mutex> held(lips_mutex);
-                if (line->seq == 1) previous.swap(lip_files);
+                if (line->seq == 1) {
+                    previous.swap(lip_files_before);
+                    lip_files_before.swap(lip_files);
+                    lip_files.clear();
+                }
                 lip_files.push_back(file);
             }
             if (lips.forget && !previous.empty()) lips.forget(previous);

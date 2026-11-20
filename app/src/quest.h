@@ -222,9 +222,17 @@ struct Quest {
     // Whom a beat's holder goes to live with once he has given in (npc_quest_lines
     // `wed_soul`, `wed_name`; 20 Nov 2026, Benesh and Ellen): read for every role, since
     // both their paragraphs turn on it, and the one named is the quest's Wed role. The
-    // wedding follows the handover, not the report to the giver, so what stands since
-    // (since_target for him, since_wed for her) is said from the handover on.
+    // wedding follows the handover, not the report to the giver, and the mod reckons it
+    // some hours after (the flag M, QuestFacts::wed). Between the two he is on the road
+    // to her and has no time for anyone (`greet_gone_target`, said and the conversation
+    // closed on it; bugs.txt 20 Nov 2026: "I have to get to Ellen!"); from the wedding
+    // on, what stands since (since_target for him, since_wed for her) is the paragraph,
+    // each opens glad to see Henry (`greet_wed_target`, `greet_wed`), and Henry can ask
+    // for the whole of it (`wed_more_target` answered with `wed_more_target_reply`;
+    // `wed_more` with `wed_more_reply`). Plain words stand in for any left unwritten.
     std::string wed_soul, wed_name;
+    std::string greet_gone_target, greet_wed_target, greet_wed;
+    std::string wed_more_target, wed_more_target_reply, wed_more, wed_more_reply;
     bool has_wed() const { return !wed_soul.empty(); }
     // A plea's answer rows (Quest::pleads; bugs.txt 19 Nov 2026: Henry chooses whether to
     // carry Benesh's plea): laid after the truth's report row, `plea_yes` sends him back
@@ -241,13 +249,17 @@ struct Quest {
     // sacristan, notes.md 13 Oct 2026): the game's rows on him are refusals, and the mod's
     // store carries the refusal as QuestFacts::rebuffed. Back at the giver with that, the
     // giver sends Henry to the holder's chest anyway and names the one who keeps the house
-    // (`helper_name`, the mod's `helper_soul`'s given name): the opening line is
-    // `greet_rebuffed`, and the naming (kQuestNamed) rides on Henry's row taking the chest
-    // up (`named_row`, answered with `named_reply`; the plain words where none were written),
-    // on which the mod opens her menu and marks her on the map. Empty for a holder who can
-    // be talked round.
+    // (`helper_name`, the mod's `helper_soul`'s given name). The giver does not know how it
+    // went until told (bugs.txt 20 Nov 2026: Benesh opened with "Threw you out, did he?"
+    // the moment Henry came back): he opens by asking (`greet_rebuffed_ask`, or the plain
+    // words), and the telling is Henry's row (`rebuffed_row`), answered with the giver's
+    // speech sending Henry to the chest and naming her (`greet_rebuffed`), on which the
+    // naming (kQuestNamed) rides: the mod opens her menu and marks her on the map. The
+    // give-up row stands beside it. `named_row` and `named_reply` are the older shape, the
+    // agreement as a row of its own, kept for the rows the writer put on them. Empty for a
+    // holder who can be talked round.
     bool unyielding = false;
-    std::string helper_name, greet_rebuffed, named_row, named_reply;
+    std::string helper_name, greet_rebuffed, greet_rebuffed_ask, rebuffed_row, named_row, named_reply;
     // The sheet in the holder's chest, in Henry's pocket (QuestFacts::paper, the mod's flag j;
     // bugs.txt 18 Nov 2026, In the Stocks' list of names): Henry's row putting it to the
     // giver (`paper_ask`) and the giver's answer (`paper_ask_reply`), while the errand is
@@ -444,6 +456,10 @@ struct QuestFacts {
     // A seek: the family has gone from the place (flag v), the morning after the hand-in --
     // fetched home by the giver, as far as she tells it. The giver's news turns on it.
     bool gone = false;
+    // A beat with a wedding after it (Quest::has_wed): the mod reckons the wedding some
+    // hours after the handover (flag M). Before it he is on the road to her; after it the
+    // two are man and wife in town.
+    bool wed = false;
     // A beat: the man has been knocked down (flag k); a beat or a mind: he is dead (flag x).
     // A pray: the prayer has been said at the place (flag y). A mind: how many visits have
     // been made (one flag c each).
@@ -687,7 +703,17 @@ struct QuestPlan {
     // visit is an ordinary one or the line was never written, and the greeting is the
     // state's or -- on a settling turn -- generated.
     std::string greeting;
+    // The greeting is the whole of the visit: said, the conversation closes on it, and no
+    // rows are offered (a beat's holder on the road to his bride, Quest::greet_gone_target).
+    bool closes = false;
 };
+
+// Whether this soul is one of the two a wedding joins (Quest::has_wed), from the handover
+// on: his word given at his menu (handed), not knocked out of him or dead. Before the
+// wedding is reckoned (QuestFacts::wed) each is on the road: `wed_road_block` is the
+// paragraph for that, his or hers by the role.
+bool wed_party(const Quest& quest, const QuestFacts& facts);
+std::string wed_road_block(const Quest& quest);
 
 // `met` is how many conversations this makes with the soul, for the dispute's answer; 0 is
 // as good as a first.

@@ -183,6 +183,8 @@ std::string persona_json(const Soul& soul,
                ", \"refused\": " + std::string(yes_no(told.refused)) +
                ", \"onward\": " + std::string(yes_no(told.onward)) +
                ", \"keepsake\": " + std::string(yes_no(told.keepsake)) +
+               // The wedding reckoned, only where it is, so a golden without it stands.
+               (told.wed ? std::string(", \"wed\": true") : std::string()) +
                // The store's how, only where one is given, so a golden without one stands.
                (told.how.empty() ? std::string() : ", \"how\": " + json_string(told.how)) +
                // And a dictated letter's digits, the same way.

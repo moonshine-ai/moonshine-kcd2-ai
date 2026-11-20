@@ -1357,12 +1357,14 @@ namespace {
 // is Standing::met: the conversations counting this one, 0 or 1 a first.
 std::string visit_greeting(const Quest& quest, const QuestFacts& facts, const QuestPlan& plan, int met) {
     if (quest.role != QuestRole::Giver) return {};
-    // Back from an unyielding holder with his refusal: the giver's line sending Henry to
-    // the chest and naming the one who keeps the house, the first time (the naming rides on
-    // it); after that, the owed line serves as for any open errand.
+    // Back from an unyielding holder with his refusal, the first time: the giver does not
+    // know how it went, and asks (bugs.txt 20 Nov 2026); his speech sending Henry to the
+    // chest answers Henry's telling, below. After the naming, the owed line serves as for
+    // any open errand.
     if (quest.has_helper() && facts.rebuffed && !facts.named && facts.accepted && !facts.done &&
         facts.have <= 0) {
-        return quest.greet_rebuffed;
+        return quest.greet_rebuffed_ask.empty() ? "Well? You have been to him. What did he say?"
+                                                : quest.greet_rebuffed_ask;
     }
     // Back from a holder with a secret, refused and with nothing yet seen: the giver's line
     // sending Henry after his nights, when one was written.
@@ -1406,16 +1408,95 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
 
 }  // namespace
 
+bool wed_party(const Quest& quest, const QuestFacts& facts) {
+    return quest.has_wed() && quest.exists() && quest.role != QuestRole::Giver && !facts.voided && facts.handed &&
+           !facts.beaten && !facts.dead;
+}
+
+std::string wed_road_block(const Quest& quest) {
+    const std::string& he = quest.target_name;
+    const std::string she = quest.wed_name.empty() ? std::string("her") : quest.wed_name;
+    if (quest.role == QuestRole::Target) {
+        return "This person came to you on " + quest.giver_name + "'s behalf and argued you round: your "
+               "mother was wrong about " + she + ", and you have owned it to their face. You are on your way "
+               "to " + she + " this minute, to go down on your knees and beg her to come home, and you have "
+               "no time for anyone or anything else, this person least of all: whatever they say, you tell "
+               "them in a breath that you must get to her, and go. No questions, no gratitude yet, no stopping.";
+    }
+    return he + " has come to you today, on foot and out of breath, and gone down on his knees in the mud "
+           "to beg you to come home with him: it was his mother's lie that sent you away, he says, not his "
+           "wish, and he knows it now. You have said yes. You are to go back to town with him, and you can "
+           "scarcely believe it; you are dazed and glad and a little afraid it is a dream, and you have no "
+           "mind for anything else.";
+}
+
+namespace {
+
+// The two a wedding joins (Quest::has_wed; Benesh and Ellen, 20 Nov 2026), from the
+// handover on -- his word given to Henry, not the giver's being told. The mod reckons the
+// wedding some hours after (QuestFacts::wed). Before it he is on the road to her and has
+// no time for Henry: his line for it is the whole visit, and the conversation closes on
+// it (bugs.txt 20 Nov 2026: "I have to get to Ellen!"); she, at her camp, has just been
+// begged home. After it, what stands since (since_target, since_wed) is the paragraph,
+// each opens glad to see him, and Henry can ask for the whole story on a row of his own.
+void plan_wed(const Quest& quest, const QuestFacts& facts, QuestPlan& plan) {
+    if (!wed_party(quest, facts)) return;
+    const bool target = quest.role == QuestRole::Target;
+    const std::string she = quest.wed_name.empty() ? std::string("her") : quest.wed_name;
+    if (!facts.wed) {
+        plan.block = wed_road_block(quest);
+        if (target) {
+            plan.greeting = quest.greet_gone_target.empty() ? "Not now, Henry! I have to get to " + she + "!"
+                                                            : quest.greet_gone_target;
+            plan.closes = true;
+            plan.rows.clear();
+            plan.question.clear();
+            plan.on_yes.clear();
+            plan.direction.clear();
+        } else {
+            plan.greeting = "Henry! He came. He came all this way for me, and we're going home. I can hardly "
+                            "stand up straight for it.";
+        }
+        return;
+    }
+    const std::string since = quest.since_line(facts.how);
+    if (!since.empty()) {
+        plan.block = "Since then, and over anything else you have been told of your situation: " + since;
+    }
+    plan.block += (plan.block.empty() ? "" : " ") +
+                  std::string("You are happy, plainly and without embarrassment, and it shows in how you greet "
+                              "this person and in everything you say to them; you owe them the whole of it "
+                              "and you know it. Asked how it all went, you tell it gladly and in full.");
+    const std::string& greet = target ? quest.greet_wed_target : quest.greet_wed;
+    plan.greeting = !greet.empty() ? greet
+                    : target       ? "Henry! God keep you. You've heard? We're wed, man, wed, and it's your doing."
+                                   : "Henry! Oh, look at me, I hardly know what to say to you. He told me everything. It was you.";
+    Rows rows{plan};
+    rows.add("wed_more", target ? quest.wed_more_target : quest.wed_more,
+             target ? quest.wed_more_target_reply : quest.wed_more_reply, {},
+             "Tell me how it went, then. All of it.",
+             target ? "I walked to Bylany without stopping, and when I saw her I could not get a word out, so I "
+                      "went down on my knees in the mud instead. She came. Father Dominic married us quietly, "
+                      "and I told him to his face that he was right and my mother wrong. We have a room on the "
+                      "east side now, and honest work, and I sleep."
+                    : "He came on foot, out of breath, and went down on his knees in the mud in front of the "
+                      "whole camp and begged me home. I went. Father Dominic married us quietly, and I have a "
+                      "room and a bench and wool to spin, and nobody mocks me. I still touch the veil when I am "
+                      "nervous. I am not used to it yet.");
+}
+
+}  // namespace
+
 QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach& approach,
                      int met) {
     QuestPlan plan = plan_kind(quest, facts, approach, met);
     // Done, the errand has left the soul somewhere the rest of their sheet (written before
     // it) does not know about: the bell-ringer cleared, the priest's cup back. The written
     // line for the ending, or the plain one, stands over the sheet (notes.md 14 Oct 2026).
-    // A wedding follows the holder's handover, not the giver's being told (Quest::has_wed):
-    // his side and hers say what stands from the handover on.
-    const bool wed_since = quest.has_wed() && (facts.handed || facts.done) && quest.role != QuestRole::Giver;
-    if (quest.exists() && !facts.voided && (facts.done || wed_since) && facts.how != "abandoned") {
+    // The two a wedding joins are plan_wed's (below), from the handover on; the bride has
+    // nothing of it otherwise (the errand ended without him coming to her).
+    if (quest.exists() && !facts.voided && facts.done && facts.how != "abandoned" && !wed_party(quest, facts) &&
+        quest.role != QuestRole::Wed) {
         const std::string since = quest.since_line(facts.how);
         if (!since.empty()) {
             if (!plan.block.empty()) plan.block += " ";
@@ -1481,6 +1562,7 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
                       "You do not know it in paces or doors, so do not invent them.";
     }
     plan.greeting = visit_greeting(quest, facts, plan, met);
+    plan_wed(quest, facts, plan);
     return plan;
 }
 
@@ -1667,28 +1749,36 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
                 // The holder would not hear of it (the store's n; In the Stocks' sacristan,
                 // notes.md 13 Oct 2026). The giver does not take no for an answer: the
                 // thing is to come out of the holder's chest anyway, and he names the one
-                // who keeps the house. Said on the opening line the first time (greet_
-                // rebuffed), and the naming rides on Henry's row taking it up (accept_again,
-                // kQuestNamed) for the mod to open her menu and mark her -- a yes to give,
-                // rather than the ask settling itself on the opening (notes.md 13 Oct 2026);
-                // after that it is a thing both of you know.
+                // who keeps the house. He does not know how it went until Henry tells him
+                // (bugs.txt 20 Nov 2026): the opening asks (visit_greeting), the telling is
+                // Henry's row (report_rebuffed), and the giver's speech sending Henry to the
+                // chest answers it; the naming (kQuestNamed) rides on that row, for the mod
+                // to open her menu and mark her. The give-up row stands beside it. After
+                // that it is a thing both of you know.
                 const std::string& she = quest.helper_name;
-                plan.block += " They have been to " + holder + " about it, and " + holder +
-                              " took offence and would not hear of it; you expected no better. "
-                              "You want " + item + " out of his chest regardless, and you " +
-                              (facts.named ? "have told them so, and named " : "tell them so, and name ") +
-                              she + ", the servant girl who keeps the house he lodges in and "
-                              "is about outside it by day: a word from her would get them in, "
-                              "and she has her price. You do not say the word steal, and you "
-                              "do not want to hear how it is done, nor whether " + she +
-                              " has been any help; that is between them and her.";
-                if (!facts.named) {
-                    plan.block += " You have just put it to them again, and wait on their answer.";
-                    plan.rows.push_back({"accept_again",
-                                         quest.named_row.empty() ? "His chest, then. I'll find this " + she + "."
-                                                                 : quest.named_row,
-                                         quest.named_reply, std::string(kQuestNamed)});
+                if (facts.named) {
+                    plan.block += " They have been to " + holder + " about it, and " + holder +
+                                  " took offence and would not hear of it; you expected no better. "
+                                  "You want " + item + " out of his chest regardless, and you have told "
+                                  "them so, and named " + she + ", the servant girl who keeps the house "
+                                  "he lodges in and is about outside it by day: a word from her would get "
+                                  "them in, and she has her price. You do not say the word steal, and you "
+                                  "do not want to hear how it is done, nor whether " + she +
+                                  " has been any help; that is between them and her.";
+                    return plan;
                 }
+                plan.block += " They have been to " + holder + " about it. You do not yet know how it went: "
+                              "you have just asked, and wait to hear. If he would not hear of it, you expect "
+                              "no better of him, and you want " + item + " out of his chest regardless; you "
+                              "will say so, and name " + she + ", the servant girl who keeps the house he "
+                              "lodges in and is about outside it by day, whose word would get them in, and "
+                              "who has her price. You do not say the word steal, and you do not want to hear "
+                              "how it is done.";
+                plan.rows.push_back({"report_rebuffed",
+                                     quest.rebuffed_row.empty()
+                                         ? "He would not hear a word of it. He showed me the door."
+                                         : quest.rebuffed_row,
+                                     quest.greet_rebuffed, std::string(kQuestNamed)});
                 return plan;
             }
             if (quest.has_expose()) {
@@ -1830,7 +1920,14 @@ std::size_t pick_quest(const std::vector<Quest>& quests, const std::vector<Quest
     // Christine, and this picked the retrieve over the delivery still out and paid it off
     // on sight -- the second scene taken up and done before the first was carried (bugs.txt
     // 11 Nov 2026).
-    std::size_t at = find([&](const Quest& q, const QuestFacts& f) {
+    // A wedding (wed_party) remakes the two it joins, whatever else stands between them and
+    // Henry: on the road he has no time for anything and she has no mind for it, and once
+    // it is reckoned they are glad of him before all else (bugs.txt 20 Nov 2026: Benesh
+    // asked after the monastery, Ellen begged). Nothing of theirs can be open besides, the
+    // scenes being a chain, so nothing is passed over that would have been offered.
+    std::size_t at = find([&](const Quest& q, const QuestFacts& f) { return wed_party(q, f); });
+    if (at < quests.size()) return at;
+    at = find([&](const Quest& q, const QuestFacts& f) {
         return giver(q) && !f.done && !f.voided && !f.locked && (q.is_find() ? f.accepted : true) && q.brought(f.have);
     });
     if (at < quests.size()) return at;
@@ -1866,10 +1963,11 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
                         const std::vector<Quest>& all, const std::vector<QuestFacts>& all_facts) {
     if (!quest.exists() || facts.voided) return {};
     // A wedding (Quest::has_wed) remakes the two it joins, whatever errand the visit turns
-    // on: his side and hers carry their since line in full from the handover on, as the
-    // paragraph would, rather than a sentence that leaves the sheet a beggar's.
-    if (quest.has_wed() && quest.role != QuestRole::Giver && (facts.handed || facts.done) &&
-        facts.how != "abandoned") {
+    // on: his side and hers carry their since line in full from the wedding on, as the
+    // paragraph would, rather than a sentence that leaves the sheet a beggar's; before it,
+    // the road (wed_road_block).
+    if (wed_party(quest, facts)) {
+        if (!facts.wed) return wed_road_block(quest);
         const std::string since = quest.since_line(facts.how);
         if (!since.empty()) return "Since then, and over anything else you have been told of your situation: " + since;
     }

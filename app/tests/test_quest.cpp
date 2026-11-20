@@ -1192,32 +1192,33 @@ TEST_CASE("an unyielding holder's giver, told of the refusal, sends Henry to the
     CHECK(plan_quest(quest, owed, {}).opening_commands.empty());
     CHECK(plan_quest(quest, owed, {}).block.find("Elsbeth") == std::string::npos);
 
-    // Back with the refusal (the store's n): the line for it, the paragraph says what he is
-    // telling Henry, and the naming rides on Henry's row taking it up (notes.md 13 Oct
-    // 2026: a yes to give), with the give-up row behind it.
+    // Back with the refusal (the store's n): the giver does not know how it went and asks
+    // (bugs.txt 20 Nov 2026); Henry's telling is the row, answered with the speech sending
+    // him to the chest, and the naming rides on it, with the give-up row beside it.
     QuestFacts rebuffed = at("accepted");
     rebuffed.rebuffed = true;
     QuestPlan out = plan_quest(quest, rebuffed, {});
-    CHECK(out.greeting == quest.greet_rebuffed);
+    CHECK(out.greeting == "Well? You have been to him. What did he say?");
     CHECK(out.opening_commands.empty());
-    CHECK(out.block.find("took offence and would not hear of it") != std::string::npos);
-    CHECK(out.block.find("tell them so, and name Elsbeth") != std::string::npos);
-    CHECK(out.block.find("put it to them again") != std::string::npos);
+    CHECK(out.block.find("You do not yet know how it went") != std::string::npos);
+    CHECK(out.block.find("will say so, and name Elsbeth") != std::string::npos);
+    CHECK(out.block.find("took offence") == std::string::npos);
     REQUIRE(out.rows.size() == 2);
-    CHECK(out.rows[0].intent == "accept_again");
-    CHECK(out.rows[0].text == "His chest, then. I'll find this Elsbeth.");
-    CHECK(out.rows[0].reply.empty());  // the model answers, told what became true
+    CHECK(out.rows[0].intent == "report_rebuffed");
+    CHECK(out.rows[0].text == "He would not hear a word of it. He showed me the door.");
+    CHECK(out.rows[0].reply == quest.greet_rebuffed);
     CHECK(out.rows[0].command == kQuestNamed);
     CHECK(out.rows[1].intent == "give_up");
     CHECK(out.rows[1].text == kGiveUpRow);
     CHECK(out.rows[1].command == kQuestAbandon);
     CHECK(out.question.empty());
-    // Written words for the row and its answer, where the lines have them.
-    quest.named_row = "Then his chest it is. Where do I find this Elsbeth?";
-    quest.named_reply = "Sweeping the step at Welvara's, any afternoon. Mind the master.";
+    // Written words for the asking and the telling, where the lines have them.
+    quest.greet_rebuffed_ask = "Well? Don't stand there, what did Paul say?";
+    quest.rebuffed_row = "He wouldn't hear a word of it. Called me a thief's friend.";
     QuestPlan worded = plan_quest(quest, rebuffed, {});
-    CHECK(worded.rows[0].text == quest.named_row);
-    CHECK(worded.rows[0].reply == quest.named_reply);
+    CHECK(worded.greeting == quest.greet_rebuffed_ask);
+    CHECK(worded.rows[0].text == quest.rebuffed_row);
+    CHECK(worded.rows[0].reply == quest.greet_rebuffed);
 
     // Named already (the store's a): owed again, nothing fired, the paragraph in the past
     // tense, and only the give-up row left of the two.
@@ -1226,6 +1227,7 @@ TEST_CASE("an unyielding holder's giver, told of the refusal, sends Henry to the
     QuestPlan again = plan_quest(quest, named, {});
     CHECK(again.greeting == quest.greet_owed);
     CHECK(again.opening_commands.empty());
+    CHECK(again.block.find("took offence and would not hear of it") != std::string::npos);
     CHECK(again.block.find("have told them so, and named Elsbeth") != std::string::npos);
     REQUIRE(again.rows.size() == 1);
     CHECK(again.rows[0].intent == "give_up");
@@ -1726,9 +1728,10 @@ TEST_CASE("a beat asks for amends, and is paid on Henry's word: agreed, fought, 
     CHECK(quest_aside(anthony, beaten, {anthony}, {beaten}).find("beat you") != std::string::npos);
 }
 
-TEST_CASE("a beat's holder wed to the one he went to (wed_soul): both carry what stands from the handover, "
-          "as paragraph or aside; she plans nothing else and is never the quest picked") {
-    // Blind Pride, 20 Nov 2026: Benesh goes to Ellen and the two settle in town.
+TEST_CASE("a beat's holder wed to the one he went to (wed_soul): on the road from the handover, he has one line "
+          "and the talk closes on it; from the wedding on both carry what stands, glad, with a row for the story") {
+    // Blind Pride, 20 Nov 2026: Benesh goes to Ellen and the two settle in town. The mod
+    // reckons the wedding some hours after the handover (the flag M, QuestFacts::wed).
     Quest his = oswalds_grudge();
     his.role = QuestRole::Target;
     his.wed_soul = "kbyl_woman_17";
@@ -1739,27 +1742,99 @@ TEST_CASE("a beat's holder wed to the one he went to (wed_soul): both carry what
     hers.since_by_how = {{"", "He came to you on his knees, and you are man and wife."}};
     const Quest giver = oswalds_grudge();
     REQUIRE(his.has_wed());
+    QuestFacts road = at("handed");
+    QuestFacts wed = at("handed");
+    wed.wed = true;
+    QuestFacts told = wed;
+    told.done = true;
 
     // Open: nothing of it yet, on either side.
     CHECK(plan_quest(his, at("accepted"), {}).block.find("Since then") == std::string::npos);
     CHECK(plan_quest(hers, at("accepted"), {}).block.empty());
     CHECK(quest_aside(hers, at("accepted"), {hers}, {at("accepted")}).empty());
-    // Handed, before the giver has been told: the wedding has happened, and both say so.
-    CHECK(plan_quest(his, at("handed"), {}).block.find("Since then, and over anything else you have been told of your "
-                                                      "situation: You went to her that same day") != std::string::npos);
-    CHECK(plan_quest(hers, at("handed"), {}).block ==
-          "Since then, and over anything else you have been told of your situation: He came to you on his knees, "
-          "and you are man and wife.");
-    CHECK(plan_quest(hers, at("handed"), {}).rows.empty());
-    // As an aside, when the visit turns on another errand: the line in full, not a sentence.
-    CHECK(quest_aside(his, at("done"), {his}, {at("done")}).find("You went to her that same day") != std::string::npos);
-    CHECK(quest_aside(hers, at("done"), {hers}, {at("done")}).find("He came to you on his knees") != std::string::npos);
+    CHECK_FALSE(wed_party(his, at("accepted")));
+    // Handed, the wedding not yet reckoned: he is on the road to her, with one line that is
+    // the whole visit (bugs.txt 20 Nov 2026: "I have to get to Ellen!"), and the talk
+    // closes on it; she has just been begged home.
+    CHECK(wed_party(his, road));
+    const QuestPlan hurrying = plan_quest(his, road, {});
+    CHECK(hurrying.block.find("on your way to Ellen this minute") != std::string::npos);
+    CHECK(hurrying.block.find("Since then") == std::string::npos);
+    CHECK(hurrying.greeting == "Not now, Henry! I have to get to Ellen!");
+    CHECK(hurrying.closes);
+    CHECK(hurrying.rows.empty());
+    his.greet_gone_target = "Later, Henry, later! She's at Bylany and I've wasted years already!";
+    CHECK(plan_quest(his, road, {}).greeting == his.greet_gone_target);
+    const QuestPlan begged = plan_quest(hers, road, {});
+    CHECK(begged.block.find("Anthony has come to you today") != std::string::npos);
+    CHECK(begged.block.find("Since then") == std::string::npos);
+    CHECK(begged.greeting.find("He came all this way for me") != std::string::npos);
+    CHECK_FALSE(begged.closes);
+    CHECK(begged.rows.empty());
+    // His word knocked out of him, or lied about to the giver: no wedding follows.
+    QuestFacts beaten = at("handed");
+    beaten.beaten = true;
+    CHECK_FALSE(wed_party(his, beaten));
+    QuestFacts lied = at("done");
+    lied.how = "lied";
+    CHECK_FALSE(wed_party(his, lied));
+    CHECK(plan_quest(hers, lied, {}).block.empty());
+    // The wedding reckoned: both say what stands, glad, open on a line for it, and lay the
+    // row for the whole story, with the plain words where none are written.
+    const QuestPlan him = plan_quest(his, wed, {});
+    CHECK(him.block.find("Since then, and over anything else you have been told of your "
+                         "situation: You went to her that same day") != std::string::npos);
+    CHECK(him.block.find("You are happy, plainly") != std::string::npos);
+    CHECK(him.greeting == "Henry! God keep you. You've heard? We're wed, man, wed, and it's your doing.");
+    CHECK_FALSE(him.closes);
+    REQUIRE(him.rows.size() == 1);
+    CHECK(him.rows[0].intent == "wed_more");
+    CHECK(him.rows[0].text == "Tell me how it went, then. All of it.");
+    CHECK(him.rows[0].reply.find("I walked to Bylany") != std::string::npos);
+    CHECK(him.rows[0].command.empty());
+    const QuestPlan her = plan_quest(hers, wed, {});
+    CHECK(her.block.find("situation: He came to you on his knees") != std::string::npos);
+    CHECK(her.block.find("You are happy, plainly") != std::string::npos);
+    CHECK(her.greeting.find("He told me everything. It was you.") != std::string::npos);
+    REQUIRE(her.rows.size() == 1);
+    CHECK(her.rows[0].intent == "wed_more");
+    CHECK(her.rows[0].reply.find("He came on foot") != std::string::npos);
+    // The written lines where there are some.
+    his.greet_wed_target = "Henry! Come here, man. You've seen her? On the bench, spinning?";
+    his.wed_more_target = "Tell me about Bylany, then.";
+    his.wed_more_target_reply = "I ran the last mile.";
+    hers.greet_wed = "Henry. Benesh said you'd come by.";
+    hers.wed_more = "How did he put it to you?";
+    hers.wed_more_reply = "On his knees, in the mud.";
+    const QuestPlan him_written = plan_quest(his, wed, {});
+    CHECK(him_written.greeting == his.greet_wed_target);
+    CHECK(him_written.rows[0].text == his.wed_more_target);
+    CHECK(him_written.rows[0].reply == his.wed_more_target_reply);
+    const QuestPlan her_written = plan_quest(hers, wed, {});
+    CHECK(her_written.greeting == hers.greet_wed);
+    CHECK(her_written.rows[0].text == hers.wed_more);
+    CHECK(her_written.rows[0].reply == hers.wed_more_reply);
+    // The giver told as well: the same on both sides.
+    CHECK(plan_quest(his, told, {}).greeting == his.greet_wed_target);
+    CHECK(plan_quest(hers, told, {}).rows.size() == 1);
+    // As an aside, when the visit turns on another errand: the road, then the line in full.
+    CHECK(quest_aside(his, road, {his}, {road}).find("on your way to Ellen this minute") != std::string::npos);
+    CHECK(quest_aside(hers, road, {hers}, {road}).find("Anthony has come to you today") != std::string::npos);
+    CHECK(quest_aside(his, told, {his}, {told}).find("You went to her that same day") != std::string::npos);
+    CHECK(quest_aside(hers, told, {hers}, {told}).find("He came to you on his knees") != std::string::npos);
     // The giver's side is as any beat's.
     CHECK(plan_quest(giver, at("handed"), {}).block.find("Since then") == std::string::npos);
     CHECK(quest_aside(giver, at("done"), {giver}, {at("done")}).find("dealt with Anthony") != std::string::npos);
-    // She is never the quest a visit turns on when she has another.
+    // Which favour the visit turns on: the wedding before anything, road or reckoned, on
+    // either side, even over an open favour of his own; she is never picked before it.
     const Quest axe = bartels_axe(QuestRole::Giver);
-    CHECK(pick_quest({hers, axe}, {at("handed"), QuestFacts{}}) == 1);
+    CHECK(pick_quest({axe, his}, {at("accepted"), road}) == 1);
+    CHECK(pick_quest({axe, his}, {at("accepted"), wed}) == 1);
+    CHECK(pick_quest({axe, his}, {at("done"), wed}) == 1);
+    CHECK(pick_quest({axe, hers}, {at("done"), road}) == 1);
+    CHECK(pick_quest({axe, hers}, {at("done"), wed}) == 1);
+    CHECK(pick_quest({hers, axe}, {at("accepted"), QuestFacts{}}) == 1);
+    CHECK(pick_quest({hers, axe}, {beaten, QuestFacts{}}) == 1);
 }
 
 TEST_CASE("a pray is asked with its place, and paid on Henry's word, true once knelt") {

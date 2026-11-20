@@ -639,10 +639,11 @@ TEST_CASE("the accepting row picked straight after the offer takes the errand") 
     CHECK_FALSE(f.game.menu().empty());
 }
 
-TEST_CASE("the chest taken up again, on the written row, closes the conversation like the first yes") {
-    // notes.md 14 Oct 2026 (In the Stocks): back at Benesh with Paul's refusal, Henry's yes
-    // to the chest names the house-girl and was followed by a list; the giver's answer is
-    // the last word, as it is on the first accept.
+TEST_CASE("the refusal told, on the written row, names the house-girl and closes the conversation like the first yes") {
+    // notes.md 14 Oct 2026 (In the Stocks): back at Benesh with Paul's refusal, Henry's row
+    // names the house-girl and was followed by a list; the giver's answer is the last
+    // word, as it is on the first accept. Since bugs.txt 20 Nov 2026 the row is Henry's
+    // telling of the refusal, answered with the giver's speech.
     Fixture f;
     f.session.set_persona_source(
         [](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
@@ -652,8 +653,7 @@ TEST_CASE("the chest taken up again, on the written row, closes the conversation
             quest.helper_name = "Elsbeth";
             quest.greet_rebuffed = "He would not hear of it? Then take it from his chest. Elsbeth keeps the house.";
             quest.greet_owed = "Any luck with Julian?";
-            quest.named_row = "Then his chest it is. Where do I find this Elsbeth?";
-            quest.named_reply = "Sweeping the step at Welvara's, any afternoon. Mind the master.";
+            quest.rebuffed_row = "He wouldn't hear a word of it. He showed me the door.";
             QuestFacts rebuffed;
             rebuffed.accepted = true;
             rebuffed.rebuffed = true;
@@ -667,8 +667,8 @@ TEST_CASE("the chest taken up again, on the written row, closes the conversation
     f.open(tailer);
     f.play_all(tailer);
     REQUIRE_FALSE(f.game.menu().empty());
-    CHECK(f.game.menu()[0] == "Then his chest it is. Where do I find this Elsbeth?");
-    f.game.picked(1, "accept_again", f.game.menu()[0]);
+    CHECK(f.game.menu()[0] == "He wouldn't hear a word of it. He showed me the door.");
+    f.game.picked(1, "report_rebuffed", f.game.menu()[0]);
     f.drain(tailer);
     f.play_all(tailer);
     REQUIRE(f.recorded.size() == 1);
@@ -3361,4 +3361,38 @@ TEST_CASE("the errand taken up on a yes the judge read leaves the dictation due,
     f.play_all(tailer);
     REQUIRE(f.game.menu().size() == 3);
     CHECK(f.offered.back().intent == "embellish:1");
+}
+
+TEST_CASE("a beat's holder on the road to his bride says his one line and the conversation closes on it, no rows") {
+    // bugs.txt 20 Nov 2026: Benesh, persuaded, kept answering as before; he should say "I have
+    // to get to Ellen!" and refuse to engage more until he is back in town with her.
+    Fixture f(false);
+    f.session.set_persona_source(
+        [](std::string_view, const Approach& approach, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+            Quest quest = bartels_axe();
+            quest.kind = "beat";
+            quest.role = QuestRole::Target;
+            quest.target_soul = kBartel;
+            quest.target_name = "Bartel";
+            quest.wed_soul = "kbyl_woman_17";
+            quest.wed_name = "Ellen";
+            QuestFacts facts;
+            facts.accepted = true;
+            facts.handed = true;
+            Persona persona{"Bartel", "You are Bartel, a varlet in Kuttenberg.", ""};
+            persona.quest_of = quest;
+            persona.quest = plan_quest(quest, facts, approach);
+            persona.greeting = persona.quest.greeting;
+            return persona;
+        });
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.open(tailer);
+    f.play_all(tailer);
+    REQUIRE_FALSE(f.session.history().empty());
+    CHECK(f.session.history()[0].content == "Not now, Henry! I have to get to Ellen!");
+    CHECK(f.said("the opening line is the whole of this visit, so the conversation closes on it"));
+    CHECK(f.game.directives().back() == "@end");
+    CHECK_FALSE(f.game.has_turn(f.session.played() + 1));
+    CHECK(f.offered.empty());
 }

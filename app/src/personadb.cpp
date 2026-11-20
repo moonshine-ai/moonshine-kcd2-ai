@@ -138,6 +138,7 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 if (facts.refused) f.refused = true;
                 if (facts.seen) f.seen = true;
                 if (facts.gone) f.gone = true;
+                if (facts.wed) f.wed = true;
                 if (facts.beaten) f.beaten = true;
                 if (facts.dead) f.dead = true;
                 if (facts.prayed) f.prayed = true;
@@ -1005,8 +1006,11 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'told_reply_caught', "
                 "'told_cursed', 'told_mocked', 'told_reply_cursed', 'told_reply_mocked', "
                 "'told_denounced', 'told_reply_denounced', "
-                "'unyielding', 'helper_name', 'greet_rebuffed', 'named_row', 'named_reply', 'give_up_reply', "
-                "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name') "
+                "'unyielding', 'helper_name', 'greet_rebuffed', 'greet_rebuffed_ask', 'rebuffed_row', 'named_row', "
+                "'named_reply', 'give_up_reply', "
+                "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name', "
+                "'greet_gone_target', 'greet_wed_target', 'greet_wed', 'wed_more_target', 'wed_more_target_reply', "
+                "'wed_more', 'wed_more_reply') "
                 "OR (quest_id = ? AND (field LIKE 'since%' OR field LIKE 'dictate%' OR field LIKE 'fast\\_travel%' ESCAPE '\\' "
                 "OR field LIKE 'write\\_%' ESCAPE '\\' "
                 "OR field LIKE 'reconsider\\_%' ESCAPE '\\' OR field LIKE 'soften\\_%' ESCAPE '\\' "
@@ -1020,7 +1024,8 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
             static constexpr char kPartyLines[] =
                 "SELECT field, text FROM npc_quest_lines WHERE quest_id = ? "
                 "AND (field IN ('onward_soul', 'onward_name', 'unyielding', 'seen_with_name', 'item_of', "
-                "'wed_soul', 'wed_name') "
+                "'wed_soul', 'wed_name', 'greet_gone_target', 'greet_wed_target', 'greet_wed', "
+                "'wed_more_target', 'wed_more_target_reply', 'wed_more', 'wed_more_reply') "
                 "OR field LIKE 'since%')";
             if (sqlite3_prepare_v2(db_, giver ? kLines : kPartyLines, -1, &row, nullptr) != SQLITE_OK) break;
             // As a string_view in so many words: passed a std::string, the unqualified call
@@ -1115,6 +1120,8 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "seen_with_name") quest.seen_with_name = text_at(row, 1);
                 else if (field == "item_of") quest.item_of = text_at(row, 1);
                 else if (field == "greet_rebuffed") quest.greet_rebuffed = text_at(row, 1);
+                else if (field == "greet_rebuffed_ask") quest.greet_rebuffed_ask = text_at(row, 1);
+                else if (field == "rebuffed_row") quest.rebuffed_row = text_at(row, 1);
                 else if (field == "named_row") quest.named_row = text_at(row, 1);
                 else if (field == "named_reply") quest.named_reply = text_at(row, 1);
                 else if (field == "give_up_reply") quest.give_up_reply = text_at(row, 1);
@@ -1148,6 +1155,13 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                     }
                 }
                 else if (field == "wed_soul") quest.wed_soul = text_at(row, 1);
+                else if (field == "greet_gone_target") quest.greet_gone_target = text_at(row, 1);
+                else if (field == "greet_wed_target") quest.greet_wed_target = text_at(row, 1);
+                else if (field == "greet_wed") quest.greet_wed = text_at(row, 1);
+                else if (field == "wed_more_target") quest.wed_more_target = text_at(row, 1);
+                else if (field == "wed_more_target_reply") quest.wed_more_target_reply = text_at(row, 1);
+                else if (field == "wed_more") quest.wed_more = text_at(row, 1);
+                else if (field == "wed_more_reply") quest.wed_more_reply = text_at(row, 1);
                 else if (field == "wed_name") quest.wed_name = text_at(row, 1);
                 else if (field.compare(0, 5, "since") == 0) {
                     // since / since_<how> are the giver's; since_target / since_target_<how>

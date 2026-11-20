@@ -459,6 +459,12 @@ void Session::open(std::string_view soul, const Approach& approach,
             // Before the greeting goes out, so the list under it is the adopted plan's.
             adopt(std::move(ending));
         }
+        // A line that is the whole visit (QuestPlan::closes; a beat's holder hurrying to
+        // his bride, bugs.txt 20 Nov 2026): the conversation closes on it, no rows.
+        if (persona_.quest.closes) {
+            closing_ = true;
+            status("the opening line is the whole of this visit, so the conversation closes on it");
+        }
         greet();
         if (leads_on && !drew_.empty()) drew_.back().item_id = "quest:" + persona_.quest_of.id;
         return;

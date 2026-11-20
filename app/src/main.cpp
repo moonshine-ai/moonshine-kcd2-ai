@@ -633,6 +633,8 @@ Args parse(int argc, char** argv, bool* stop) {
                 else if (state == "seen") args.facts.seen = args.facts.accepted = true;
                 // A seek's: the family gone from the place the morning after the hand-in.
                 else if (state == "gone") args.facts.gone = args.facts.seen = args.facts.done = args.facts.accepted = true;
+                // A beat's wedding reckoned (the mod's M): the handover some hours behind.
+                else if (state == "wed") args.facts.wed = args.facts.handed = args.facts.accepted = true;
                 // A beat's, a pray's and a mind's: the man down, the prayer said, the man
                 // dead, one visit made (checked, once per visit).
                 else if (state == "beaten") args.facts.beaten = args.facts.accepted = true;
@@ -2510,6 +2512,15 @@ int main(int argc, char** argv) try {
                 std::cout << "greet_settle_unasked: " << quest.greet_settle_unasked << "\n";
             }
             if (!quest.greet_rebuffed.empty()) std::cout << "greet_rebuffed: " << quest.greet_rebuffed << "\n";
+            if (!quest.greet_rebuffed_ask.empty()) std::cout << "greet_rebuffed_ask: " << quest.greet_rebuffed_ask << "\n";
+            if (!quest.rebuffed_row.empty()) std::cout << "rebuffed_row: " << quest.rebuffed_row << "\n";
+            if (!quest.greet_gone_target.empty()) std::cout << "greet_gone_target: " << quest.greet_gone_target << "\n";
+            if (!quest.greet_wed_target.empty()) std::cout << "greet_wed_target: " << quest.greet_wed_target << "\n";
+            if (!quest.greet_wed.empty()) std::cout << "greet_wed: " << quest.greet_wed << "\n";
+            if (!quest.wed_more_target.empty()) std::cout << "wed_more_target: " << quest.wed_more_target << "\n";
+            if (!quest.wed_more_target_reply.empty()) std::cout << "wed_more_target_reply: " << quest.wed_more_target_reply << "\n";
+            if (!quest.wed_more.empty()) std::cout << "wed_more: " << quest.wed_more << "\n";
+            if (!quest.wed_more_reply.empty()) std::cout << "wed_more_reply: " << quest.wed_more_reply << "\n";
             if (!quest.named_row.empty()) std::cout << "named_row: " << quest.named_row << "\n";
             if (!quest.named_reply.empty()) std::cout << "named_reply: " << quest.named_reply << "\n";
             if (!quest.give_up_reply.empty()) std::cout << "give_up_reply: " << quest.give_up_reply << "\n";
