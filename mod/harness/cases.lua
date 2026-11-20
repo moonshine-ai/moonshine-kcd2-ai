@@ -2406,6 +2406,43 @@ case("App: a heartbeat and a first line in time is a conversation like any other
     check(not M.appDown and not E.find("BRIDGE app down"), "no complaint")
 end)
 
+-- The stuck-graph exit waits on a line being read or voiced (Father Adam's lead, two lines
+-- before the first beat, was cut at fifteen seconds as stuck; bugs.txt 20 Nov 2026), and
+-- counts from the last line played, not the opening.
+case("Pump: a session that has not beaten is not stuck while a line is on screen or the menu is held for its voice", function(E, M, check)
+    E.appUp = true
+    opened(E, M, 2)
+    M.beats = 0
+    M.appChecked = true
+    M.active = true
+    -- A first line came (the app is answering); the graph has not beaten on it.
+    M.turnAtOpen = M.turn - 1
+    local wasOpen = E.dialog.open
+    E.dialog.open = true
+    -- Long past the limit from the opening, with a line on screen: not stuck.
+    M.ticks = M.openedAt + M.stuckTicks + 10
+    M.playedAt = M.openedAt + 1
+    M.hold = M.ticks + 5
+    M.Step()
+    check(not E.find("graph is stuck"), "a line still being read is not a graph resting")
+    -- The line read, the menu held for its voice: not stuck.
+    M.hold = 0
+    M.menuHeld = true
+    M.Step()
+    check(not E.find("graph is stuck"), "nor is the voice still speaking")
+    -- Released, but a line was played within the limit: not stuck.
+    M.menuHeld = false
+    M.playedAt = M.ticks - M.stuckTicks
+    M.Step()
+    check(not E.find("graph is stuck"), "counted from the last line played")
+    -- Nothing played for longer than the limit: stuck, and the player let out.
+    M.playedAt = M.ticks - M.stuckTicks - 1
+    M.Step()
+    check(E.find("BRIDGE open but never beat, the graph is stuck"), "then it is stuck")
+    check(E.find("BRIDGE left, graph never beat"), "and the session left")
+    E.dialog.open = wasOpen
+end)
+
 -- The rows behind a line are taken in the tick the line is, not one a tick: four files
 -- waiting is four rows on the menu now, and a line behind them is left for its own tick.
 case("Pump: the rows already written behind a line land in the same tick", function(E, M, check)
@@ -3922,13 +3959,25 @@ case("Wed: the handover is clocked, and the wed soul is put in her new clothes o
     M.WatchArm("world")
     E.advance(2100)
     check(#ellen.presets == 0, "not dressed on the day of the handover")
+    -- The dump's letter M says the wedding is reckoned (bugs.txt 20 Nov 2026: the app plans
+    -- the two of them by it, Benesh hurrying to her before, the pair of them glad after);
+    -- not yet, and never without the quest's id to find the hours by.
+    check(M.WedReckoned(id, f) == false and string.find(M.QuestFlagLetters(f, id), "M", 1, true) == nil,
+        "no M on the day of the handover")
     -- Nineteen hours on: still as she was. Twenty: the dress and veil.
     E.worldBase = E.worldBase + 19 * 3600
     E.advance(2100)
     check(#ellen.presets == 0, "nor at nineteen hours")
+    check(string.find(M.QuestFlagLetters(f, id), "M", 1, true) == nil, "no M at nineteen hours")
     E.worldBase = E.worldBase + 3600
     E.advance(2100)
     check(#ellen.presets == 1 and ellen.presets[1] == q.wedDress, "the preset put on her at twenty")
+    check(M.WedReckoned(id, f) == true and string.find(M.QuestFlagLetters(f, id), "M", 1, true) ~= nil, "and the letter M")
+    check(string.find(M.QuestFlagLetters(f), "M", 1, true) == nil, "none from a call without the id")
+    -- The dump carries it after the stage letter.
+    M.Dump(q.wedSoul)
+    local line = E.find("BRIDGE state npc=" .. q.wedSoul)
+    check(line and string.find(line, id .. ":hM", 1, true) ~= nil, "the dump's stage letter and M: " .. tostring(line))
     check(E.find("BRIDGE quest " .. id .. " wed: " .. q.wedSoul .. " dressed in " .. q.wedDress .. " -> true"), "said so")
     E.advance(6100)
     check(#ellen.presets == 1, "once only")
@@ -5440,6 +5489,38 @@ case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first,
     M.Voice("male", "Go.", "kkut_man_2")
     check(M.lipKey == M.LipKey("henry", "Never mind.") and #M.lipQueue == 1, "the new row's lines armed and queued, the old dropped")
     check(E.find("BRIDGE lip stopped -- next row") or true, "the drop logged when a clip was on")
+end)
+
+case("Mouth: the next queued line's first cue ends the line before it when its stop was never seen", function(E, M, check)
+    -- The debate with Benesh (bugs.txt 20 Nov 2026): Henry's line and Benesh's reply queued
+    -- together, Henry's stop cue taken away by the app as Benesh's first cue went, inside
+    -- the poll; the mod polled a minute for it, with Henry's words on the caption and
+    -- Benesh's voice heard over a still mouth. The first cue of the line behind is the end
+    -- of the line in front.
+    local benesh = E.soul("kkut_additive_man_17", { pos = { x = 2, y = 0, z = 0 } })
+    local mine = "Father Dominic sent me. We need to talk about Bald Ellen."
+    local his = "How dare you speak of my mother! She was a saint."
+    M.LipStop("test"); M.lipKey = nil; M.lipQueue = {}
+    M.Voice("henry", mine)
+    M.Voice("male", his, "kkut_additive_man_17")
+    check(M.lipKey == M.LipKey("henry", mine) and #M.lipQueue == 1, "Henry's armed, Benesh's queued")
+    lipCue(E, M, "henry", mine, 1, "lip henry 1\nplay tmck_dial_a 1.00 2.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(#player.anims == 1, "Henry's clip on him")
+    -- No stop for Henry's; Benesh's first cue appears instead.
+    local mark = E.mark and E.mark() or nil
+    lipCue(E, M, "male", his, 1, "lip male 1\nplay sbar_dial_a 1.00 3.00\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipKey == M.LipKey("male", his) and M.lipWho == "male" and #M.lipQueue == 0,
+        "Benesh's line armed in Henry's place")
+    check(E.find("BRIDGE lip henry over: the next line's first cue is in", mark), "and the reason said")
+    check(E.find("BRIDGE lip stopped -- next line begun", mark), "Henry's mouth stopped")
+    E.advance(M.lipPollMillis + 10)
+    check(#benesh.anims == 1 and benesh.anims[1].clip == "sbar_dial_a", "Benesh's clip found on the first poll of his")
+    lipCue(E, M, "male", his, 2, "stop\n")
+    E.advance(M.lipPollMillis + 10)
+    check(M.lipKey == nil and #M.lipQueue == 0, "and his stop ends it")
+    M.voicedTalk = false
 end)
 
 case("Mouth: the skip button in the game's own voiced Talk drops the line being heard and arms the next", function(E, M, check)

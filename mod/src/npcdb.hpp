@@ -426,6 +426,10 @@ struct Quest {
     std::string giver_fought_reply;   // giver: to the man having been knocked down
     std::string giver_dead_reply;     // giver: to the death (a mind's too)
     std::string log_beaten;
+    // The man talked round at his menu instead (the handover port): the objective's
+    // Completed line with the marker back on the giver (emit.cpp yielded_log has the plain
+    // word when this is unwritten).
+    std::string log_yielded;
     std::string log_completed_fought;
     std::string log_completed_dead;   // a beat's or a mind's: the target died first
     // A pray (kind "pray"): kneel at one of the town's praying spots for the giver. No item

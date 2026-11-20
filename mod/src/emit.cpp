@@ -732,6 +732,15 @@ std::string handed_log(const Quest& quest) {
            quest.giver_name + ".";
 }
 
+// A beat's man talked round (the holder menu's handover port: persuaded, threatened or
+// paid), the journal's Updated line with the marker back on the giver; the written
+// `log_yielded` where there is one, else the plain word.
+std::string yielded_log(const Quest& quest) {
+    if (!quest.log_yielded.empty()) return quest.log_yielded;
+    return quest.target_name + " gave way without a blow and agreed to make it right. " + quest.giver_name +
+           " should hear of it.";
+}
+
 // The opening of every menu of ours the player starts (the holder's, the onward
 // receiver's, the helper's, the held loop's): no shipped greeting or farewell around it.
 const char* const kMenuDialogue =
@@ -1092,6 +1101,22 @@ std::string self_node(const std::string& quest_id, const SelfLine& line) {
 
 double self_seconds(const std::string& text) {
     return std::max(kSelfMinSeconds, static_cast<double>(text.size()) / kCaptionSpeakRate);
+}
+
+double talk_seconds(const std::string& text) {
+    return std::max(kTalkMinSeconds, kTalkLeadSeconds + static_cast<double>(text.size()) / kTalkSpeakRate);
+}
+
+// A voiced Talk's line as the engine plays it: the words (the caption's, under the app's
+// voice), the camera on the speaker, and the hold the voice needs (talk_seconds; emit.hpp
+// kTalkSpeakRate).
+std::string talk_response(int depth, const std::string& who, const std::string& string_name,
+                          const std::string& words) {
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    return t(depth) + "<Response Role=\"" + who + "\" ReferenceLength=\"" + trim_number(talk_seconds(words)) +
+           "\">\r\n" + t(depth + 1) + "<Text StringName=\"" + string_name + "\" Text=\"" + xml_escape(words) +
+           "\" />\r\n" + t(depth + 1) + "<Commands><CameraCommand Role=\"" + who +
+           "\" CameraType=\"CloseUp\" /></Commands>\r\n" + t(depth) + "</Response>\r\n";
 }
 
 std::string clue_class(const Quest& quest, std::size_t index) {
@@ -2054,6 +2079,15 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (beaten) {
         s += t(5) + "<Edge From=\"beaten.OnUnconscious\" To=\"SetBeaten\" />\r\n";
     }
+    // A beat's other moment: the man talked round at his menu (the handover port, whichever
+    // of persuade, threaten or pay won it), and the objective says so (Completed,
+    // log_yielded) with the marker back on the giver. Until 20 Nov 2026 only the knock-down
+    // moved the objective, so Benesh persuaded kept his marker and "Persuade Benesh" stood
+    // in the book while he walked to Bylany (bugs.txt 20 Nov 2026).
+    const bool yielded = beaten && holder;
+    if (yielded) {
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetYielded\" />\r\n";
+    }
     // A pray's: the token the Lua makes when Henry has knelt (Updated, log_prayed).
     const bool prayed = pray && !quest.log_prayed.empty();
     // A leave's or a return's: the token the Lua makes when the thing is put down (Updated,
@@ -2212,6 +2246,8 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (!return_from.empty()) {
         s += t(4) + "<State Name=\"returnState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
         s += t(5) + "<Edge From=\"" + return_from + "\" To=\"SetActive\" />\r\n";
+        // A beat's man talked round sends Henry back as the knock-down does.
+        if (yielded) s += t(5) + "<Edge From=\"holder.handover\" To=\"SetActive\" />\r\n";
         // The thing out of the chest is another way to have it (the taken trigger writes
         // the first objective's Handed line, above), so the return opens from it too: until
         // 18 Nov 2026 only the holder's handover did, and a player who picked the lock had
@@ -3291,6 +3327,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     const char* const mid = return_from.empty() ? "Updated" : "Completed";
     if (seen) s += state("Seen", mid);
     if (beaten) s += state("Beaten", mid);
+    if (yielded) s += state("Yielded", mid);
     if (prayed) s += state("Prayed", mid);
     if (left) s += state("Left", mid);
     if (found) s += state("Found", mid);
@@ -3424,6 +3461,12 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(6) + mid_log("Beaten");
         s += t(7) + "<Log StringName=\"" + key("log_beaten") + "\" Text=\"" +
              xml_escape(quest.log_beaten) + "\" />\r\n";
+        s += t(6) + "</EnumLog>\r\n";
+    }
+    if (yielded) {
+        s += t(6) + mid_log("Yielded");
+        s += t(7) + "<Log StringName=\"" + key("log_yielded") + "\" Text=\"" +
+             xml_escape(yielded_log(quest)) + "\" />\r\n";
         s += t(6) + "</EnumLog>\r\n";
     }
     if (prayed) {
@@ -4149,6 +4192,7 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
     }
     if (quest.is_beat() && !quest.log_beaten.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_beaten"), quest.log_beaten);
+        if (quest.has_holder()) rows.emplace_back(quest_key(modid, quest.id, "log_yielded"), yielded_log(quest));
     }
     if (quest.is_pray() && !quest.log_prayed.empty()) {
         rows.emplace_back(quest_key(modid, quest.id, "log_prayed"), quest.log_prayed);
@@ -4294,11 +4338,7 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     // 5 Oct 2026, Father Nicholas), so each line is framed on whoever says it, as the
     // held conversation's beats are.
     auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
-        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
-               t(depth + 1) + "<Text StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
-               "\" />\r\n" +
-               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
-               t(depth) + "</Response>\r\n";
+        return talk_response(depth, who, key(field), words);
     };
     auto prompt = [&](int depth, const char* field, const std::string& words) {
         return t(depth) + "<UiPrompt StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
@@ -5260,12 +5300,7 @@ std::string emit_followed_dialogue(const std::string& modid, const Quest& raw) {
     const std::string role = xml_escape(holder_role(quest.id));
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
     auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
-        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
-               t(depth + 1) + "<Text StringName=\"" +
-               xml_escape(quest_key(modid, quest.id, std::string("holder_") + field)) + "\" Text=\"" +
-               xml_escape(words) + "\" />\r\n" +
-               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
-               t(depth) + "</Response>\r\n";
+        return talk_response(depth, who, xml_escape(quest_key(modid, quest.id, std::string("holder_") + field)), words);
     };
     const std::string seen_var = xml_escape(quest_flag_variable(modid, quest.id, "seen"));
     const std::string followed_var = xml_escape(quest_flag_variable(modid, quest.id, "followed"));
@@ -5494,11 +5529,7 @@ std::string emit_onward_dialogue(const std::string& modid, const Quest& raw) {
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
     // Framed on the speaker, as the holder's lines are (the camera is authored per response).
     auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
-        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
-               t(depth + 1) + "<Text StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
-               "\" />\r\n" +
-               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
-               t(depth) + "</Response>\r\n";
+        return talk_response(depth, who, key(field), words);
     };
     std::string s = skald_header(modid);
     s += t(2) + "<FaderDialog Name=\"" + node + "\">\r\n";
@@ -5575,11 +5606,7 @@ std::string emit_helper_dialogue(const std::string& modid, const Quest& raw) {
     };
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
     auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
-        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
-               t(depth + 1) + "<Text StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
-               "\" />\r\n" +
-               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
-               t(depth) + "</Response>\r\n";
+        return talk_response(depth, who, key(field), words);
     };
     auto prompt = [&](int depth, const char* field, const std::string& words) {
         return t(depth) + "<UiPrompt StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
@@ -5763,11 +5790,7 @@ std::string emit_counsel_dialogue(const std::string& modid, const Quest& raw) {
     };
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
     auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
-        return t(depth) + "<Response Role=\"" + who + "\">\r\n" +
-               t(depth + 1) + "<Text StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
-               "\" />\r\n" +
-               t(depth + 1) + "<Commands><CameraCommand Role=\"" + who + "\" CameraType=\"CloseUp\" /></Commands>\r\n" +
-               t(depth) + "</Response>\r\n";
+        return talk_response(depth, who, key(field), words);
     };
     auto prompt = [&](int depth, const char* field, const std::string& words) {
         return t(depth) + "<UiPrompt StringName=\"" + key(field) + "\" Text=\"" + xml_escape(words) +
@@ -7598,7 +7621,7 @@ std::string state_lua(const std::string& g) {
     s += "\tif wrote ~= nil then facts.accepted = true; facts.wrote = wrote end\n";
     s += "\t" + g + ".Log(\"BRIDGE state quest \" .. tostring(id) .. \" \" .. tostring(command) ..\n";
     s += "\t\t\" accepted=\" .. tostring(facts.accepted == true) .. \" handed=\" .. tostring(facts.handed == true) ..\n";
-    s += "\t\t\" done=\" .. tostring(facts.done == true) .. \" flags=\" .. " + g + ".QuestFlagLetters(facts))\n";
+    s += "\t\t\" done=\" .. tostring(facts.done == true) .. \" flags=\" .. " + g + ".QuestFlagLetters(facts, id))\n";
     s += "\tpcall(" + g + ".QuestFlags)\n";
     s += "end\n";
     s += "\n";
@@ -7614,11 +7637,15 @@ std::string state_lua(const std::string& g) {
     // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
     // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
     // place (the morning after the hand-in, fetched home); j, the chest's paper is in
-    // Henry's pocket; one z per clue-holder a seek's
+    // Henry's pocket; M, the wedding that follows a handover is reckoned to have happened
+    // (WedReckoned); one z per clue-holder a seek's
     // Henry has asked; W followed by three
     // digits, a dictated letter is written, each digit a part's outcome (0 as said, 1 left
     // out, 2 softened, 3 made larger), last so the digits run to the end of the letters.
-    s += "function " + g + ".QuestFlagLetters(facts)\n";
+    // `id` is the quest's, for the letters that turn on the quest's own table and the clock
+    // rather than the store alone (M, the wedding reckoned: WedReckoned); the log's call and
+    // the dump's pass it, a call without it writes none of those.
+    s += "function " + g + ".QuestFlagLetters(facts, id)\n";
     s += "\treturn (facts.broker and \"b\" or \"\") .. (facts.apologised and \"p\" or \"\") .. (facts.refused and \"r\" or \"\")\n";
     s += "\t\t.. (facts.seen and \"s\" or \"\") .. (facts.beaten and \"k\" or \"\") .. (facts.dead and \"x\" or \"\")\n";
     s += "\t\t.. (facts.prayed and \"y\" or \"\") .. (facts.left and \"l\" or \"\") .. (facts.heard and \"h\" or \"\")\n";
@@ -7632,8 +7659,23 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
     s += "\t\t.. (facts.paper and \"j\" or \"\")\n";
     s += "\t\t.. (facts.scared and \"S\" or \"\") .. (facts.counselled and \"C\" or \"\")\n";
+    s += "\t\t.. (" + g + ".WedReckoned(id, facts) and \"M\" or \"\")\n";
     s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
+    s += "end\n";
+    s += "\n";
+    // Whether a quest's wedding is reckoned to have happened: kWedHours of the calendar
+    // after the holder's handover (the graph's wedTimer, WatchWed's clock), on a quest
+    // with a wed soul. Before it the two are on the road (he gone to her; the gone tag),
+    // after it they are man and wife in town; the app reads the letter M for the second
+    // and plans both of them by it (bugs.txt 20 Nov 2026).
+    s += "function " + g + ".WedReckoned(id, facts)\n";
+    s += "\tif id == nil or type(facts) ~= \"table\" then return false end\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tif q == nil or q.wedHours == nil or not facts.handed or facts.handedAt == nil then return false end\n";
+    s += "\tlocal now = " + g + ".WorldTime()\n";
+    s += "\tif type(now) ~= \"number\" then return false end\n";
+    s += "\treturn now - facts.handedAt >= q.wedHours * 3600\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".CountKeys(t)\n";
@@ -7952,7 +7994,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif type(qid) == \"string\" and type(f) == \"table\" then\n";
     s += "\t\t\tlocal stage = (f.done and \"d\") or (f.handed and \"h\") or (f.accepted and \"a\") or nil\n";
     s += "\t\t\tif stage ~= nil then\n";
-    s += "\t\t\t\tall = all .. (all == \"\" and \" quests=\" or \",\") .. qid .. \":\" .. stage .. " + g + ".QuestFlagLetters(f)\n";
+    s += "\t\t\t\tall = all .. (all == \"\" and \" quests=\" or \",\") .. qid .. \":\" .. stage .. " + g + ".QuestFlagLetters(f, qid)\n";
     s += "\t\t\t\t\t.. (f.how ~= nil and (\"/\" .. tostring(f.how)) or \"\")\n";
     s += "\t\t\t\t\t.. ((type(f.acceptedAt) == \"number\" and type(now) == \"number\")\n";
     s += "\t\t\t\t\t\tand string.format(\"~%.1f\", math.max(0, now - f.acceptedAt) / 3600) or \"\")\n";
@@ -9110,11 +9152,12 @@ std::string emit_conversation_lua(const std::string& modid,
             // A clothing preset put on the holder once a session (WatchDress).
             s += ", dress = \"" + lua_escape(q.dress_target) + "\"";
         }
-        if (q.has_wed() && !q.dress_wed.empty()) {
-            // The one he goes to live with, dressed for town once the wedding is reckoned
-            // (WatchWed: kWedHours of the calendar after the handover, the graph's wedTimer).
-            s += ", wedSoul = \"" + lua_escape(q.wed_soul) + "\", wedDress = \"" + lua_escape(q.dress_wed) +
-                 "\", wedHours = " + std::to_string(kWedHours);
+        if (q.has_wed()) {
+            // The one he goes to live with, and when the wedding is reckoned (WedReckoned:
+            // kWedHours of the calendar after the handover, the graph's wedTimer); dressed
+            // for town from then on where a preset is written (WatchWed).
+            s += ", wedSoul = \"" + lua_escape(q.wed_soul) + "\", wedHours = " + std::to_string(kWedHours);
+            if (!q.dress_wed.empty()) s += ", wedDress = \"" + lua_escape(q.dress_wed) + "\"";
         }
         if (run_heads.count(q.id)) {
             // The giver's marker gate (WatchGiver; emit.hpp giver_closed_class): the two
@@ -9475,6 +9518,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- because a graph resting where it will not move leaves the player no way out\n";
     s += "-- at all, movement being the thing a focused dialogue takes away first.\n";
     s += g + ".stuckTicks = 37\n";
+    s += "-- The pump tick the last line reached the screen on (Played), from which the stuck\n";
+    s += "-- count runs when it is later than the opening.\n";
+    s += g + ".playedAt = 0\n";
     s += "-- The app's heartbeat: it writes alive_<bucket>.txt beside the turn files, the bucket\n";
     s += "-- being the Unix time in whole aliveBucket seconds, and takes the old ones away. A\n";
     s += "-- name per bucket because the engine caches a path once read, so one file rewritten\n";
@@ -11566,6 +11612,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // the same moment it was decided rather than something to be waited for: the
     // words no longer travel through the dialogue, so there is no request left to go
     // unheard.
+    s += "\t" + g + ".playedAt = " + g + ".ticks\n";
     s += "\t" + g + ".Log(\"BRIDGE played turn=\" .. turn .. \" -- \" .. piece ..\n";
     s += "\t\t(" + g + ".more and \" ...\" or (" + g + ".beat and \" (beat)\" or \"\")))\n";
     // The first line's lateness, in the engine's clock, beside the time the pump has
@@ -11789,8 +11836,15 @@ std::string emit_conversation_lua(const std::string& modid,
     //
     // A beat is a few seconds, so nothing at all after this long is not slowness. The
     // way out has to come from here, since every other exit waits on a beat.
-    s += "\tif " + g + ".beats == 0 and " + g + ".InDialog() and\n";
-    s += "\t\t\t" + g + ".ticks - " + g + ".openedAt > " + g + ".stuckTicks then\n";
+    //
+    // Not while a line is on screen or the menu is held for its voice, and counted from the
+    // last line played: Father Adam's lead (bugs.txt 20 Nov 2026) said its two lines before
+    // the first beat -- the greeting and a 423-character offer, forty seconds of voice --
+    // and was cut at fifteen as stuck, the player dropped to the autosave's black screen
+    // with no menu. A line being read or spoken is the graph moving, not resting.
+    s += "\tif " + g + ".beats == 0 and " + g + ".InDialog() and not " + g + ".menuHeld and\n";
+    s += "\t\t\t" + g + ".ticks >= " + g + ".hold and\n";
+    s += "\t\t\t" + g + ".ticks - math.max(" + g + ".openedAt, " + g + ".playedAt) > " + g + ".stuckTicks then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE open but never beat, the graph is stuck\")\n";
     s += "\t\t" + g + ".Leave(\"graph never beat\")\n";
     s += "\t\treturn\n";
@@ -12831,6 +12885,29 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal seq = " + g + ".lipSeq\n";
     s += "\t\t\t" + g + ".lipSeq = seq + 1\n";
     s += "\t\t\t" + g + ".LipApply(got, seq)\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    // No cue of this line's; but the first cue of the line queued behind it is in, so this
+    // one is over: the app speaks the queue in order, and its stop cue can be gone before
+    // it is seen (the app took a finished line's files away as the next line's first cue
+    // went, a few milliseconds after the stop, inside the poll; bugs.txt 20 Nov 2026, the
+    // mouth and caption a line behind the voice through the debate with Benesh, and the
+    // menu a minute late). The line is let go as the stop would let it go, and the next
+    // armed, which finds its cue on the first poll.
+    s += "\tlocal q = " + g + ".lipQueue\n";
+    s += "\tif #q == 0 then return end\n";
+    s += "\tlocal nextKey = " + g + ".LipKey(q[1].who, q[1].text)\n";
+    s += "\tif nextKey == key then return end\n";
+    s += "\tlocal first = string.format(\"lip_%.0f_1.txt\", nextKey)\n";
+    s += "\tfor i = 1, #patterns do\n";
+    s += "\t\tlocal path = (string.gsub(patterns[i], \"turn_#%.txt\", first))\n";
+    s += "\t\tlocal ok, got = pcall(function() return System.LoadTextFile(path) end)\n";
+    s += "\t\tif ok and type(got) == \"string\" and got ~= \"\" then\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE lip %s over: the next line's first cue is in (no %s seen)\", tostring(" + g + ".lipWho), name))\n";
+    s += "\t\t\t" + g + ".LipStop(\"next line begun\")\n";
+    s += "\t\t\t" + g + ".lipKey = nil\n";
+    s += "\t\t\t" + g + ".LipNext()\n";
     s += "\t\t\treturn\n";
     s += "\t\tend\n";
     s += "\tend\n";
@@ -14671,8 +14748,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "function " + g + ".WatchWed(id, q, pp)\n";
     s += "\tif " + g + ".wedDressed[id] ~= nil then return end\n";
     s += "\tlocal f = (" + g + ".state.quests or {})[id]\n";
-    s += "\tif type(f) ~= \"table\" or not f.handed or f.handedAt == nil then return end\n";
-    s += "\tif " + g + ".WorldTime() - f.handedAt < (q.wedHours or 0) * 3600 then return end\n";
+    s += "\tif not " + g + ".WedReckoned(id, f) then return end\n";
     s += "\tlocal e = nil\n";
     s += "\tpcall(function() e = System.GetEntityByName(q.wedSoul) end)\n";
     s += "\tif e == nil or e.actor == nil or e.actor.EquipClothingPreset == nil then return end\n";

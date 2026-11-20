@@ -298,6 +298,21 @@ constexpr double kSelfMinSeconds = 1.5;
 // to the graph and the bark's own start and end (measured 0.1 to 0.2 s over the length).
 constexpr double kSelfSlackSeconds = 0.5;
 double self_seconds(const std::string& text);
+// How long the engine holds a line of a voiced Talk of the game's own (a holder's, a
+// counsel's, a helper's, a receiver's: voiced_sequences): the Response's ReferenceLength,
+// which the lines carried none of until 20 Nov 2026, so the engine reckoned each from its
+// text by a rule of its own, slower than the voice -- Brother Thomas's 300-character parts
+// were spoken in 21 s and the menu came back some seconds after (bugs.txt 20 Nov 2026). The
+// app's voice speaks kTalkSpeakRate characters a second (measured 14.0 on four of his
+// lines and four of Thomas's), and the line's audio begins kTalkLeadSeconds after the
+// marker (the voice is made as it is asked for); the hold is the two together, never
+// under kTalkMinSeconds. A hold a little over the voice leaves the menu a moment behind
+// the last word; one under it would draw the menu over a line still being spoken, and a
+// row picked then flushes the mouth queue ("next row").
+constexpr double kTalkSpeakRate = 14.0;
+constexpr double kTalkLeadSeconds = 1.0;
+constexpr double kTalkMinSeconds = 1.5;
+double talk_seconds(const std::string& text);
 
 // The other two lines the mod says outside a conversation, as head bubbles (chat 16 Nov
 // 2026: "Please do switch those to head bubbles"): a holder's `followed` row said in the

@@ -590,6 +590,7 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "fought_reply") return &q.giver_fought_reply;
         if (field == "dead_reply") return &q.giver_dead_reply;
         if (field == "log_beaten") return &q.log_beaten;
+        if (field == "log_yielded") return &q.log_yielded;
         if (field == "log_completed_fought") return &q.log_completed_fought;
         if (field == "log_completed_dead") return &q.log_completed_dead;
         if (field == "spot_pos") return &q.spot_pos;
