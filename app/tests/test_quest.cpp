@@ -1726,6 +1726,42 @@ TEST_CASE("a beat asks for amends, and is paid on Henry's word: agreed, fought, 
     CHECK(quest_aside(anthony, beaten, {anthony}, {beaten}).find("beat you") != std::string::npos);
 }
 
+TEST_CASE("a beat's holder wed to the one he went to (wed_soul): both carry what stands from the handover, "
+          "as paragraph or aside; she plans nothing else and is never the quest picked") {
+    // Blind Pride, 20 Nov 2026: Benesh goes to Ellen and the two settle in town.
+    Quest his = oswalds_grudge();
+    his.role = QuestRole::Target;
+    his.wed_soul = "kbyl_woman_17";
+    his.wed_name = "Ellen";
+    his.since_by_how = {{"", "You went to her that same day, and you are man and wife."}};
+    Quest hers = his;
+    hers.role = QuestRole::Wed;
+    hers.since_by_how = {{"", "He came to you on his knees, and you are man and wife."}};
+    const Quest giver = oswalds_grudge();
+    REQUIRE(his.has_wed());
+
+    // Open: nothing of it yet, on either side.
+    CHECK(plan_quest(his, at("accepted"), {}).block.find("Since then") == std::string::npos);
+    CHECK(plan_quest(hers, at("accepted"), {}).block.empty());
+    CHECK(quest_aside(hers, at("accepted"), {hers}, {at("accepted")}).empty());
+    // Handed, before the giver has been told: the wedding has happened, and both say so.
+    CHECK(plan_quest(his, at("handed"), {}).block.find("Since then, and over anything else you have been told of your "
+                                                      "situation: You went to her that same day") != std::string::npos);
+    CHECK(plan_quest(hers, at("handed"), {}).block ==
+          "Since then, and over anything else you have been told of your situation: He came to you on his knees, "
+          "and you are man and wife.");
+    CHECK(plan_quest(hers, at("handed"), {}).rows.empty());
+    // As an aside, when the visit turns on another errand: the line in full, not a sentence.
+    CHECK(quest_aside(his, at("done"), {his}, {at("done")}).find("You went to her that same day") != std::string::npos);
+    CHECK(quest_aside(hers, at("done"), {hers}, {at("done")}).find("He came to you on his knees") != std::string::npos);
+    // The giver's side is as any beat's.
+    CHECK(plan_quest(giver, at("handed"), {}).block.find("Since then") == std::string::npos);
+    CHECK(quest_aside(giver, at("done"), {giver}, {at("done")}).find("dealt with Anthony") != std::string::npos);
+    // She is never the quest a visit turns on when she has another.
+    const Quest axe = bartels_axe(QuestRole::Giver);
+    CHECK(pick_quest({hers, axe}, {at("handed"), QuestFacts{}}) == 1);
+}
+
 TEST_CASE("a pray is asked with its place, and paid on Henry's word, true once knelt") {
     const Quest quest = nickels_prayer();
     QuestFacts fresh;

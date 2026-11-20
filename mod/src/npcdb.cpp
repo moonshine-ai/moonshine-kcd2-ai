@@ -733,6 +733,11 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "carry_name") return &q.carry_name;
         if (field == "routine") return &q.routine;
         if (field == "routine_gone_target") return &q.routine_gone_target;
+        if (field == "wed_soul") return &q.wed_soul;
+        if (field == "wed_name") return &q.wed_name;
+        if (field == "routine_wed_target") return &q.routine_wed_target;
+        if (field == "routine_wed_soul") return &q.routine_wed_soul;
+        if (field == "dress_wed") return &q.dress_wed;
         // A dictated letter's lines (npcdb.hpp, dictate): the parts said, the asking rows
         // (the rest of the giver's side is the app's), the page pieces by outcome, the
         // receiver's remarks by outcome, his verdicts and the journal's lines.

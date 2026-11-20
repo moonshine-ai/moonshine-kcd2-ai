@@ -924,7 +924,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
         sql += "WHERE q.giver_soul = ?1 OR q.target_soul = ?1 ";
         if (lines) {
             sql += "OR q.quest_id IN (SELECT l.quest_id FROM npc_quest_lines l "
-                   "                  WHERE l.field = 'onward_soul' AND l.text = ?1) ";
+                   "                  WHERE l.field IN ('onward_soul', 'wed_soul') AND l.text = ?1) ";
         }
         const bool stories = slate && sqlite3_table_column_metadata(db_, nullptr, "npc_slate", "story_id",
                                                                     nullptr, nullptr, nullptr, nullptr,
@@ -974,6 +974,18 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
         // onward soul's own paragraphs name the third party too.
         for (Quest& quest : found.quests) {
             const bool giver = quest.role == QuestRole::Giver;
+            // The one the holder goes to live with (wed_soul) is the quest's Wed role, and
+            // reads the since_wed lines below; known before the lines are sorted into sides.
+            if (!giver && quest.role != QuestRole::Target) {
+                sqlite3_stmt* wed = nullptr;
+                if (sqlite3_prepare_v2(db_, "SELECT text FROM npc_quest_lines WHERE quest_id = ? AND field = 'wed_soul'",
+                                       -1, &wed, nullptr) == SQLITE_OK) {
+                    bind(wed, std::string_view(quest.id));
+                    if (sqlite3_step(wed) == SQLITE_ROW && text_at(wed, 0) == soul) quest.role = QuestRole::Wed;
+                    sqlite3_finalize(wed);
+                }
+            }
+            const bool wed_role = quest.role == QuestRole::Wed;
             static constexpr char kLines[] =
                 "SELECT field, text FROM npc_quest_lines WHERE quest_id = ? "
                 "AND field IN ('apologise', 'apologise_yes', 'apologise_no', "
@@ -994,7 +1006,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'told_cursed', 'told_mocked', 'told_reply_cursed', 'told_reply_mocked', "
                 "'told_denounced', 'told_reply_denounced', "
                 "'unyielding', 'helper_name', 'greet_rebuffed', 'named_row', 'named_reply', 'give_up_reply', "
-                "'seen_with_name', 'item_of', 'greet_unwritten') "
+                "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name') "
                 "OR (quest_id = ? AND (field LIKE 'since%' OR field LIKE 'dictate%' OR field LIKE 'fast\\_travel%' ESCAPE '\\' "
                 "OR field LIKE 'write\\_%' ESCAPE '\\' "
                 "OR field LIKE 'reconsider\\_%' ESCAPE '\\' OR field LIKE 'soften\\_%' ESCAPE '\\' "
@@ -1007,7 +1019,8 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
             // and keep their own.
             static constexpr char kPartyLines[] =
                 "SELECT field, text FROM npc_quest_lines WHERE quest_id = ? "
-                "AND (field IN ('onward_soul', 'onward_name', 'unyielding', 'seen_with_name', 'item_of') "
+                "AND (field IN ('onward_soul', 'onward_name', 'unyielding', 'seen_with_name', 'item_of', "
+                "'wed_soul', 'wed_name') "
                 "OR field LIKE 'since%')";
             if (sqlite3_prepare_v2(db_, giver ? kLines : kPartyLines, -1, &row, nullptr) != SQLITE_OK) break;
             // As a string_view in so many words: passed a std::string, the unqualified call
@@ -1134,14 +1147,20 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                         (reply ? choice.reply : choice.row) = text_at(row, 1);
                     }
                 }
+                else if (field == "wed_soul") quest.wed_soul = text_at(row, 1);
+                else if (field == "wed_name") quest.wed_name = text_at(row, 1);
                 else if (field.compare(0, 5, "since") == 0) {
                     // since / since_<how> are the giver's; since_target / since_target_<how>
-                    // the other party's. Each side keeps its own.
+                    // the other party's; since_wed / since_wed_<how> the wed soul's. Each
+                    // side keeps its own.
                     const bool target_side = field.compare(0, 12, "since_target") == 0;
-                    if (target_side == giver) continue;
+                    const bool wed_side = field.compare(0, 9, "since_wed") == 0;
+                    if (wed_side != wed_role) continue;
+                    if (!wed_side && target_side == giver) continue;
                     std::string how;
-                    if (target_side && field.size() > 13) how = field.substr(13);
-                    else if (!target_side && field.size() > 6) how = field.substr(6);
+                    if (wed_side && field.size() > 10) how = field.substr(10);
+                    else if (target_side && field.size() > 13) how = field.substr(13);
+                    else if (!target_side && !wed_side && field.size() > 6) how = field.substr(6);
                     quest.since_by_how.push_back({how, text_at(row, 1)});
                 }
                 else if (field.compare(0, 5, "told_") == 0) {

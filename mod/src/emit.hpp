@@ -749,6 +749,12 @@ std::string alert_tag(const std::string& modid, const std::string& quest_id);
 // scheduler override's added link on his NPC hub, to a wrapper by the camp he goes to,
 // reads it. The same script writes the name.
 std::string gone_tag(const std::string& modid, const std::string& quest_id);
+// The tag the graph turns on kWedHours of the calendar after that handover, for good, as
+// it takes the gone tag off (Quest::has_wed): the pair's day links in town and their shared
+// night link, added to both NPC hubs by the same script, read it. Twenty hours: the camp
+// that afternoon and night, and the walk into town the next morning.
+std::string wed_tag(const std::string& modid, const std::string& quest_id);
+constexpr int kWedHours = 20;
 // A travel with a brawl stages it on that same match: the brawlers are set at odds with the
 // one looked at, told to fight bare-handed and to be nobody's business (`combat_invisible`,
 // so neither Henry nor a guard is drawn in), and each is sent the game's own first-punch

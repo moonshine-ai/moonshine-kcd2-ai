@@ -794,6 +794,11 @@ std::string gone_tag(const std::string& modid, const std::string& quest_id) {
     return modid + "_gone_" + quest_id;
 }
 
+std::string wed_tag(const std::string& modid, const std::string& quest_id) {
+    require_identifier(quest_id, "quest id");
+    return modid + "_wed_" + quest_id;
+}
+
 std::string quest_port(const QuestBeat& beat) {
     require_identifier(beat.command, "quest command");
     return quest_node(beat.quest_id) + "_" + beat.command;
@@ -3165,10 +3170,31 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (quest.has_gone()) {
         s += t(4) + "<State Name=\"gone\" TypeT=\"bool\">\r\n";
         s += t(5) + "<Edge From=\"holder.handover\" To=\"SetTrue\" />\r\n";
+        if (quest.has_wed()) s += t(5) + "<Edge From=\"wedTimer.OnFinished\" To=\"SetFalse\" />\r\n";
         s += t(4) + "</State>\r\n";
         s += t(4) + "<SchedulerLinkActivation Name=\"goneLink\">\r\n";
         s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(gone_tag(modid, quest.id)) + "\" />\r\n";
         s += t(5) + "<Edge From=\"gone.State\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</SchedulerLinkActivation>\r\n";
+    }
+    // And the wedding (wed_soul; 20 Nov 2026: Benesh and Ellen, man and wife in Kuttenberg):
+    // kWedHours of the calendar after the handover -- the afternoon and the night at her
+    // camp, the walk into town the morning after -- the gone tag goes off and the wed tag
+    // on, for good. Under it the scheduler override's added links take both to their work
+    // in town by day and to his own sleeping place by night (build_scheduler.py). The
+    // Timer's shape is the follow's rest (followRest, WorldTime).
+    if (quest.has_wed()) {
+        s += t(4) + "<Timer Name=\"wedTimer\">\r\n";
+        s += t(5) + "<Constant Name=\"Duration\" Value=\"" + std::to_string(kWedHours) + "h\" />\r\n";
+        s += t(5) + "<Constant Name=\"TimeType\" Value=\"WorldTime\" />\r\n";
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetRunning\" />\r\n";
+        s += t(4) + "</Timer>\r\n";
+        s += t(4) + "<State Name=\"wed\" TypeT=\"bool\">\r\n";
+        s += t(5) + "<Edge From=\"wedTimer.OnFinished\" To=\"SetTrue\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<SchedulerLinkActivation Name=\"wedLink\">\r\n";
+        s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(wed_tag(modid, quest.id)) + "\" />\r\n";
+        s += t(5) + "<Edge From=\"wed.State\" To=\"IsActive\" />\r\n";
         s += t(4) + "</SchedulerLinkActivation>\r\n";
     }
     // An exposure (Words Must Not Fail): the house the holder is caught in -- the witness's
@@ -7445,7 +7471,10 @@ std::string state_lua(const std::string& g) {
     s += "\t\tfacts.accepted = true\n";
     s += "\t\tif facts.acceptedAt == nil then facts.acceptedAt = " + g + ".WorldTime() end\n";
     s += "\tend\n";
-    s += "\tif command == \"handover\" then facts.handed = true end\n";
+    // With the clock at the handover (handedAt), for what waits on it: the wedding (WatchWed).
+    s += "\tif command == \"handover\" then facts.handed = true\n";
+    s += "\t\tif facts.handedAt == nil then facts.handedAt = " + g + ".WorldTime() end\n";
+    s += "\tend\n";
     // With the game's clock at the hand-in (doneAt), for what waits a day on it: a seek's
     // family leaves the morning after (WatchSeek).
     s += "\tif command == \"complete\" or command == \"lie\" or command == \"keep\" or command == \"quiet\"\n";
@@ -9080,6 +9109,12 @@ std::string emit_conversation_lua(const std::string& modid,
         if (!q.dress_target.empty()) {
             // A clothing preset put on the holder once a session (WatchDress).
             s += ", dress = \"" + lua_escape(q.dress_target) + "\"";
+        }
+        if (q.has_wed() && !q.dress_wed.empty()) {
+            // The one he goes to live with, dressed for town once the wedding is reckoned
+            // (WatchWed: kWedHours of the calendar after the handover, the graph's wedTimer).
+            s += ", wedSoul = \"" + lua_escape(q.wed_soul) + "\", wedDress = \"" + lua_escape(q.dress_wed) +
+                 "\", wedHours = " + std::to_string(kWedHours);
         }
         if (run_heads.count(q.id)) {
             // The giver's marker gate (WatchGiver; emit.hpp giver_closed_class): the two
@@ -14302,6 +14337,8 @@ std::string emit_conversation_lua(const std::string& modid,
     // loop, so a town with a hail in it is watched from the world's arrival on.
     s += "\t\tlocal pre = (q.hail ~= nil and not (type(f) == \"table\" and (f.accepted or f.done)))\n";
     s += "\t\t\tor (q.dress ~= nil and " + g + ".dressed[id] == nil)\n";
+    // The wed soul to dress, from the handover until she has been this session (WatchWed).
+    s += "\t\t\tor (q.wedDress ~= nil and type(f) == \"table\" and f.handed and " + g + ".wedDressed[id] == nil)\n";
     // And every run's head while its giver's marker is up (WatchGiver): the gate reads where
     // he stands each tick.
     s += "\t\t\tor (q.giverClosed ~= nil and not (type(f) == \"table\" and (f.accepted or f.done)))\n";
@@ -14403,6 +14440,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal q = " + g + ".quests[id]\n";
     s += "\t\t\tif q.hail ~= nil then pcall(" + g + ".WatchHail, id, q, pp) end\n";
     s += "\t\t\tif q.dress ~= nil then pcall(" + g + ".WatchDress, id, q, pp) end\n";
+    s += "\t\t\tif q.wedDress ~= nil then pcall(" + g + ".WatchWed, id, q, pp) end\n";
     s += "\t\t\tif q.giverClosed ~= nil then pcall(" + g + ".WatchGiver, id, q) end\n";
     // The kinds' own watches are for an errand under way (every kind's line of WatchPending
     // is under `accepted`); a head pending only for its hail or its marker gate is not
@@ -14622,6 +14660,25 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal ok, err = pcall(function() return e.actor:EquipClothingPreset(q.dress) end)\n";
     s += "\t" + g + ".dressed[id] = ok and \"on\" or \"failed\"\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" dress \" .. q.target .. \" in \" .. q.dress .. \" -> \" .. tostring(ok) .. \" \" .. tostring(err))\n";
+    s += "end\n";
+    s += "\n";
+    // The one the holder goes to live with, dressed for town (wed_soul, dress_wed; 20 Nov
+    // 2026: Ellen out of her rags) once the wedding is reckoned -- wedHours of the calendar
+    // after the handover, the same reckoning as the graph's wedTimer, which moves the pair
+    // into town -- and when she is loaded. Once a session, as WatchDress: a save keeps the
+    // clothes. The log line is what the first pass reads.
+    s += g + ".wedDressed = {}\n";
+    s += "function " + g + ".WatchWed(id, q, pp)\n";
+    s += "\tif " + g + ".wedDressed[id] ~= nil then return end\n";
+    s += "\tlocal f = (" + g + ".state.quests or {})[id]\n";
+    s += "\tif type(f) ~= \"table\" or not f.handed or f.handedAt == nil then return end\n";
+    s += "\tif " + g + ".WorldTime() - f.handedAt < (q.wedHours or 0) * 3600 then return end\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.wedSoul) end)\n";
+    s += "\tif e == nil or e.actor == nil or e.actor.EquipClothingPreset == nil then return end\n";
+    s += "\tlocal ok, err = pcall(function() return e.actor:EquipClothingPreset(q.wedDress) end)\n";
+    s += "\t" + g + ".wedDressed[id] = ok and \"on\" or \"failed\"\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" wed: \" .. q.wedSoul .. \" dressed in \" .. q.wedDress .. \" -> \" .. tostring(ok) .. \" \" .. tostring(err))\n";
     s += "end\n";
     s += "\n";
     // A find's keepsake (*Widow's View*; behaviors.md §6.1a, §10.4). Laid when the errand is

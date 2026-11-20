@@ -3909,6 +3909,31 @@ case("Dress: the holder with a preset written is put in it once a session, said 
     check(#paul.presets == 1, "once only")
 end)
 
+case("Wed: the handover is clocked, and the wed soul is put in her new clothes once the wedding hours have passed, once", function(E, M, check)
+    local id, q = byName(M, "Blind Pride")
+    check(q and q.wedSoul ~= nil and q.wedDress ~= nil and q.wedHours == 20, "Blind Pride weds its holder to a soul, with a preset and the hours")
+    if q == nil or q.wedSoul == nil then return end
+    local ellen = E.soul(q.wedSoul, { pos = { x = 1627, y = 1096, z = 0 } })
+    M.StateQuest(id, "accept")
+    local before = E.worldTime()
+    M.StateQuest(id, "handover")
+    local f = M.state.quests[id]
+    check(f.handed == true and type(f.handedAt) == "number" and f.handedAt >= before, "handed, and the world clock kept")
+    M.WatchArm("world")
+    E.advance(2100)
+    check(#ellen.presets == 0, "not dressed on the day of the handover")
+    -- Nineteen hours on: still as she was. Twenty: the dress and veil.
+    E.worldBase = E.worldBase + 19 * 3600
+    E.advance(2100)
+    check(#ellen.presets == 0, "nor at nineteen hours")
+    E.worldBase = E.worldBase + 3600
+    E.advance(2100)
+    check(#ellen.presets == 1 and ellen.presets[1] == q.wedDress, "the preset put on her at twenty")
+    check(E.find("BRIDGE quest " .. id .. " wed: " .. q.wedSoul .. " dressed in " .. q.wedDress .. " -> true"), "said so")
+    E.advance(6100)
+    check(#ellen.presets == 1, "once only")
+end)
+
 case("Unyielding: the sacristan's refusal is in the store, the giver's naming makes the token and opens the helper, and her rows take money and give the key", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.unyielding == true and q.helper ~= nil and q.token ~= nil and q.keyClass ~= nil,

@@ -218,6 +218,20 @@ GONE_PRIORITY = 20
 GONE_BEHAVIOURS = ("use", "waiting", "drinking", "use_withBark", "lookingAround")
 
 
+def wed_tag(modid: str, quest_id: str) -> str:
+    """emit.cpp wed_tag(): the LinkTag the graph turns on kWedHours after the handover, for
+    good, as it takes the gone tag off (wed_soul): the pair's added links in town read it."""
+    return f"{modid}_wed_{quest_id}"
+
+
+# The pair's day in town (wed_soul): the added work links' window and priority (the gone
+# link's, which is off by then), and the shared night link's, just under them so the day
+# wins while it is open and the night is what is left.
+WED_DAY_START, WED_DAY_END = 7 * 60, 20 * 60
+WED_DAY_PRIORITY = GONE_PRIORITY
+WED_NIGHT_PRIORITY = GONE_PRIORITY - 1
+
+
 # ------------------------------------------------------------------ specs (needs the DB)
 
 
@@ -380,6 +394,49 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
         specs.append({"quest_id": quest_id, "gone": (float(m.group(1)), float(m.group(2))),
                       "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
                       "tag": gone_tag(modid, quest_id)})
+    # And whom he goes to live with (wed_soul; 20 Nov 2026 -- Benesh and Ellen, man and wife
+    # in Kuttenberg): under the graph's wed tag, on kWedHours after the handover, a day link
+    # *added* to each NPC hub to the work the quest names for them (routine_wed_target his,
+    # routine_wed_soul hers, in a routine_day's words `<BehaviorName>@<prefab>@<x>,<y>`), and
+    # a night link added to each to his own sleeping place -- the filler's door-front he
+    # vanished into before (so_additiveNPCs sleep: no bed wanted, as many as will), so the
+    # two walk to the same doorway at dusk and are at their work by day.
+    def wed_side(field: str, quest_id: str, text: str, soul: str, name: str, hub: str, gender: str) -> dict:
+        parts = text.split("@")
+        if len(parts) != 3:
+            raise SystemExit(f"{quest_id}: {field} wants <BehaviorName>@<wrapper prefab>@<x>,<y>, got {text!r}")
+        px, py = (float(v) for v in parts[2].split(","))
+        every = [(x, y) for x, y in conn.execute(
+            "SELECT pos_x, pos_y FROM npc_routine_object WHERE level = ? AND prefab = ?", (level, parts[1]))]
+        objects = [(x, y) for x, y in every if math.hypot(x - px, y - py) <= POINT_METRES]
+        if not objects:
+            raise SystemExit(f"{quest_id}: no `{parts[1]}` object on {level} within {POINT_METRES:.0f} m of "
+                             f"{px:.1f},{py:.1f} ({field})")
+        return {"soul": soul, "name": name, "hub": hub, "gender": (gender or "").lower(), "behaviour": parts[0],
+                "prefab": parts[1], "objects": objects, "every_object": every, "point": (px, py)}
+    for quest_id, mate, mate_name, his, hers, soul, name, hub, gender, mate_hub, mate_gender in conn.execute(
+            "SELECT l.quest_id, l.text, "
+            "COALESCE((SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'wed_name'), l.text), "
+            "COALESCE((SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'routine_wed_target'), ''), "
+            "COALESCE((SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'routine_wed_soul'), ''), "
+            "q.target_soul, q.target_name, h.hub_guid, "
+            "COALESCE((SELECT gender FROM npc WHERE soul_name = q.target_soul LIMIT 1), ''), "
+            "(SELECT hub_guid FROM npc_routine_hub WHERE soul_name = l.text AND level = ? LIMIT 1), "
+            "COALESCE((SELECT gender FROM npc WHERE soul_name = l.text LIMIT 1), '') "
+            "FROM npc_quest_lines l JOIN npc_quest q USING (quest_id) "
+            "LEFT JOIN npc_routine_hub h ON h.soul_name = q.target_soul AND h.level = ? "
+            "WHERE l.field = 'wed_soul' AND l.text <> '' ORDER BY l.quest_id", (level, level)).fetchall():
+        if not soul:
+            raise SystemExit(f"{quest_id}: wed_soul on a quest with no target")
+        if not his or not hers:
+            raise SystemExit(f"{quest_id}: wed_soul without routine_wed_target and routine_wed_soul")
+        if not hub or not mate_hub:
+            print(f"  {quest_id}: {name} ({soul}) or {mate_name} ({mate}) has no scheduler hub on {level}; "
+                  "the wedding skipped", file=sys.stderr)
+            continue
+        specs.append({"quest_id": quest_id, "wed": True, "tag": wed_tag(modid, quest_id),
+                      "target": wed_side("routine_wed_target", quest_id, his, soul, name, hub, gender),
+                      "mate": wed_side("routine_wed_soul", quest_id, hers, mate, mate_name, mate_hub, mate_gender)})
     return specs
 
 
@@ -701,6 +758,60 @@ def resolve_gone(spec: dict, hubs: dict) -> dict:
             "metres": best[4]}
 
 
+def resolve_wed_work(side: dict, hubs: dict, quest_id: str) -> dict:
+    """One of the pair's work wrappers (routine_wed_target / routine_wed_soul): the hub
+    standing on an object of the prefab within POINT_METRES of the point, carrying the
+    behaviour for their gender, one on the object preferred, then the nearest the point."""
+    who = f"{quest_id} {side['name']} ({side['soul']}, hub {side['hub']})"
+    if side["hub"] not in hubs:
+        raise ValueError(f"{who}: no such hub in the table")
+    px, py = side["point"]
+    best = None
+    for guid, (hub, links) in hubs.items():
+        pos = position(hub)
+        if not pos:
+            continue
+        if not any(l.get("BehaviorName") == side["behaviour"] and gender_fits(l, side["gender"]) for l in links):
+            continue
+        off = min((math.hypot(pos[0] - x, pos[1] - y) for x, y in side["objects"]), default=OBJECT_METRES + 1)
+        if off > OBJECT_METRES:
+            continue
+        rank = (off > ON_OBJECT_METRES, math.hypot(pos[0] - px, pos[1] - py))
+        if best is None or rank < best[0]:
+            best = (rank, guid, pos)
+    if best is None:
+        raise ValueError(f"{who}: no `{side['behaviour']}` wrapper on a `{side['prefab']}` within "
+                         f"{POINT_METRES:.0f} m of {px:.1f},{py:.1f}")
+    return {"wrapper": best[1], "wrapper_pos": best[2], "metres": best[0][1]}
+
+
+def resolve_wed(spec: dict, hubs: dict) -> dict:
+    """The pair's two work wrappers and his sleeping place: the wrapper his NPC hub's home
+    link leads to by a plain `sleep` link (the filler's door-front, or a bed's sleeper
+    wrapper), with that link's behaviour and role to carry over."""
+    t, m = spec["target"], spec["mate"]
+    his = resolve_wed_work(t, hubs, spec["quest_id"])
+    hers = resolve_wed_work(m, hubs, spec["quest_id"])
+    who = f"{spec['quest_id']} {t['name']} ({t['soul']}, hub {t['hub']})"
+    _, npc_links = hubs[t["hub"]]
+    homes = [l for l in npc_links if l.homely and l.all_day and l.num("Priority") == 0]
+    if len(homes) != 1:
+        raise ValueError(f"{who}: expected one all-day priority-0 home link on the NPC hub, found {len(homes)}")
+    home = homes[0]
+    if home.target not in hubs:
+        raise ValueError(f"{who}: home hub {home.target} is not in the table")
+    sleeps = [l for l in hubs[home.target][1]
+              if l.get("BehaviorName") == "sleep" and not l.get("BuffTag") and not l.get("LinkTag")]
+    if not sleeps:
+        raise ValueError(f"{who}: the home hub {home.target} has no plain sleep link to share")
+    sleep = sleeps[0]
+    if sleep.target not in hubs:
+        raise ValueError(f"{who}: the sleeping place {sleep.target} is not in the table")
+    return {"his": his, "hers": hers, "home_hub": home.target, "sleep": sleep.target,
+            "sleep_pos": position(hubs[sleep.target][0]),
+            "sleep_params": {k: sleep.get(k) for k in ("BehaviorName", "ProvidedRole") if sleep.get(k)}}
+
+
 def add_link(hub_block: str, target: str, attrs: dict[str, str]) -> str:
     """A link appended to one hub's text (behaviors.md §4.7: an added link on the NPC hub is
     taken in the override form), in the exporter's shape, before the hub's closing
@@ -778,7 +889,14 @@ def split_bed_links(hub_block: str, mat: str, wrapper: str, tag: str) -> str:
     return out
 
 
-def claim_wrapper(text: str, hubs: dict, spec: dict, r: dict) -> tuple[str, list[str]]:
+def drop_links(hub_block: str, target: str) -> tuple[str, int]:
+    """Every link of the hub to `target` removed. Returns the text and how many went."""
+    pattern = r'<S_ActivityLink\b[^>]*\bTargetGuid="' + re.escape(target) + r'"[^>]*>\s*<Parameters\b[^>]*/>\s*</S_ActivityLink>\s*'
+    out, n = re.subn(pattern, "", hub_block)
+    return out, n
+
+
+def claim_wrapper(text: str, hubs: dict, spec: dict, r: dict, drop_shared: bool = False) -> tuple[str, list[str]]:
     """The routine_day's wrapper made the soul's alone (24 Oct 2026, notes.md: Christine
     found in bed at eleven in the morning, somebody else sweeping at her step). The step
     broom the spec picked is one of four one-time-use chores on the household's own hub
@@ -810,6 +928,15 @@ def claim_wrapper(text: str, hubs: dict, spec: dict, r: dict) -> tuple[str, list
             sibling = l.target
             break
         if sibling is None:
+            # A pool of a dozen idle spots (the extras' area hubs) can spare the one: its
+            # link to the wrapper is dropped (drop_shared; the wedding's spots, 20 Nov
+            # 2026), so long as the hub keeps two or more others.
+            others = [l for l in links if l.target != wrapper]
+            if drop_shared and len(others) >= 2:
+                text = edit_hub(text, guid, lambda block: drop_links(block, wrapper)[0])
+                notes.append(f"    hub {guid} also linked to the wrapper and has no other `{spec['prefab']}` of its own; "
+                             f"its link dropped ({len(others)} others kept): the wrapper is theirs alone")
+                continue
             notes.append(f"    hub {guid} also links to the wrapper and has no other `{spec['prefab']}` of its own; "
                          "left shared (the soul will lose the spot while that hub's NPC is on it)")
             continue
@@ -990,6 +1117,49 @@ def apply(table: bytes, specs: list[dict]) -> tuple[bytes, list[str]]:
             report.append(
                 f"{spec['quest_id']} {spec['name']} ({spec['soul']}): home at {minute // 60:02d}:{minute % 60:02d} for good\n"
                 f"    home hub {r['home_hub']}: day link(s) -> {moved} now end at {minute // 60:02d}:{minute % 60:02d}")
+            continue
+        if spec.get("wed"):
+            # Man and wife in town (wed_soul): on each NPC hub a day link added to their
+            # work and a night link added to his sleeping place, all under the wed tag the
+            # graph turns on kWedHours after the handover (emit.cpp wedLink), with
+            # HaltOnInvalid and Urgency so the flip and the hours act at once. The day at
+            # WED_DAY_PRIORITY wins while its window is open; the night link, all day at
+            # one under, is what is left outside it. His sleeping place is the filler's
+            # door-front (so_additiveNPCs: a doorway walked to and vanished into, no bed,
+            # as many as will), so the two go in at the same door at dusk; a bed's sleeper
+            # wrapper would do the same. The night link carries the sleep link's own
+            # behaviour and role, as a house hub's does. Each work wrapper is then made
+            # theirs alone (claim_wrapper), since a spot taken is a dead link and the best
+            # left would be the door.
+            r = resolve_wed(spec, hubs)
+            tag = spec["tag"]
+            day = {"Priority": str(WED_DAY_PRIORITY), "TimeOfDayStart": str(WED_DAY_START),
+                   "TimeOfDayEnd": str(WED_DAY_END), "TimeVariation": "0", "AllowedGenders": "0",
+                   "Attraction": str(ROUTINE_ATTRACTION), "LinkTag": tag, "InvertLinkTagRequirement": "false",
+                   "HaltOnInvalid": "true", "Urgency": ROUTINE_URGENCY}
+            night = {"Priority": str(WED_NIGHT_PRIORITY), "TimeOfDayStart": "0", "TimeOfDayEnd": "1440",
+                     "TimeVariation": "0", "AllowedGenders": "0", "Attraction": str(ROUTINE_ATTRACTION),
+                     "LinkTag": tag, "InvertLinkTagRequirement": "false", "HaltOnInvalid": "true",
+                     "Urgency": ROUTINE_URGENCY, **r["sleep_params"]}
+            lines = [f"{spec['quest_id']} {spec['target']['name']} ({spec['target']['soul']}) and "
+                     f"{spec['mate']['name']} ({spec['mate']['soul']}): man and wife in town under tag {tag}"]
+            for side, w in (("target", r["his"]), ("mate", r["hers"])):
+                sd = spec[side]
+                text = edit_hub(text, sd["hub"], lambda block, w=w: add_link(block, w["wrapper"], day))
+                text = edit_hub(text, sd["hub"], lambda block: add_link(block, r["sleep"], night))
+                text, claimed = claim_wrapper(text, hubs, sd, {
+                    "npc_hub": sd["hub"], "home_hub": r["home_hub"], "work_target": r["sleep"], "wrapper": w["wrapper"]},
+                    drop_shared=True)
+                lines.append(
+                    f"    NPC hub {sd['hub']} ({sd['name']}): day link added -> wrapper {w['wrapper']} "
+                    f"(`{sd['behaviour']}` on a `{sd['prefab']}`) at {w['wrapper_pos'][0]:.1f},{w['wrapper_pos'][1]:.1f} "
+                    f"({w['metres']:.0f} m from the point), prio {WED_DAY_PRIORITY}, "
+                    f"{WED_DAY_START // 60:02d}:{WED_DAY_START % 60:02d}-{WED_DAY_END // 60:02d}:{WED_DAY_END % 60:02d}; "
+                    f"night link added -> {r['sleep']} (his sleeping place"
+                    + (f" at {r['sleep_pos'][0]:.1f},{r['sleep_pos'][1]:.1f}" if r["sleep_pos"] else "")
+                    + f"), prio {WED_NIGHT_PRIORITY}, all day; both live while the tag is on")
+                lines += claimed
+            report.append("\n".join(lines))
             continue
         if spec.get("gone"):
             # The holder gone for good once he has given in: one link added to his NPC hub,

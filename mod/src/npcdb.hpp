@@ -396,6 +396,16 @@ struct Quest {
     // which the graph turns on at the handover and never off. Empty for every other quest.
     std::string routine_gone_target;
     bool has_gone() const { return has_holder() && !routine_gone_target.empty(); }
+    // And whom he goes to live with (20 Nov 2026: Benesh and Ellen, man and wife in
+    // Kuttenberg): `wed_soul` / `wed_name` the other soul, `routine_wed_target` his day under
+    // the wed tag and `routine_wed_soul` hers (`<BehaviorName>@<wrapper prefab>@<x>,<y>`, as
+    // a routine_day spells one), `dress_wed` a clothing preset the Lua puts on her once the
+    // wedding is reckoned (WatchWed). The graph's wed tag comes on kWedHours of the calendar
+    // after the handover and takes the gone tag off (wedTimer); build_scheduler.py adds the
+    // day links and a shared night link to his own sleeping place on both NPC hubs under
+    // it. Empty for every other quest.
+    std::string wed_soul, wed_name, routine_wed_target, routine_wed_soul, dress_wed;
+    bool has_wed() const { return has_gone() && !wed_soul.empty(); }
     // How near a bed is to count as the same roof: the next room of the same house (Joan's
     // catchpoles sleep 5.3 m from her) and not the neighbours (the nearest other house in
     // Horany is 30 m off).

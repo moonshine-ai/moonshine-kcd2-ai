@@ -150,6 +150,7 @@ std::string persona_json(const Soul& soul,
         out += "    \"kind\": " + json_string(quest.kind) + ",\n";
         out += "    \"role\": " + json_string(quest.role == QuestRole::Giver    ? "giver"
                                               : quest.role == QuestRole::Onward ? "onward"
+                                              : quest.role == QuestRole::Wed    ? "wed"
                                                                                 : "target") +
                ",\n";
         // The giver's own opening for this visit, when the errand makes it one of its own

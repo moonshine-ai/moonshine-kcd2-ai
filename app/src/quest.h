@@ -30,7 +30,10 @@ namespace moonshine {
 // chain's every link, the holder of one thing and the asker of another -- in one role each.
 // Onward is the third party of an ask whose word is carried on (Quest::carries_on): the one
 // the giver sends Henry to with the truth, whose own menu is the game's and ends the errand.
-enum class QuestRole { None, Giver, Target, Onward };
+// Wed: the one a beat's holder goes to live with once he has given in (npc_quest_lines
+// `wed_soul`; Blind Pride's Ellen), party to nothing in the errand but to what stands
+// since (since_wed).
+enum class QuestRole { None, Giver, Target, Onward, Wed };
 
 // One row of npc_quest, with the giver's written words joined on when there are any, and
 // the slate's shape (npc_slate) when the circle pipeline dealt it.
@@ -216,6 +219,13 @@ struct Quest {
     // giver's `thanks` is the sending; `greet_onward` their opening line to Henry back before
     // he has been. Empty for an ask that ends at the giver.
     std::string onward_soul, onward_name, greet_onward;
+    // Whom a beat's holder goes to live with once he has given in (npc_quest_lines
+    // `wed_soul`, `wed_name`; 20 Nov 2026, Benesh and Ellen): read for every role, since
+    // both their paragraphs turn on it, and the one named is the quest's Wed role. The
+    // wedding follows the handover, not the report to the giver, so what stands since
+    // (since_target for him, since_wed for her) is said from the handover on.
+    std::string wed_soul, wed_name;
+    bool has_wed() const { return !wed_soul.empty(); }
     // A plea's answer rows (Quest::pleads; bugs.txt 19 Nov 2026: Henry chooses whether to
     // carry Benesh's plea): laid after the truth's report row, `plea_yes` sends him back
     // (kQuestOnward) on `plea_yes_reply`, `plea_no` ends the errand where it stands

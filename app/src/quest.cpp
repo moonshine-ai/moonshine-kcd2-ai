@@ -1412,7 +1412,10 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
     // Done, the errand has left the soul somewhere the rest of their sheet (written before
     // it) does not know about: the bell-ringer cleared, the priest's cup back. The written
     // line for the ending, or the plain one, stands over the sheet (notes.md 14 Oct 2026).
-    if (quest.exists() && !facts.voided && facts.done && facts.how != "abandoned") {
+    // A wedding follows the holder's handover, not the giver's being told (Quest::has_wed):
+    // his side and hers say what stands from the handover on.
+    const bool wed_since = quest.has_wed() && (facts.handed || facts.done) && quest.role != QuestRole::Giver;
+    if (quest.exists() && !facts.voided && (facts.done || wed_since) && facts.how != "abandoned") {
         const std::string since = quest.since_line(facts.how);
         if (!since.empty()) {
             if (!plan.block.empty()) plan.block += " ";
@@ -1490,6 +1493,9 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
     // and the rest of the giver's side turns on what the player carries and what they say.
     QuestPlan plan;
     if (!quest.exists() || quest.role == QuestRole::None) return plan;
+    // The one the holder goes to live with: party to nothing in the errand itself; what
+    // stands since the handover is plan_quest's (since_wed).
+    if (quest.role == QuestRole::Wed) return plan;
     // A scene the story went past: the soul never has this favour, and nothing says so.
     if (facts.voided) return plan;
     // A scene not yet reached, from the other party's side: nobody has come to them on
@@ -1851,7 +1857,7 @@ std::size_t pick_quest(const std::vector<Quest>& quests, const std::vector<Quest
     // Everything settled: the first, whose paragraph says so -- passing over a travel's
     // looked-at side, which has no paragraph worth the name. Also 0 == size() when empty.
     at = find([&](const Quest& q, const QuestFacts&) {
-        return !(q.role == QuestRole::Target && q.is_travel());
+        return !(q.role == QuestRole::Target && q.is_travel()) && q.role != QuestRole::Wed;
     });
     return at < quests.size() ? at : 0;
 }
@@ -1859,6 +1865,15 @@ std::size_t pick_quest(const std::vector<Quest>& quests, const std::vector<Quest
 std::string quest_aside(const Quest& quest, const QuestFacts& facts,
                         const std::vector<Quest>& all, const std::vector<QuestFacts>& all_facts) {
     if (!quest.exists() || facts.voided) return {};
+    // A wedding (Quest::has_wed) remakes the two it joins, whatever errand the visit turns
+    // on: his side and hers carry their since line in full from the handover on, as the
+    // paragraph would, rather than a sentence that leaves the sheet a beggar's.
+    if (quest.has_wed() && quest.role != QuestRole::Giver && (facts.handed || facts.done) &&
+        facts.how != "abandoned") {
+        const std::string since = quest.since_line(facts.how);
+        if (!since.empty()) return "Since then, and over anything else you have been told of your situation: " + since;
+    }
+    if (quest.role == QuestRole::Wed) return {};
     if (quest.is_travel()) {
         if (quest.role != QuestRole::Giver) return {};
         if (facts.done) {
