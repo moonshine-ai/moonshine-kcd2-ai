@@ -14569,6 +14569,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // one repeat at most.
     s += g + ".hailMetres = " + std::to_string(kHailMetres) + "\n";
     s += g + ".hailAgain = " + std::to_string(kHailAgainSeconds) + "\n";
+    s += g + ".hailWaveTimes = " + std::to_string(kHailWaveTimes) + "\n";
     s += g + ".hailed = {}\n";
     // Henry carried by the map (emit.hpp kTravelJumpMetres, kTravelClockSeconds,
     // kTravelGraceSeconds; bugs.txt 19 Nov 2026): WatchRoad keeps where he stood and what
@@ -14645,15 +14646,24 @@ std::string emit_conversation_lua(const std::string& modid,
     // smart entity to run the behaviour on, so the clip is started by hand, the way the
     // travel's face is: an upper-body clip over whatever the body is doing (a townsman
     // waved on layer 1 from his idle, hook probe 19 Nov 2026, without a hitch in his
-    // stance), once, not looped, at the clip's own pace. Nothing of the mod's rides on it
-    // landing -- a giver with a sword out or his hands full does not wave in the engine's
-    // version either, and here he merely fails to.
-    s += "function " + g + ".HailWave(e, d)\n";
+    // stance), not looped, at the clip's own pace, and played through kHailWaveTimes times
+    // one after another (bugs.txt 20 Nov 2026: a single wave was over before Henry had
+    // looked up), each started as the one before runs out, so long as no conversation has
+    // opened meanwhile. Nothing of the mod's rides on it landing -- a giver with a sword
+    // out or his hands full does not wave in the engine's version either, and here he
+    // merely fails to.
+    s += "function " + g + ".HailWave(e, d, times)\n";
     s += "\tif e == nil then return end\n";
+    s += "\ttimes = times or " + std::to_string(kHailWaveTimes) + "\n";
+    s += "\tif times <= 0 or " + g + ".InDialog() then return end\n";
     s += "\tlocal clip = d > " + std::to_string(kHailWaveBigMetres) + " and \"greetings_wave_big_over\" or \"greetings_wave_small_over\"\n";
     s += "\tpcall(function()\n";
-    s += "\t\tif (e:GetAnimationLength(0, clip) or 0) <= 0 then return end\n";
+    s += "\t\tlocal length = e:GetAnimationLength(0, clip) or 0\n";
+    s += "\t\tif length <= 0 then return end\n";
     s += "\t\te:StartAnimation(0, clip, " + std::to_string(kHailWaveLayer) + ", 0.3, 1.0, false)\n";
+    s += "\t\tif times > 1 then\n";
+    s += "\t\t\tScript.SetTimer(math.floor(length * 1000), function() " + g + ".HailWave(e, d, times - 1) end)\n";
+    s += "\t\tend\n";
     s += "\tend)\n";
     s += "end\n";
     s += "\n";

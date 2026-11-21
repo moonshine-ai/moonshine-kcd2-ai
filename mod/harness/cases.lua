@@ -3533,8 +3533,9 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed within hailMetres")
     check(E.find("BRIDGE voice male soul=" .. q.giver .. " " .. q.hail, mark), "voiced as the man's stand-in, the giver named for the app's mouth")
     check(M.voicedSoul == q.giver, "the shout's mouth is the giver's")
-    -- And he waves with the shout: the big wave from this far, once, not looped, on the
-    -- upper-body layer (HailWave).
+    -- And he waves with the shout: the big wave from this far, not looped, on the
+    -- upper-body layer (HailWave), and again as each runs out, five times in all (bugs.txt
+    -- 20 Nov 2026).
     check(#benesh.anims == 1 and benesh.anims[1].clip == "greetings_wave_big_over" and benesh.anims[1].layer == 1
         and benesh.anims[1].speed == 1.0, "the big wave started on the giver with the shout, from past five metres")
     check(#benesh.stops == 0, "no layer stopped for it: the clip runs out on its own")
@@ -3567,6 +3568,10 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     check(M.Count(player, q.hailToken) == 0, "the token gone again")
     puts, hides = drawn(hudMark)
     check(puts == 0 and hides == 0, "and nothing put or hidden on the narrative subtitle in the seconds after")
+    E.advance(4200 * 4 + 200 - 5500 - 800)
+    check(#benesh.anims == M.hailWaveTimes, "the wave played through " .. M.hailWaveTimes .. " times, one as each ran out")
+    E.advance(4200)
+    check(#benesh.anims == M.hailWaveTimes, "and not a sixth")
     -- Off and back inside hailAgain: nothing; off and back after it: hailed again.
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(2100)
@@ -3582,7 +3587,16 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     mark = E.mark()
     E.advance(2100)
     check(E.count("BRIDGE quest " .. id .. " hail", mark) == 1, "hailed again after being away")
-    check(#benesh.anims == 2 and benesh.anims[2].clip == "greetings_wave_small_over", "the small wave from two metres")
+    check(#benesh.anims == M.hailWaveTimes + 1 and benesh.anims[M.hailWaveTimes + 1].clip == "greetings_wave_small_over",
+        "the small wave from two metres")
+    local waved = #benesh.anims
+    -- A conversation opening ends the waving: the rest are not played.
+    E.dialog.open = true
+    E.advance(2830 * 2 + 200)
+    check(#benesh.anims == waved, "no more waves once a conversation had opened")
+    E.dialog.open = false
+    E.advance(2830 * 4)
+    waved = #benesh.anims
     -- A set without the clips (an animal, a build before the wave): the shout alone.
     E.clipLengths["greetings_wave_big_over"] = nil
     E.clipLengths["greetings_wave_small_over"] = nil
@@ -3593,7 +3607,7 @@ case("Hail: a giver with a hail shouts it once when Henry comes near, and again 
     player:SetWorldPos({ x = 100 + 2, y = 100, z = 0 })
     mark = E.mark()
     E.advance(2100)
-    check(E.count("BRIDGE quest " .. id .. " hail", mark) == 1 and #benesh.anims == 2, "hailed with no wave when the set has no clip")
+    check(E.count("BRIDGE quest " .. id .. " hail", mark) == 1 and #benesh.anims == waved, "hailed with no wave when the set has no clip")
     -- Not while a conversation is open, and not once the errand is taken up.
     player:SetWorldPos({ x = 100 + M.hailMetres * 2 + 5, y = 100, z = 0 })
     E.advance(M.hailAgain * 1000 + 100)

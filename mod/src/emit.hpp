@@ -717,6 +717,9 @@ constexpr int kLeadWaitSeconds = 30;
 // clip without upsetting his idle.
 constexpr int kHailWaveBigMetres = 5;
 constexpr int kHailWaveLayer = 1;
+// How many times the wave is played through, one after another (bugs.txt 20 Nov 2026: once
+// was over before Henry had looked up).
+constexpr int kHailWaveTimes = 5;
 // One tap of the skip key in a voiced Talk of the game's own arrives as two button actions
 // (dialog_cancel and dialog_skip) in the same frame; a second within this many seconds of
 // the first is the same tap (OnPlayerAction; bugs.txt 19 Nov 2026). Well under the fastest
