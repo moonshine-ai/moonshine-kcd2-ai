@@ -5472,6 +5472,156 @@ case("Carried: the man to follow is set down in sight of the landing as Henry la
     q.fastTravel.holder = spot
 end)
 
+-- A duel (npcdb.hpp kind "duel"; In the Stocks, bugs.txt 20 Nov 2026): the man's carry is
+-- to the fight. Henry lands on the spot with the clock untouched, the man is set down facing
+-- him a few paces off, and the souls of brawl_with are made armed at Henry's back; the
+-- spring is the store's m and the written token for the graph. His friends down is the
+-- cowed token and the letter Y, their bodies taken away; the spare row hands Henry the
+-- man's purse and takes him out of the world; the man dead instead is the `dead` way.
+case("Duel: the carry is to the fight -- no clock wound, the man set down facing Henry, his friends made armed behind him, the spring token; friends down is the cowed token and the letter Y; spared hands over his purse and he is gone; killed is the dead way", function(E, M, check)
+    local id, q = byKind(M, "duel")
+    if id == nil then check(true, "no duel in this data"); return end
+    check(q.fastTravel ~= nil and q.fastTravel.at < 0 and q.fastTravel.holder ~= nil, "the yard and the man's spot in the table, no hour")
+    check(type(q.spawn) == "table" and #q.spawn == 2 and q.token ~= nil and q.cowedToken ~= nil, "two souls to make and both tokens")
+    local ft, spot = q.fastTravel, q.fastTravel.holder
+    local man = E.soul(q.giver)
+    M.npc = man
+    M.QuestCommand(id, "accept")
+    check(M.state.quests[id].accepted == true and not M.state.quests[id].handed, "accepted, with no holder menu granted")
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    player.view = nil
+    E.interior = false
+    E.hour = 20
+    local mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    local pp = player:GetWorldPos()
+    check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard")
+    check(E.hour == 20, "the clock untouched: a duel goes now")
+    local tp = man:GetWorldPos()
+    check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "the man on his spot")
+    local gap = math.sqrt((spot.x - ft.x) ^ 2 + (spot.y - ft.y) ^ 2)
+    local d = man:GetDirectionVector()
+    check(math.abs(d.x - (ft.x - spot.x) / gap) < 0.01 and math.abs(d.y - (ft.y - spot.y) / gap) < 0.01, "facing the landing")
+    check(player.view ~= nil, "Henry's view turned to him")
+    local f = M.state.quests[id]
+    check(f.ambushed == true and type(f.spawned) == "table" and #f.spawned == 2, "the spring in the store, two made")
+    check(string.find(M.QuestFlagLetters(f), "m", 1, true) ~= nil, "the letter m")
+    check(M.Count(player, q.token) == 1, "the spring token for the graph")
+    local made = {}
+    for k, name in ipairs(f.spawned) do
+        local e = System.GetEntityByName(name)
+        check(e ~= nil and e.spec ~= nil and e.spec.SharedSoulGuid == q.spawn[k], name .. " made from the soul pool")
+        if e ~= nil then
+            local mp = e:GetWorldPos()
+            local behind = (mp.x - ft.x) * (spot.x - ft.x) + (mp.y - ft.y) * (spot.y - ft.y)
+            check(behind < 0 and math.abs(math.sqrt((mp.x - ft.x) ^ 2 + (mp.y - ft.y) ^ 2) - math.sqrt(M.duelBehindMetres ^ 2 + 1)) < 0.05,
+                  name .. " a few metres at Henry's back, a pace to the side")
+            made[#made + 1] = e
+        end
+    end
+    check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " set down at", mark) and E.count("made at", mark) == 2, "said in the log")
+    E.advance(1100)
+    check(M.Count(player, q.token) == 0, "the token gone a moment later")
+    -- A second carry does not spring it twice.
+    mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    check(#M.state.quests[id].spawned == 2 and E.find("duel already sprung", mark), "not sprung twice")
+    -- One friend down: the man still fights. Both down: cowed, the token, the letter Y, the
+    -- unconscious one taken away and the dead one left lying.
+    made[1].down = true
+    E.advance(2100)
+    check(M.state.quests[id].cowed ~= true, "one friend standing, the man still fights")
+    made[2].alive = false
+    mark = E.mark()
+    E.advance(2100)
+    f = M.state.quests[id]
+    check(f.cowed == true and string.find(M.QuestFlagLetters(f), "Y", 1, true) ~= nil, "both down: cowed, the letter Y")
+    check(E.find("friends are down; he is cowed", mark) and E.count("token made", mark) == 1,
+          "said in the log, and the cowed token made for the graph (gone again a moment later)")
+    check(#f.spawned == 1 and System.GetEntityByName("mn_duel_" .. id .. "_1") == nil, "the unconscious one taken away, the dead one left lying")
+    -- Spared: his purse (over the floor) in Henry's, and the man out of the world.
+    man.inventory:CreateItem(E.moneyClass, 100, 870)
+    local before = player.inventory:GetMoney()
+    mark = E.mark()
+    M.QuestCommand(id, "complete")
+    E.advance(1100)
+    f = M.state.quests[id]
+    check(f.done == true and f.gone == true, "done, and he is gone")
+    check(math.abs(player.inventory:GetMoney() - before - math.max(87, q.pay)) < 0.01, "his purse handed over: " .. tostring(player.inventory:GetMoney() - before))
+    check(man.inventory:GetMoney() == 0, "and nothing left in his")
+    check(E.find("duel spared, his purse (87)", mark) and E.find("gone from the game", mark), "said in the log")
+    check(man:GetWorldPos().z < -500, "the man put out of the world")
+    E.advance(2100)
+    check(#(M.state.quests[id].spawned or {}) == 0, "the bodies taken away once the duel is done")
+    -- Killed instead: a fresh duel sprung and the man dead is the dead way, nothing paid.
+    M.state.quests[id] = { accepted = true }
+    M.duelGoneDone[id] = nil
+    man.alive = true
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    E.hour = 21
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    check(M.state.quests[id].ambushed == true, "sprung again")
+    before = player.inventory:GetMoney()
+    man.alive = false
+    E.advance(2100)
+    f = M.state.quests[id]
+    check(f.done == true and f.dead == true and f.how == "dead", "the man dead is the dead way: " .. tostring(f.how))
+    check(player.inventory:GetMoney() == before, "nothing paid for a dead man")
+    man.alive = true
+end)
+
+case("Fall: the telling arranges the morning (the letter A, nothing paid, the clock set to the next fall hour); at the hour the one asked is gone from the world and the store says fallen (F, x, how fallen); the giver's complete pays nothing and is the fallen beat; he is kept gone after a load", function(E, M, check)
+    local id, q = byKind(M, "ask", { fall = true })
+    if id == nil then check(true, "no ask with a fall in this data"); return end
+    check(q.fallHour == 6 and M.questCodes[id .. " arrange"] ~= nil and M.questCodes[id .. " complete_fallen"] ~= nil,
+          "the fall hour in the table, and the arrange and fallen beats")
+    local man = E.soul(q.target, { pos = { x = 50, y = 50, z = 10 } })
+    local giver = E.soul(q.giver)
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    M.StateQuest(id, "handover")
+    E.hour = 21
+    local before = player.inventory:GetMoney()
+    local mark = E.mark()
+    M.QuestCommand(id, "arrange")
+    local f = M.state.quests[id]
+    check(f.arranged == true and not f.done and string.find(M.QuestFlagLetters(f), "A", 1, true) ~= nil, "arranged, open, the letter A")
+    check(player.inventory:GetMoney() == before, "nothing paid at the arrangement")
+    check(math.abs(f.fallAt - (E.worldTime() + 9 * 3600)) < 1, "the fall set for six the next morning: " .. tostring((f.fallAt - E.worldTime()) / 3600) .. "h ahead")
+    check(E.find("the morning's meeting arranged; nothing paid yet", mark), "said in the log")
+    -- The watch looks, and the man stands while the night lasts.
+    E.advance(2100)
+    check(M.state.quests[id].fallen ~= true and man:GetWorldPos().z > -500, "still standing in the night")
+    -- The clock past the hour: fallen, dead, the how, and the man out of the world.
+    mark = E.mark()
+    Calendar.SetWorldTime(f.fallAt + 60)
+    E.advance(2100)
+    f = M.state.quests[id]
+    check(f.fallen == true and f.dead == true and f.how == "fallen" and not f.done, "fallen, dead, the how, and the errand still open for the giver's word")
+    local letters = M.QuestFlagLetters(f)
+    check(string.find(letters, "F", 1, true) ~= nil and string.find(letters, "x", 1, true) ~= nil, "the letters F and x: " .. letters)
+    check(man:GetWorldPos().z < -500, "the man put out of the world")
+    check(E.find("the fall: " .. q.target .. " fell this morning", mark) and E.find("gone from the game", mark), "said in the log")
+    -- The giver's Talk: the complete is the fallen beat, and nothing is paid.
+    before = player.inventory:GetMoney()
+    mark = E.mark()
+    M.QuestCommand(id, "complete")
+    f = M.state.quests[id]
+    check(f.done == true and f.how == "fallen", "done the fallen way")
+    check(player.inventory:GetMoney() == before, "nothing paid for a dead witness")
+    check(E.find("completes as complete_fallen", mark) and E.find("fell before the bailiff's morning; nothing paid", mark), "the fallen beat, said in the log")
+    -- A load puts him back on his feet; the watch takes him away again.
+    man:SetWorldPos({ x = 50, y = 50, z = 10 })
+    M.fallGoneDone[id] = nil
+    M.WatchArm("load")
+    E.advance(2100)
+    check(man:GetWorldPos().z < -500, "kept gone after a load")
+end)
+
 case("Mouth: in the game's own voiced Talk the lines queue, Henry's mouth first, then the named speaker's", function(E, M, check)
     -- No session: the holder's rows run through the game's dialogue, and each row's
     -- ExitScript voices Henry's line and the holder's together, with the holder's entity

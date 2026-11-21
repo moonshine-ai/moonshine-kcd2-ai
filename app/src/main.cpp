@@ -648,6 +648,11 @@ Args parse(int argc, char** argv, bool* stop) {
                 // An ambush's: the false way written down, the men at the place met.
                 else if (state == "directed") args.facts.directed = args.facts.accepted = true;
                 else if (state == "ambushed") args.facts.ambushed = args.facts.directed = args.facts.accepted = true;
+                // A duel's: the man's friends down and he begging.
+                else if (state == "cowed") args.facts.cowed = args.facts.ambushed = args.facts.accepted = true;
+                // An ask with a fall: the morning's meeting arranged; the one asked fallen before it.
+                else if (state == "arranged") args.facts.arranged = args.facts.handed = args.facts.accepted = true;
+                else if (state == "fallen") args.facts.fallen = args.facts.dead = args.facts.arranged = args.facts.handed = args.facts.accepted = true;
                 else if (state == "dead") args.facts.dead = args.facts.accepted = true;
                 else if (state == "checked") { ++args.facts.checks; args.facts.accepted = true; }
                 // An ask's whose word is carried on: the giver told and paid, Henry sent on.
@@ -678,7 +683,7 @@ Args parse(int argc, char** argv, bool* stop) {
                     throw std::runtime_error(
                         "--quest-state takes none, accepted, handed, done, broker, apologised, "
                         "refused, seen, beaten, prayed, left, heard, looted, cursed, directed, "
-                        "ambushed, dead, checked, onward, keepsake, rebuffed, told_rebuffed, named, letin, keyed, denounced, abandoned, "
+                        "ambushed, cowed, arranged, fallen, dead, checked, onward, keepsake, rebuffed, told_rebuffed, named, letin, keyed, denounced, abandoned, "
                         "unlearned, how:<how> or wrote:<digits>, joined by commas");
                 }
             }

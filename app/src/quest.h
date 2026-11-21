@@ -239,6 +239,23 @@ struct Quest {
     // (kQuestOnward) on `plea_yes_reply`, `plea_no` ends the errand where it stands
     // (kQuestComplete) on `plea_no_reply`. Plain words stand in for any left unwritten.
     std::string plea_yes, plea_yes_reply, plea_no, plea_no_reply;
+    // The plea's third answer (bugs.txt 20 Nov 2026): Henry will go and threaten the man
+    // himself instead of begging. `plea_threat` is his row, `plea_threat_reply` the giver's
+    // answer; the errand completes the way `threatened` (kQuestThreaten), which the duel
+    // scene follows and the witness scene (gated `plain`) does not. Laid only where written.
+    std::string plea_threat, plea_threat_reply;
+    // An ask with a fall (bugs.txt 20 Nov 2026, In the Stocks' witness): the one asked said
+    // yes on the condition Henry comes along in the morning, so the telling arranges the
+    // meeting rather than ending the errand (kQuestArrange, on `arrange_reply`), and the
+    // morning finds the one asked fallen from scaffolding. `greet_fallen` opens the giver's
+    // Talk then, `fallen` is Henry's row and `fallen_reply` the giver's last word, which
+    // completes the errand the way `fallen`, unpaid. Written only where the story has it.
+    std::string arrange_reply, greet_fallen, fallen, fallen_reply;
+    std::string greet_arranged;   // the giver's opening while the morning is still to come
+    bool has_fall() const {
+        return is_ask() && !carries_on() && !arrange_reply.empty() && !greet_fallen.empty() && !fallen.empty() &&
+               !fallen_reply.empty();
+    }
     // A find's keepsake (npc_quest_lines `keepsake_class`, `keepsake_name`; Forget Me Not's
     // carved wooden heart in the grass among the marigolds, notes.md 5 Oct 2026): a thing the
     // mod lays where the flowers grow and marks, and which Henry may bring back with them.
@@ -417,6 +434,16 @@ struct Quest {
     // sum, both carried from the giver; the giver's rows are the truth and a lie about the
     // price.
     bool is_ambush() const { return kind == "ambush"; }
+    // A duel (In the Stocks, bugs.txt 20 Nov 2026): the giver is the man Henry has come to
+    // threaten, and the target is himself. He offers a fight in an empty yard, carries Henry
+    // there any evening (the fast travel rows), and the mod makes two armed men at Henry's
+    // back as he lands while he draws too. His friends down, he begs (`beg` opens on him,
+    // Henry's `spare` row completes: his purse for his life, and he is gone from the game);
+    // killed, the errand is done the `dead` way with the note found on him.
+    bool is_duel() const { return kind == "duel"; }
+    // The duel's begging and the answer that spares him (npc_quest_lines `beg`, `spare`,
+    // `spare_reply`; plain words stand in).
+    std::string beg, spare, spare_reply;
     bool is_buy() const { return kind == "buy"; }
     // A seek (Sweepings and Strays): nobody is spoken to but the giver; the thing is found
     // at a place (the mod notes the finding as the travel's `seen`) and the giver's rows are
@@ -483,9 +510,16 @@ struct QuestFacts {
     // set on Henry (m); the true way given is `handed`, as an ask's truth is.
     bool directed = false;
     bool ambushed = false;
+    // A duel: the man's friends are down and he is begging (flag Y; `ambushed` is the duel
+    // sprung, as an ambush's trap is).
+    bool cowed = false;
     // An ask whose word is carried on: the giver has been told, has paid, and has sent Henry
     // on to the onward soul (flag w). The errand is still open until that soul is told.
     bool onward = false;
+    // An ask with a fall (Quest::has_fall): the giver has been told and the morning's meeting
+    // arranged (flag A); the one asked has fallen before it (flag F, with x: he is dead).
+    bool arranged = false;
+    bool fallen = false;
     // A plea begged and not yet answered (kQuestPlead; the letter P): the giver waits on
     // Henry's yes or no.
     bool pleaded = false;
@@ -546,8 +580,12 @@ struct QuestFacts {
 // Whether a favour that ended `how` is one of the endings `wanted` names: tokens joined by
 // `|`, each either an ending's own word or `truth`, which is every ending that is not
 // `lied`, `quiet`, `kept` or `dead`, nor one of the interrogation's dodges (`pinned`,
-// `covered`, `evaded`, `caught`). Empty `wanted` is any ending. The mod's QuestHowMatches
-// (npcdb.hpp untrue_how), so the two cannot disagree about what a scene follows.
+// `covered`, `evaded`, `caught`). `plain` is the plain complete alone: an ending that is
+// not one of those and not a way with a line of its own (`threatened` on a plea, `abandoned`)
+// -- the mod reads a way's line off the quest's own beats, which this side does not have, so
+// the one way a pleading deliver writes is named here. Empty `wanted` is any ending. The
+// mod's QuestHowMatches (npcdb.hpp untrue_how), so the two cannot disagree about what a
+// scene follows.
 bool how_matches(std::string_view how, std::string_view wanted);
 // The endings "truth" does not cover (the list above).
 bool untrue_how(std::string_view how);
@@ -616,6 +654,14 @@ inline constexpr std::string_view kQuestOnward = "onward";
 // begged Henry to go back, and waits on his answer -- the plea rows, `onward` for yes, the
 // plain complete for no. The mod pays here and queues no beat; the letter P in the dump.
 inline constexpr std::string_view kQuestPlead = "plead";
+// The plea's third answer (Quest::plea_threat; bugs.txt 20 Nov 2026): Henry will threaten the
+// man himself. The errand completes the way `threatened` (the mod's complete_threatened
+// beat), unpaid again since the plea paid; the duel scene opens from it.
+inline constexpr std::string_view kQuestThreaten = "threaten";
+// An ask with a fall (Quest::has_fall; bugs.txt 20 Nov 2026): the telling arranges the
+// morning's meeting rather than completing -- the mod opens the meeting's objective and
+// sets the clock the one asked falls at; nothing is paid. The letter A in the dump.
+inline constexpr std::string_view kQuestArrange = "arrange";
 // An unyielding holder's retrieve: Henry has told the giver the holder refused (the telling
 // row, rebuffed_row); the mod sets the store's T, and the giver's speech naming the one who
 // keeps the holder's house answers it.

@@ -31,7 +31,7 @@
 --   state <id>                      ok accepted= handed= done= how= flags=
 --   ended <id> <how>                the store told the errand is done that way (opens a gated scene)
 --   offerable <id>                  ok true|false <link>
---   quests                          ok <id>\t<kind>\t<giver>\t<target>\t<item>\t<count>\t<pay>\t<reward>\t<onward>\t<gift>\t<dispute>\t<spot>\t<keepsake>\t<after>\t<afterHow>\t<name>\t<order>\t<hours>\t<carry>\t<loot>\x1f...
+--   quests                          ok <id>\t<kind>\t<giver>\t<target>\t<item>\t<count>\t<pay>\t<reward>\t<onward>\t<gift>\t<dispute>\t<spot>\t<keepsake>\t<after>\t<afterHow>\t<name>\t<order>\t<hours>\t<carry>\t<loot>\t<fall>\x1f...
 --   move <soul|player> x y z        put somebody somewhere
 --   pos <soul|player>               ok x y z
 --   down <soul>                     the soul is knocked out
@@ -263,7 +263,7 @@ function handlers.quests()
             q.spot and string.format("%g,%g,%g", q.spot[1], q.spot[2], q.spot[3]) or "",
             q.keepsake or "", q.after or "", q.afterHow or "", q.name, tostring(q.order or 0),
             q.hours and string.format("%g-%g", q.hours[1], q.hours[2]) or "",
-            q.carry or "", q.loot and q.loot[1] or "",
+            q.carry or "", q.loot and q.loot[1] or "", q.fall and "yes" or "",
         }, "\t")
     end
     return ok(table.concat(parts, "\31"))

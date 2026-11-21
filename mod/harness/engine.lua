@@ -831,6 +831,14 @@ function Engine.installGlobals()
             e.spec = spec
             return e
         end,
+        -- An entity by its id (the game's System.GetEntity), as XGenAIModule.SpawnEntity
+        -- hands ids back.
+        GetEntity = function(id)
+            for _, e in pairs(Engine.entities) do
+                if e.id == id then return e end
+            end
+            return nil
+        end,
         -- An entity removed by id is gone from the world (GetEntityByName finds it no more).
         RemoveEntity = function(id)
             for name, e in pairs(Engine.entities) do
@@ -966,6 +974,18 @@ function Engine.installGlobals()
             if Engine.labels ~= nil then return Engine.labels[label] == true end
             if Engine.interior == nil then error("no area labels") end
             return label == "interior" and Engine.interior == true
+        end,
+        -- The game's soul spawner (the shipped XGenAIModule.SpawnEntity{Name, ClassName,
+        -- SharedSoulGuid, Pos}): a soul of that name at the position, its id back; the spec
+        -- is kept on it (e.spec) for a case to read the guid. Engine.spawnFails, a set of
+        -- guids, is a soul the game will not make (nil back).
+        SpawnEntity = function(spec)
+            if Engine.spawnFails ~= nil and Engine.spawnFails[spec.SharedSoulGuid] then return nil end
+            local pos = spec.Pos or {}
+            local e = Engine.soul(spec.Name or ("spawn" .. Engine.entitySeq),
+                                  { pos = { x = pos[1] or pos.x or 0, y = pos[2] or pos.y or 0, z = pos[3] or pos.z or 0 } })
+            e.spec = spec
+            return e.id
         end,
     }
     Sound = { GetAudioTriggerID = function(name) return name end }

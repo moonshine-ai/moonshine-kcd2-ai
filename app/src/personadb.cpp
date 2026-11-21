@@ -148,6 +148,9 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 if (facts.cursed) f.cursed = true;
                 if (facts.directed) f.directed = true;
                 if (facts.ambushed) f.ambushed = true;
+                if (facts.cowed) f.cowed = true;
+                if (facts.arranged) f.arranged = true;
+                if (facts.fallen) f.fallen = true;
                 if (facts.onward) f.onward = true;
                 if (facts.pleaded) f.pleaded = true;
                 if (facts.keepsake) f.keepsake = true;
@@ -1000,7 +1003,8 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'greet_owed', 'greet_settle_unasked', 'greet_offer', 'thanks_onward', "
                 "'offer_2', 'agreed', 'more', 'more_reply', 'opener', 'accept', "
                 "'onward_soul', 'onward_name', 'greet_onward', 'keepsake_name', 'thanks_keepsake', 'thanks_exposed', "
-                "'plea_yes', 'plea_yes_reply', 'plea_no', 'plea_no_reply', "
+                "'plea_yes', 'plea_yes_reply', 'plea_no', 'plea_no_reply', 'plea_threat', 'plea_threat_reply', "
+                "'beg', 'spare', 'spare_reply', 'arrange_reply', 'greet_arranged', 'greet_fallen', 'fallen', 'fallen_reply', "
                 "'item_kind', 'give', 'give_exposed', 'lie_have', 'lie_have_reply', 'lie_have_caught', 'more_2', 'more_2_reply', "
                 "'told_truth', 'told_pinned', 'told_covered', 'told_fibbed', 'told_evaded', 'told_caught', "
                 "'told_reply_truth', 'told_reply_pinned', 'told_reply_covered', 'told_reply_fibbed', 'told_reply_evaded', "
@@ -1043,6 +1047,16 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "plea_yes_reply") quest.plea_yes_reply = text_at(row, 1);
                 else if (field == "plea_no") quest.plea_no = text_at(row, 1);
                 else if (field == "plea_no_reply") quest.plea_no_reply = text_at(row, 1);
+                else if (field == "plea_threat") quest.plea_threat = text_at(row, 1);
+                else if (field == "plea_threat_reply") quest.plea_threat_reply = text_at(row, 1);
+                else if (field == "beg") quest.beg = text_at(row, 1);
+                else if (field == "spare") quest.spare = text_at(row, 1);
+                else if (field == "spare_reply") quest.spare_reply = text_at(row, 1);
+                else if (field == "arrange_reply") quest.arrange_reply = text_at(row, 1);
+                else if (field == "greet_arranged") quest.greet_arranged = text_at(row, 1);
+                else if (field == "greet_fallen") quest.greet_fallen = text_at(row, 1);
+                else if (field == "fallen") quest.fallen = text_at(row, 1);
+                else if (field == "fallen_reply") quest.fallen_reply = text_at(row, 1);
                 else if (field == "keepsake_name") quest.keepsake_name = text_at(row, 1);
                 else if (field == "thanks_keepsake") quest.thanks_keepsake = text_at(row, 1);
                 else if (field == "thanks_exposed") quest.thanks_exposed = text_at(row, 1);

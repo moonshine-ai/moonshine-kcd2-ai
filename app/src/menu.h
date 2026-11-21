@@ -71,8 +71,8 @@ inline constexpr std::string_view kDirectorIntents[] = {"apologise", "refuse_apo
                                                         "lie_soft", "lie_big", "give", "lie_have",
                                                         "give_up", "accept_again", "dictate",
                                                         "fast_travel", "fast_travel_later",
-                                                        "plea_yes", "plea_no", "take_chest", "decline_chest",
-                                                        "named_more"};
+                                                        "plea_yes", "plea_no", "plea_threat", "take_chest", "decline_chest",
+                                                        "named_more", "spare", "fallen"};
 bool known_intent(std::string_view intent);
 
 struct MenuOption {

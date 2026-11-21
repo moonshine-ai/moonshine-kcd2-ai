@@ -186,10 +186,12 @@ struct Quest {
     // inside the walls) once the conversation is gone and wind the clock on to
     // `fast_travel_at` ("hh:mm" of the day; never back), as the game's own carriage does
     // (FastTravelArm). The hours Henry can ask it in (`fast_travel_hours`, "from-to") are
-    // the app's to keep; the mod carries whenever told. All three or none.
+    // the app's to keep; the mod carries whenever told. All three or none -- but a duel's
+    // (below) is "travel with him there immediately": no hour is written, and the clock is
+    // left where it stands (fast_travel_at -1 with fast_travel_to set).
     std::string fast_travel_to;
     double fast_travel_at = -1.0;  // hours of the day, decimal; -1 for none written
-    bool has_fast_travel() const { return !fast_travel_to.empty() && fast_travel_at >= 0; }
+    bool has_fast_travel() const { return !fast_travel_to.empty() && (fast_travel_at >= 0 || is_duel()); }
     // The holder set down for the carry (`fast_travel_holder_to`, "x,y,z", a spot measured
     // on his own road home in sight of the landing; README, "The holder set down at the
     // gate", 15 Nov 2026): at 20:30 he is wherever his evening has him, two hundred metres
@@ -704,6 +706,16 @@ struct Quest {
     std::string onward_hand_read;     // the one sent to: what they make of it
     std::string log_onward;
     std::string objective_onward;
+    // An ask whose yes carries a condition the giver must keep the next morning (In the
+    // Stocks' witness: Benesh will stand before the bailiff with Henry beside him; bugs.txt
+    // 20 Nov 2026). The telling is the app's `arrange` rather than the complete: the fetch
+    // is done, the `arranged` objective ("Meet Father Adam in the morning") opens on the
+    // giver with `log_arranged`, and at the next fall hour the mod takes the one asked out
+    // of the world (WatchAsk: the fall from the scaffolding). The giver's Talk after that
+    // is the `fallen` ending (`log_completed_fallen`), unpaid.
+    std::string objective_arranged;
+    std::string log_arranged;
+    std::string log_completed_fallen;
     // A reward that is a thing (npc_quest_lines "reward_class": one item class guid): made
     // in Henry's pocket at the hand-in beside whatever the words promise and the groschen,
     // by PayReward (Heinz's digestive potion in *Barking Stew*). Empty for a reward in
@@ -755,7 +767,25 @@ struct Quest {
     // retrieve's stolen.
     std::string carry_class;
     std::string carry_name;
+    // A duel (kind "duel"; bugs.txt 20 Nov 2026, In the Stocks: Paul Schmidt threatened
+    // rather than begged for): the giver is the man challenged and the target too -- the
+    // same soul, which no other kind allows -- and the errand is his challenge, "under the
+    // light of the moon" at a yard he names (fast_travel_to), taken up by the app's
+    // `fast_travel` in the evening hours (the app's fast_travel_hours) and sprung as Henry
+    // lands (FastTravelGo -> DuelSpring): the target is set down facing him
+    // (fast_travel_holder_to), the two in `brawl_with` are made behind Henry by the Lua
+    // (XGenAIModule.SpawnEntity of their souls; random-encounter bandits, whose level is
+    // the game's own scaling), and the ambush token starts the graph's brawl -- the target
+    // on the player, armed, to the death (emit_brawl). The watch (WatchDuel) has the two
+    // made ones down -> the cowed token (log_cowed: the objective's Updated, the brawl
+    // stopped, the target begging); the target dead -> the `dead` ending at once (the
+    // objective's Completed on log_completed_dead, no row said; the note item_class, a
+    // Document seeded on him from the accept, is on the body); the app's `complete` ->
+    // spared (log_completed): all his money to Henry, and he is gone from the game
+    // (DuelGone). Henry's own death is the game's.
+    std::string log_cowed;
 
+    bool is_duel() const { return kind == "duel"; }
     bool is_deliver() const { return kind == "deliver"; }
     bool is_find() const { return kind == "find"; }
     bool is_travel() const { return kind == "travel"; }
@@ -774,8 +804,12 @@ struct Quest {
     // Whether the quest's item is a Document of the mod's own with a page the generator
     // wrote (`letter`): a deliver's letter, an ambush's directions, a buy's charm.
     bool has_document() const {
-        return (is_deliver() || is_ambush() || is_buy()) && !item_class.empty() && !carries_thing();
+        return (is_deliver() || is_ambush() || is_buy() || is_duel()) && !item_class.empty() && !carries_thing();
     }
+    // A duel sprung and cowed (above): the two tokens the Lua makes, only with the journal
+    // lines they write.
+    bool has_duel_spring() const { return is_duel() && !log_ambushed.empty(); }
+    bool has_duel_cowed() const { return has_duel_spring() && !log_cowed.empty(); }
     // A deliver of a thing of the game's own rather than a letter (item_kind "thing"): the
     // parish chalice carried back to the priest.
     bool carries_thing() const { return is_deliver() && !item_class.empty() && item_kind == "thing"; }
@@ -818,6 +852,11 @@ struct Quest {
     // the journal's Updated line, the last objective with the marker on the one sent to,
     // their own hand row completing the quest -- with onward_soul the receiver's.
     bool carries_on() const { return (is_ask() || has_interrogation()) && !onward_soul.empty(); }
+    // An ask whose telling arranges a meeting the one asked never comes to (above).
+    bool has_fall() const {
+        return is_ask() && !carries_on() && !objective_arranged.empty() && !log_arranged.empty() &&
+               !log_completed_fallen.empty();
+    }
     // The plea: a deliver's word carried back to the receiver (above).
     bool pleads() const { return has_interrogation() && !onward_soul.empty(); }
     // A find whose marker is a keepsake laid at the spot the things grow (above).
@@ -833,7 +872,7 @@ struct Quest {
     bool has_token() const {
         return (is_pray() && !log_prayed.empty()) || (is_spot() && !log_left.empty()) ||
                (is_seek() && !log_found.empty()) || (is_ambush() && !log_ambushed.empty()) ||
-               has_helper() || has_written_log() || has_expose();
+               has_helper() || has_written_log() || has_expose() || has_duel_spring();
     }
     // A retrieve whose holder can be caught where he should not be (above): the witness,
     // the row and the journal's lines all written, and a night window to catch him in.
@@ -926,11 +965,14 @@ struct Quest {
     bool has_target() const { return !target_soul.empty(); }
     // Whether the target is dealt with through the game's menu: a holder to persuade, a
     // receiver to hand a letter to, a beat's man to talk round, a mind's to look in on. A
-    // travel's target is looked at and never spoken to.
-    bool has_holder() const { return has_target() && !is_travel(); }
+    // travel's target is looked at and never spoken to, and a duel's man (its giver again)
+    // is spoken to through the app's Talk alone: no menu of ours on him.
+    bool has_holder() const { return has_target() && !is_travel() && !is_duel(); }
     // Whether arriving stages a fight: a travel whose generator named somebody to start it,
     // or an ambush (whose brawlers are the whole point).
-    bool has_brawl() const { return (is_travel() || is_ambush()) && !brawl_guids.empty(); }
+    // (A duel's brawl_with are the souls the Lua makes behind Henry, not the graph's
+    // brawlers: its graph sets the target alone on him.)
+    bool has_brawl() const { return (is_travel() || is_ambush() || is_duel()) && !brawl_guids.empty(); }
     // What the pay option costs Henry, in groschen. From npc_quest_lines when the
     // generator wrote a figure, otherwise 0. 0 means the
     // errand has no pay option: the giver pays money, so buying the thing back would
@@ -959,10 +1001,14 @@ inline constexpr const char* kResolutions[] = {
     "kept",     // deliver: Henry said he had not carried it and would not
     "quiet",    // travel: Henry went, and would not say what he saw
     "fought",   // beat: the man was knocked down rather than talked, frightened or paid round
-    "dead",     // beat, mind: the target died before it was done; unpaid
+    "dead",     // beat, mind: the target died before it was done; unpaid. A duel's: the man
+                // challenged killed in it, which ends the duel there (the note on his body)
     // (a leave's and a return's lied and quiet are the travel's; an ambush's lied, quiet and
     // dead are the ask's; a buy's paid, stolen and lied are the retrieve's, its lie the
-    // price overstated and pocketed)
+    // price overstated and pocketed; a pleading deliver's threatened is Henry's third answer
+    // to the plea -- he will not beg, he will go and threaten the man himself -- which the
+    // duel scene follows (after_how "threatened"), and which no scene after the plea's
+    // yes or no follows: those take after_how "plain", the plain complete alone)
     // A deliver with an interrogation at the receiver's (tell_* above): the cover story
     // with the giver named, the cover story believed, a tale seen through, the question
     // dodged on a won check, and the check lost. The truth told is the plain completion.
@@ -977,13 +1023,16 @@ inline constexpr const char* kResolutions[] = {
     // walking out with nothing to tell the parish (denounced; the thing never comes back,
     // but Henry tells the giver so, which is no lie).
     "exposed", "exposed_paid", "denounced",
+    // An ask whose one asked fell before the morning's meeting (has_fall): the giver tells
+    // Henry so, and nothing is paid. Untrue, as a death is: the word never reached the bailiff.
+    "fallen",
 };
 
 // The endings a scene that waits on "truth" does not follow: the lies, the silence, the
 // death, and every way of not telling the receiver how the thing was come by. The app's
 // how_matches and the Lua's QuestHowMatches name the same list.
 inline bool untrue_how(const std::string& how) {
-    return how == "lied" || how == "quiet" || how == "kept" || how == "dead" ||
+    return how == "lied" || how == "quiet" || how == "kept" || how == "dead" || how == "fallen" ||
            how == "pinned" || how == "covered" || how == "fibbed" || how == "evaded" || how == "caught";
 }
 

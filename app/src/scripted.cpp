@@ -136,6 +136,9 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.cursed = at->second.find('u') != std::string::npos;
         facts.directed = at->second.find('g') != std::string::npos;
         facts.ambushed = at->second.find('m') != std::string::npos;
+        facts.cowed = at->second.find('Y') != std::string::npos;
+        facts.arranged = at->second.find('A') != std::string::npos;
+        facts.fallen = at->second.find('F') != std::string::npos;
         facts.onward = at->second.find('w') != std::string::npos;
         facts.pleaded = at->second.find('P') != std::string::npos;
         facts.told_rebuffed = at->second.find('T') != std::string::npos;
@@ -253,6 +256,8 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
             ? "I'll look in on " + quest.target_name + " for you, and keep looking in."
             : quest.is_ask()
             ? "I'll go to " + quest.target_name + " and get the truth of it for you."
+            : quest.is_duel()
+            ? "Name your yard, then. I'll be there."
             : "I'll get your " + quest.item_name + " back from " + quest.target_name + ".";
         // Taken up, the giver answers with the way there (`agreed`), or for a quest written
         // before that line with the second telling: the errand is taken and answered without
@@ -383,11 +388,12 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
     // or spoken question: their knowledge is the help the favour pays for. Until then the
     // gate reads off the conversation's favour where it is theirs to give, else the first
     // of their others; a favour they never have to ask (voided, or a prayer the player
-    // cannot say) is no favour and shuts nothing.
+    // cannot say) is no favour and shuts nothing. Nor is a duel (quest.h is_duel) a favour:
+    // the man offers Henry a fight, not help, and what he knows was never its price.
     out.kb_gate = KbGate::Open;
     if (!own.done) {
         for (const auto& [q, f] : every) {
-            if (q->role != QuestRole::Giver || f->voided || f->cannot_pray) continue;
+            if (q->role != QuestRole::Giver || f->voided || f->cannot_pray || q->is_duel()) continue;
             out.kb_gate = f->accepted                 ? KbGate::Owed
                           : moonshine::offerable(*q, *f) ? KbGate::Asking
                                                          : KbGate::Shut;

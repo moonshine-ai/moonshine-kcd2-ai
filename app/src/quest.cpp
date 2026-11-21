@@ -180,6 +180,12 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                 plan.block += " When they told you they had told " + to + " the whole truth of it, you sent "
                               "them back to beg him to let the matter rest; they have been, and whatever " +
                               to + " said to that is said. You do not ask them to go again.";
+            } else if (plea && facts.how == "threatened") {
+                // Henry's own way (bugs.txt 20 Nov 2026): not the begging, a threat to the man.
+                plan.block += " When they told you they had told " + to + " the whole truth of it, you begged "
+                              "them to go back and plead with him to let the matter rest; instead they said "
+                              "they would go to the thief himself and frighten him off. You did not ask for "
+                              "that and are afraid of what comes of it, for them and for you.";
             } else if (plea && facts.pleaded) {
                 // Begged and refused to your face (bugs.txt 19 Nov 2026).
                 plan.block += " When they told you they had told " + to + " the whole truth of it, you begged "
@@ -211,6 +217,14 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
             no.after_intent = after;
             plan.rows.push_back(std::move(yes));
             plan.rows.push_back(std::move(no));
+            // The third way, where written (bugs.txt 20 Nov 2026): Henry goes to the man
+            // himself, and the errand ends the way `threatened`.
+            if (!quest.plea_threat.empty() && !quest.plea_threat_reply.empty()) {
+                DirectorRow threat{"plea_threat", quest.plea_threat, quest.plea_threat_reply, std::string(kQuestThreaten)};
+                threat.closes = true;
+                threat.after_intent = after;
+                plan.rows.push_back(std::move(threat));
+            }
         };
         if (plea && facts.pleaded && !facts.onward) {
             plan.block = "This person took " + letter + " back to " + to + " for you and told him the whole "
@@ -1020,6 +1034,14 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
         return plan;
     }
     if (quest.role == QuestRole::Giver) {
+        if (facts.done && quest.has_fall() && facts.how == "fallen") {
+            plan.block = "This person got " + who + " to agree to stand before the bailiff, and the morning "
+                         "you were to go " + who + " was found dead under scaffolding he had no business on. "
+                         "You told them so, paid nothing, and have dismissed your sacristan; the watch will "
+                         "hear no more of it and neither, God forgive you, will you. It is settled between you, "
+                         "and you do not go over it again.";
+            return plan;
+        }
         if (facts.done) {
             plan.block = onward
                 ? "This person went to " + who + " for you, came back and told you what they got "
@@ -1041,6 +1063,32 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
                          "not pay twice.";
             return plan;
         }
+        // An ask with a fall (Quest::has_fall; bugs.txt 20 Nov 2026): the morning's meeting
+        // arranged, and then the one asked dead of a fall before it. The giver breaks the
+        // news (greet_fallen), Henry's one row closes it, and nothing is paid.
+        if (quest.has_fall() && facts.fallen) {
+            plan.block = "This person got " + who + " to agree to stand before the bailiff with you, on "
+                         "condition they came along, and you arranged to go together this morning. " + who +
+                         " never came: you have heard that he fell from scaffolding at first light, where he had "
+                         "no business being, and is dead. The watch call it an accident and will hear no more. You "
+                         "believe none of it and can prove none of it; you have dismissed your sacristan, and "
+                         "that is as far as your reach goes. You tell this person so, plainly and without "
+                         "comfort, and you do not pay them: there is nothing to pay for. You know nothing of "
+                         "who did it, and you invent nothing.";
+            rows.add("fallen", quest.fallen, quest.fallen_reply, kQuestComplete,
+                     "A fall. Off scaffolding he never worked on. And the watch believe that?",
+                     "The watch believe what is easiest to believe. I have put him out of my church; I can do "
+                     "no more, and God forgive me, I will not try. Go carefully.");
+            return plan;
+        }
+        if (quest.has_fall() && facts.arranged) {
+            plan.block = "This person got " + who + " to agree to stand before the bailiff, on condition they "
+                         "come along, and you have arranged it: tomorrow morning, the three of you, from here. "
+                         "Nothing more is to be said tonight; if they come back before the morning, tell them "
+                         "to be here at first light, and that you will pay them when it is done. You do not pay "
+                         "yet.";
+            return plan;
+        }
         if (facts.accepted) {
             plan.block = "This person agreed to go to " + who + " and get the truth of the matter "
                          "out of them for you, for " + pay + ". You have no way of knowing whether "
@@ -1059,7 +1107,16 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
                               "them to carry it to " + to + ", since you will not go yourself; "
                               "that is in your written answer.";
             }
-            if (facts.handed) {
+            if (facts.handed && quest.has_fall()) {
+                // The yes with its condition: the telling arranges the morning rather than
+                // ending the errand, and the giver pays nothing until it is done.
+                plan.block += " When they tell you " + who + " has agreed, you do not pay yet: you name the "
+                              "morning, first light, here, the three of you to the bailiff together.";
+                rows.add("tell", quest.tell, quest.arrange_reply, kQuestArrange,
+                         "He'll do it. On one condition: I go with you both.",
+                         "Then he shall have his condition. Tomorrow at first light, here, and we go to the "
+                         "bailiff together. You will have your " + pay + " when it is done.");
+            } else if (facts.handed) {
                 rows.add("tell", quest.tell, quest.thanks, onward ? kQuestOnward : kQuestComplete,
                          "I got it out of " + who + ". Here is the truth of it.",
                          onward ? "So that is how it was. Here, " + pay + ", as I said. One thing more: "
@@ -1299,6 +1356,84 @@ QuestPlan plan_buy(const Quest& quest, const QuestFacts& facts) {
     return plan;
 }
 
+// A duel (Quest::is_duel; In the Stocks, bugs.txt 20 Nov 2026). The giver is the man
+// himself: Henry comes to threaten him (the quest's `opener` row draws the `offer`, which is
+// the challenge), and the yes is the challenge taken up. From then the carrying is the
+// evening's (plan_quest lays the fast travel rows between the hours written); the fight is
+// the mod's; once his friends are down he begs, and Henry's one row spares him for his purse.
+// Dead, or gone, there is nothing to say.
+QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach& approach) {
+    QuestPlan plan;
+    if (quest.role != QuestRole::Giver) return plan;
+    const std::string yard = quest.spot_text.empty() ? std::string("the empty yard") : quest.spot_text;
+    if (facts.done) {
+        if (facts.how == "dead" || facts.dead) {
+            plan.block.clear();
+            return plan;
+        }
+        plan.block = "This person beat the men you brought to the yard and beat you, and you begged "
+                     "your life of them and bought it with every groschen you had. You have left the "
+                     "town for good and are not to be met; if you are, you are a frightened man who "
+                     "wants nothing but to be let go.";
+        return plan;
+    }
+    if (facts.cowed) {
+        plan.block = "This person has just beaten the two men you brought to the yard to set on them "
+                     "from behind, and you are on your knees in front of them with your sword down. "
+                     "You are begging for your life: you will give them every groschen you have, you "
+                     "will leave the town tonight and never come back, anything. You mean it. You are "
+                     "not clever now, and you do not argue.";
+        DirectorRow spare{"spare",
+                          quest.spare.empty() ? "Your purse. All of it. Then run, and if I see you in this town again I'll finish it."
+                                              : quest.spare,
+                          quest.spare_reply.empty() ? "Here -- here, take it, it's all there. You'll not see me again. I swear it."
+                                                    : quest.spare_reply,
+                          std::string(kQuestComplete)};
+        spare.closes = true;
+        plan.rows.push_back(std::move(spare));
+        return plan;
+    }
+    if (facts.ambushed) {
+        plan.block = "You are in the yard with your sword out and the two men you hired at this "
+                     "person's back; there is nothing to talk about and you say so.";
+        return plan;
+    }
+    if (facts.accepted) {
+        const bool evening = approach.hour != kUnread && approach.hour >= quest.fast_travel_from &&
+                             approach.hour < quest.fast_travel_to;
+        plan.block = "This person came to you knowing the church's cup came out of your chest, and "
+                     "threatened you with the bailiff over it. You did not give an inch: you offered "
+                     "them a fight, man to man, in " + yard + ", and they "
+                     "took you up on it. You have two men who will be waiting there to see it goes "
+                     "your way, which this person does not know. " +
+                     (evening ? "It is evening and you are ready to go now, this moment, if they are; you say so."
+                              : "It is not evening yet; you tell them to find you in the evening, and you "
+                                "will take them there yourself.") +
+                     " You are easy and a little mocking about it. You do not speak of the cup or of "
+                     "the bell-ringer unasked, and you admit nothing.";
+        return plan;
+    }
+    if (facts.locked) {
+        plan.block.clear();
+        return plan;
+    }
+    plan.block = "This person has come to threaten you: they know the church's silver cup came out of "
+                 "your chest, and they want you to leave the bell-ringer be, or the bailiff will hear "
+                 "of it. You will not be frightened by a stranger. You deny nothing and admit nothing, "
+                 "and you answer the threat with one of your own: if they want it settled, settle it "
+                 "like men, in " + yard + ", and they can find you in the "
+                 "tavern any evening when they have the stomach for it. You keep your two friends to "
+                 "yourself.";
+    if (!quest.offer.empty()) {
+        plan.block += " When it comes to it, this is how you put it: " + in_quotes(quest.offer);
+    }
+    plan.question = "Did this person just agree to fight you in the yard, or to meet you for it?";
+    plan.on_yes = std::string(kQuestAccept);
+    plan.direction = "[They have agreed to the fight. You tell them again where: " + yard +
+                     ", of an evening, and that you will take them there yourself when they come for you.]";
+    return plan;
+}
+
 }  // namespace
 
 bool how_matches(std::string_view how, std::string_view wanted) {
@@ -1309,12 +1444,13 @@ bool how_matches(std::string_view how, std::string_view wanted) {
         wanted = bar == std::string_view::npos ? std::string_view() : wanted.substr(bar + 1);
         if (token == how) return true;
         if (token == "truth" && !untrue_how(how)) return true;
+        if (token == "plain" && !untrue_how(how) && how != "threatened") return true;
     }
     return false;
 }
 
 bool untrue_how(std::string_view how) {
-    return how == "lied" || how == "quiet" || how == "kept" || how == "dead" || how == "pinned" ||
+    return how == "lied" || how == "quiet" || how == "kept" || how == "dead" || how == "fallen" || how == "pinned" ||
            how == "covered" || how == "fibbed" || how == "evaded" || how == "caught" || how == "abandoned";
 }
 
@@ -1371,6 +1507,18 @@ std::string visit_greeting(const Quest& quest, const QuestFacts& facts, const Qu
     if (quest.has_expose() && facts.rebuffed && !facts.seen && facts.accepted && !facts.done &&
         facts.have <= 0 && !quest.greet_rebuffed.empty()) {
         return quest.greet_rebuffed;
+    }
+    // An ask's one asked fallen before the morning's meeting (Quest::has_fall): the giver
+    // breaks the news before Henry asks.
+    if (quest.has_fall() && facts.fallen && !facts.done) return quest.greet_fallen;
+    // The morning's meeting arranged and not yet come: the giver's word to be there.
+    if (quest.has_fall() && facts.arranged && !facts.done) {
+        return quest.greet_arranged.empty() ? "Tomorrow, at first light. Be here, and we go together." : quest.greet_arranged;
+    }
+    // A duel's man on his knees (facts.cowed): his begging opens the talk.
+    if (quest.is_duel() && facts.cowed && !facts.done) {
+        return quest.beg.empty() ? "Don't -- don't! Mercy, for the love of God. I'll give you anything. Anything!"
+                                 : quest.beg;
     }
     if (!plan.opening_commands.empty()) {
         if (!facts.accepted) return quest.greet_settle_unasked;
@@ -1524,7 +1672,9 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
                               std::any_of(plan.rows.begin(), plan.rows.end(), [](const DirectorRow& row) {
                                   return row.command == kQuestComplete || row.command == kQuestOnward;
                               });
-        if (facts.accepted && !facts.done && !facts.locked && !facts.dead && !settling) {
+        // (Not a duel once sprung: there is no giving up with the swords out.)
+        if (facts.accepted && !facts.done && !facts.locked && !facts.dead && !settling &&
+            !(quest.is_duel() && facts.ambushed)) {
             plan.rows.push_back({"give_up", std::string(kGiveUpRow), quest.give_up_reply, std::string(kQuestAbandon)});
         }
         // The giver's carrying (Quest::fast_travel_row; notes.md 25 Oct 2026): while the thing
@@ -1533,8 +1683,11 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
         // for). Before the yes the rows wait for it (after_yes) and the yes leaves the
         // conversation open for them; after it, the carrying alone is on every list, the
         // player having other rows to leave by. Both close the conversation.
+        // A duel's carrying is to the fight (the mod springs it as Henry lands), so not once
+        // it is sprung.
         const bool open = !facts.done && !facts.locked && !facts.dead && !settling && !facts.handed &&
-                          !facts.denounced && facts.have <= 0 && (facts.accepted || !plan.question.empty());
+                          !facts.denounced && facts.have <= 0 && (facts.accepted || !plan.question.empty()) &&
+                          !(quest.is_duel() && facts.ambushed);
         if (quest.has_fast_travel() && open && approach.hour != kUnread &&
             approach.hour >= quest.fast_travel_from && approach.hour < quest.fast_travel_to) {
             DirectorRow go{"fast_travel", quest.fast_travel_row, quest.fast_travel_reply, std::string(kQuestFastTravel)};
@@ -1595,6 +1748,7 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
     if (quest.is_ask()) return plan_ask(quest, facts);
     if (quest.is_ambush()) return plan_ambush(quest, facts);
     if (quest.is_buy()) return plan_buy(quest, facts);
+    if (quest.is_duel()) return plan_duel(quest, facts, approach);
 
     const std::string item = "your " + quest.item_name;
     const std::string pay = reward_words(quest);
@@ -2113,6 +2267,24 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
         if (facts.accepted) {
             return "They have also agreed to get the way to one who lifts curses out of " + quest.target_name +
                    " for you, and have not yet brought you word.";
+        }
+        return {};
+    }
+    if (quest.is_duel()) {
+        // The man himself (his target is the giver): the fight is the whole of what stands
+        // between them, and a dead or departed man says nothing.
+        if (quest.role != QuestRole::Giver) return {};
+        if (facts.done) {
+            if (facts.dead || facts.how == "dead") return {};
+            return "This person also beat you and the men you set on them in the yard, and you bought your "
+                   "life with your purse and swore to leave the town; you are a frightened man, and you say "
+                   "nothing of it unasked.";
+        }
+        if (facts.cowed) return "You are also on your knees to this person in the yard, begging for your life.";
+        if (facts.ambushed) return "You also have your sword out against this person in the yard, your two men with you.";
+        if (facts.accepted) {
+            return "You have also offered this person a fight in the yard, under the moon, for threatening you "
+                   "over the church's cup, and they took you up on it; you will take them there of an evening.";
         }
         return {};
     }

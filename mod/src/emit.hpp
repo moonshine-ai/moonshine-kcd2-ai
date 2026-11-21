@@ -67,6 +67,9 @@ std::string holder_node(const std::string& quest_id);
 // Henry has knelt, and the graph's ItemDescriptorTrigger fires on. A guid of the mod's own
 // from the quest id, and the item row's name (token_q_<id>).
 std::string token_class(const Quest& quest);
+// A duel's second token: the man cowed (emit_leg's cowed trigger; WatchDuel).
+std::string cowed_class(const Quest& quest);
+std::string cowed_name(const Quest& quest);
 std::string token_name(const Quest& quest);
 // A chest's second token: made when the thing has left the chest for Henry's pocket
 // (WatchChest), for the trigger that completes the fetch objective (taken_q_<id>).
@@ -167,6 +170,13 @@ std::string return_objective(const Quest& quest);
 // the `onward` port when the giver has been told and has sent Henry on, with the marker on
 // the one sent to, and done with the quest. Its line is the generator's objective_onward.
 constexpr const char* kOnwardObjective = "tell_onward";
+// The objective an ask with a fall (Quest::has_fall) opens on the `arrange` port -- the
+// giver told, the morning's meeting arranged -- with the marker on the giver, and done with
+// the quest. Its line is the writer's objective_arranged; its Started log, log_arranged.
+constexpr const char* kArrangedObjective = "meet_giver";
+// The hour of the game's day the one asked falls at, the morning after the arrangement
+// (WatchAsk; the next such hour at least an hour off).
+constexpr int kFallHour = 6;
 // The onward soul's own dialogue: the one `hand` sequence of a word deliver's menu, under
 // a role of its own (onward_role) so only they offer it, as q_<id>_onward.xml beside the
 // holder's.
@@ -801,6 +811,21 @@ constexpr const char* kAmbushContexts[] = {
     "combat_indifferenceUnarmed", "combat_forceUnarmedWhileInUnarmedSkirmish",
     "combat_neverAcceptSurrender",
 };
+// A duel (kind "duel"; bugs.txt 20 Nov 2026, In the Stocks) is an ambush with the man who
+// set it in the fight himself: armed, to the death, neither side giving or taking quarter
+// until the Lua's cowed token (his two made friends down) stops it and he begs; nobody's
+// crime, since he began it in an empty yard at night (combat_invisible, as a travel's
+// brawl has it). Long enough for three men to be fought.
+constexpr int kDuelSeconds = 240;
+constexpr const char* kDuelContexts[] = {
+    "combat_neverSurrenderOrFlee", "combat_neverAcceptSurrender", "combat_invisible",
+};
+// Where the two made ones stand as Henry lands (metres behind him, a pace to either side),
+// the sword put in their hands (the shipped CombatDebug.lua's shortsword weapon preset),
+// and how far off Henry must be for their bodies to be taken away (DuelSweep).
+constexpr double kDuelBehindMetres = 3.0;
+constexpr const char* kDuelSwordPreset = "b966514a-966a-4b1c-b870-755abd25bd32";
+constexpr double kDuelSweepMetres = 80.0;
 // A pray is prayed when the player soul's praying context -- the game's own "Player
 // praying" script context, set while Henry kneels at a shrine and cleared when the prayer
 // ends (measured on the Windows laptop: false, true 8.6 s after the shrine's Pray prompt is used, false

@@ -283,8 +283,28 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
         if (!q.chest_pos.empty() && !q.is_retrieve()) {
             throw std::runtime_error("quest " + q.id + " names chest_pos but is a " + q.kind);
         }
-        if (!q.fast_travel_to.empty() != (q.fast_travel_at >= 0)) {
+        if (!q.is_duel() && !q.fast_travel_to.empty() != (q.fast_travel_at >= 0)) {
             throw std::runtime_error("quest " + q.id + " has one of fast_travel_to and fast_travel_at; the carrying wants both");
+        }
+        // A duel (npcdb.hpp): the man challenged is giver and target both, the yard is the
+        // carry's landing (fast_travel_to, with him set down facing it), and the clock is
+        // not wound (no fast_travel_at: he goes now).
+        if (q.is_duel()) {
+            if (q.target_soul != q.giver_soul) {
+                throw std::runtime_error("quest " + q.id + " is a duel whose target is not its giver");
+            }
+            if (q.fast_travel_to.empty() || q.fast_travel_holder_to.empty()) {
+                throw std::runtime_error("quest " + q.id + " is a duel with no fast_travel_to / fast_travel_holder_to");
+            }
+            if (q.fast_travel_at >= 0) {
+                throw std::runtime_error("quest " + q.id + " is a duel with a fast_travel_at; a duel goes now");
+            }
+            if (q.log_ambushed.empty() || q.log_cowed.empty()) {
+                throw std::runtime_error("quest " + q.id + " is a duel with no log_ambushed / log_cowed");
+            }
+            if (!q.log_target_dead.empty()) {
+                throw std::runtime_error("quest " + q.id + " is a duel with a log_target_dead; its death is log_completed_dead");
+            }
         }
         if (!q.fast_travel_holder_to.empty() && !q.has_fast_travel()) {
             throw std::runtime_error("quest " + q.id + " has fast_travel_holder_to and no carrying to set him down for");
@@ -721,15 +741,19 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "onward_hand_read") return &q.onward_hand_read;
         if (field == "log_onward") return &q.log_onward;
         if (field == "objective_onward") return &q.objective_onward;
-        // An ambush's and a buy's Document pages go where a deliver's letter does: one
-        // page per quest, whatever the kind calls it.
-        if (field == "directions" || field == "charm") return &q.letter;
+        if (field == "objective_arranged") return &q.objective_arranged;
+        if (field == "log_arranged") return &q.log_arranged;
+        if (field == "log_completed_fallen") return &q.log_completed_fallen;
+        // An ambush's, a buy's and a duel's Document pages go where a deliver's letter does:
+        // one page per quest, whatever the kind calls it (the duel's is the note on the man).
+        if (field == "directions" || field == "charm" || field == "note") return &q.letter;
         if (field == "direct") return &q.target_direct;
         if (field == "direct_reply") return &q.target_direct_reply;
         if (field == "truth") return &q.target_truth;
         if (field == "truth_reply") return &q.target_truth_reply;
         if (field == "log_directed") return &q.log_directed;
         if (field == "log_ambushed") return &q.log_ambushed;
+        if (field == "log_cowed") return &q.log_cowed;
         if (field == "carry_class") return &q.carry_class;
         if (field == "carry_name") return &q.carry_name;
         if (field == "routine") return &q.routine;
@@ -909,9 +933,9 @@ void read_brawlers(sqlite3* db, std::vector<Quest>& quests) {
     StmtHandle stmt(raw_stmt, &sqlite3_finalize);
     for (Quest& q : quests) {
         if (q.brawl_souls.empty()) continue;
-        if (!q.is_travel() && !q.is_ambush()) {
+        if (!q.is_travel() && !q.is_ambush() && !q.is_duel()) {
             throw std::runtime_error("quest " + q.id + " names brawl_with but is a " + q.kind +
-                                     ", and only a travel or an ambush stages a brawl");
+                                     ", and only a travel, an ambush or a duel stages a brawl");
         }
         for (const std::string& name : q.brawl_souls) {
             // The one looked at is the other side of the fight, not a member of this one.
@@ -952,6 +976,9 @@ void read_brawlers(sqlite3* db, std::vector<Quest>& quests) {
     for (const Quest& q : quests) {
         if (q.is_ambush() && q.brawl_guids.empty()) {
             throw std::runtime_error("quest " + q.id + " is an ambush with nobody in brawl_with");
+        }
+        if (q.is_duel() && q.brawl_guids.empty()) {
+            throw std::runtime_error("quest " + q.id + " is a duel with nobody in brawl_with to come at Henry's back");
         }
         if (q.is_ambush() && q.spot_pos.empty()) {
             throw std::runtime_error("quest " + q.id + " is an ambush with no spot_pos");
@@ -1169,6 +1196,9 @@ std::vector<std::string> Quest::resolutions() const {
         // own logs, and the ports are dealt only when the generator wrote them.
         if (!log_completed_kept.empty()) out.emplace_back("kept");
         if (!log_completed_lied.empty()) out.emplace_back("lied");
+        // A pleading deliver's third answer (npcdb.hpp kResolutions): Henry will go and
+        // threaten the man himself rather than beg for him.
+        if (pleads() && !log_completed_threatened.empty()) out.emplace_back("threatened");
         // The interrogation's five other endings, only when the receiver asks (the rows
         // are written) and the journal has the line.
         if (has_interrogation()) {
@@ -1208,6 +1238,12 @@ std::vector<std::string> Quest::resolutions() const {
         if (!log_completed_dead.empty()) out.emplace_back("dead");
         return out;
     }
+    if (is_duel()) {
+        // Spared is the plain completion; killed in it has its own (the man's death, which
+        // ends the duel where it is).
+        if (!log_completed_dead.empty()) out.emplace_back("dead");
+        return out;
+    }
     if (is_ask() || is_ambush()) {
         // The truth carried back is the plain completion, however it was got out of the
         // one asked; the lie, the silence and the death have their own. (An ambush's truth
@@ -1215,6 +1251,8 @@ std::vector<std::string> Quest::resolutions() const {
         if (!log_completed_lied.empty()) out.emplace_back("lied");
         if (!log_completed_quiet.empty()) out.emplace_back("quiet");
         if (!log_completed_dead.empty()) out.emplace_back("dead");
+        // The one asked fallen before the morning's meeting (has_fall).
+        if (has_fall()) out.emplace_back("fallen");
         return out;
     }
     if (is_buy()) {
