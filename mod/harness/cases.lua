@@ -4014,12 +4014,17 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     check(E.find("BRIDGE quest " .. id .. " rebuffed on persuade"), "said in the log")
     M.QuestRebuffed(id, "threaten")
     check(E.find("BRIDGE quest " .. id .. " rebuffed on threaten"), "the other row the same, again")
+    -- Henry tells him (the app's told_rebuffed; bugs.txt 20 Nov 2026): the store's T, and
+    -- nothing else yet -- no token, no role for her.
+    M.QuestCommand(id, "told_rebuffed")
+    check(M.state.quests[id].toldRebuffed == true, "the telling in the store")
+    check(string.find(M.QuestFlagLetters(M.state.quests[id]), "nT", 1, true) ~= nil, "the letters n and T")
+    check(M.Count(player, q.token) == 0 and not M.HasMeta(elsbeth, q.helperMeta), "no token and no helper role on the telling alone")
     -- The giver names her: the token for the graph, her role, the store's a.
-    check(not M.HasMeta(elsbeth, q.helperMeta), "no helper role before the naming")
     M.QuestCommand(id, "named")
     check(M.Count(player, q.token) == 1, "the naming token in Henry's pocket")
     check(M.state.quests[id].named == true, "named in the store")
-    check(string.find(M.QuestFlagLetters(M.state.quests[id]), "na", 1, true) ~= nil, "the letters n and a")
+    check(string.find(M.QuestFlagLetters(M.state.quests[id]), "nTa", 1, true) ~= nil, "the letters n, T and a")
     check(M.HasMeta(elsbeth, q.helperMeta), "her menu's role granted")
     E.advance(2000)
     check(M.Count(player, q.token) == 0, "the token gone a moment later")
@@ -4035,7 +4040,7 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     check(elsbeth.inventory:GetMoney() == 210, "a hundred and fifty more to her")
     check(M.Count(player, q.keyClass) == 1, "the chest's key in Henry's pocket")
     check(M.state.quests[id].keyed == true, "keyed, in the store")
-    check(M.QuestFlagLetters(M.state.quests[id]) == "naiq", "the facts letters read naiq")
+    check(M.QuestFlagLetters(M.state.quests[id]) == "nTaiq", "the facts letters read nTaiq")
 end)
 
 case("Unyielding: her door frightened open is the door for nothing, the letter S beside the i, and the counsel's word is the letter C and the holder's global", function(E, M, check)

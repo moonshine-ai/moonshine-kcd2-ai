@@ -2186,8 +2186,12 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     }
     // And, for an ask whose word is carried on, the giver told and Henry sent on (Updated,
     // log_onward) with the marker on the one he is sent to; the last objective (below)
-    // opens off the same port.
-    if (onward) {
+    // opens off the same port. Not when the mid-moment ticked this objective off (the
+    // thing handed, the truth got): an Updated after the Completed stood "Return the
+    // silver chalice to Father Adam" open again in the book after Benesh's plea (bugs.txt
+    // 20 Nov 2026), so there the onward line goes on the last objective's own Started.
+    const bool onward_on_fetch = onward && !(told || handed);
+    if (onward_on_fetch) {
         s += t(5) + "<Edge From=\"" + P("onward") + "\" To=\"SetOnward\" />\r\n";
     }
     // An ambush's two moments before that: the directions given (the menu's first stage,
@@ -3336,7 +3340,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (told) s += state("Told", mid);
     if (handed) s += state("Handed", mid);
     if (gathered) s += state("Gathered", "Completed");
-    if (onward) s += state("Onward", "Updated");
+    if (onward_on_fetch) s += state("Onward", "Updated");
     if (rebuffed) s += state("Rebuffed", "Updated");
     if (named) s += state("Named", "Updated");
     if (named) s += state("Letin", "Updated");
@@ -3556,7 +3560,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     }
     // The word sent on: the giver has been told and paid, and the marker moves to the one
     // Henry is to carry it to (the last objective below is tracked the same way).
-    if (onward) {
+    if (onward_on_fetch) {
         s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Onward\" Marker=\"onward\">\r\n";
         s += t(7) + "<Log StringName=\"" + key("log_onward") + "\" Text=\"" +
              xml_escape(quest.log_onward) + "\" />\r\n";
@@ -3650,7 +3654,16 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
              xml_escape(quest.objective_onward) + "\" />\r\n";
         s += t(5) + "<Logs>\r\n";
         s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
-        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"onward\" />\r\n";
+        // The onward line is this objective's Started where the first was ticked off at
+        // the mid-moment (onward_on_fetch, above); the first's Updated carries it otherwise.
+        if (onward_on_fetch) {
+            s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"onward\" />\r\n";
+        } else {
+            s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"onward\">\r\n";
+            s += t(7) + "<Log StringName=\"" + key("log_onward") + "\" Text=\"" +
+                 xml_escape(quest.log_onward) + "\" />\r\n";
+            s += t(6) + "</EnumLog>\r\n";
+        }
         s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
         s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
         s += t(5) + "</Logs>\r\n";
@@ -7559,6 +7572,10 @@ std::string state_lua(const std::string& g) {
     // and the key got (q) from her (QuestHelper); and the chest spawned and the thing taken
     // out of it (WatchChest, no letters: the app reads Henry's pocket).
     s += "\tif command == \"rebuffed\" then facts.rebuffed = true end\n";
+    // Henry has told the giver of the refusal (the app's `told_rebuffed`; the letter T): the
+    // giver has named the house-girl in answer and waits on whether Henry will go to her
+    // (bugs.txt 20 Nov 2026: the telling used to close the talk and name her at once).
+    s += "\tif command == \"told_rebuffed\" then facts.toldRebuffed = true end\n";
     // The bedside's denouncing (QuestDenounced; the letter d): Henry walked out with nothing,
     // and the how is settled there, since the giver's report is the only complete left.
     s += "\tif command == \"denounced\" then facts.denounced = true; facts.how = \"denounced\" end\n";
@@ -7633,8 +7650,8 @@ std::string state_lua(const std::string& g) {
     // g, an ambush's directions are given, m, its trap is sprung; w, an ask's giver has
     // been told and sent Henry on with the word; P, a plea's giver has begged and waits on
     // Henry's answer; e, a find's keepsake is in Henry's pocket;
-    // n, an unyielding holder has rebuffed Henry; a, the giver has named the one who can
-    // let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
+    // n, an unyielding holder has rebuffed Henry; T, Henry has told the giver so; a, the
+    // giver has named the one who can let him in; i, she has let him in; q, she has got him the key; d, the bedside's holder
     // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
     // place (the morning after the hand-in, fetched home); j, the chest's paper is in
     // Henry's pocket; M, the wedding that follows a handover is reckoned to have happened
@@ -7654,7 +7671,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.gift == \"took\" and \"t\" or \"\") .. (facts.gift == \"refused\" and \"f\" or \"\")\n";
     s += "\t\t.. (facts.onward and \"w\" or \"\") .. (facts.keepsake and \"e\" or \"\")\n";
     s += "\t\t.. (facts.pleaded and \"P\" or \"\")\n";
-    s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.named and \"a\" or \"\")\n";
+    s += "\t\t.. (facts.rebuffed and \"n\" or \"\") .. (facts.toldRebuffed and \"T\" or \"\") .. (facts.named and \"a\" or \"\")\n";
     s += "\t\t.. (facts.letin and \"i\" or \"\") .. (facts.keyed and \"q\" or \"\")\n";
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
     s += "\t\t.. (facts.paper and \"j\" or \"\")\n";
