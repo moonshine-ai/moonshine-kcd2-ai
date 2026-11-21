@@ -152,6 +152,7 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 if (facts.pleaded) f.pleaded = true;
                 if (facts.keepsake) f.keepsake = true;
                 if (facts.rebuffed) f.rebuffed = true;
+                if (facts.told_rebuffed) f.told_rebuffed = true;
                 if (facts.named) f.named = true;
                 if (facts.letin) f.letin = true;
                 if (facts.keyed) f.keyed = true;
@@ -1006,7 +1007,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'told_reply_caught', "
                 "'told_cursed', 'told_mocked', 'told_reply_cursed', 'told_reply_mocked', "
                 "'told_denounced', 'told_reply_denounced', "
-                "'unyielding', 'helper_name', 'greet_rebuffed', 'greet_rebuffed_ask', 'rebuffed_row', 'named_row', "
+                "'unyielding', 'helper_name', 'greet_rebuffed', 'greet_rebuffed_ask', 'rebuffed_row', 'named_row', 'decline_row', 'decline_reply', 'named_more', 'named_more_reply', "
                 "'named_reply', 'give_up_reply', "
                 "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name', "
                 "'greet_gone_target', 'greet_wed_target', 'greet_wed', 'wed_more_target', 'wed_more_target_reply', "
@@ -1122,6 +1123,10 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "greet_rebuffed") quest.greet_rebuffed = text_at(row, 1);
                 else if (field == "greet_rebuffed_ask") quest.greet_rebuffed_ask = text_at(row, 1);
                 else if (field == "rebuffed_row") quest.rebuffed_row = text_at(row, 1);
+                else if (field == "decline_row") quest.decline_row = text_at(row, 1);
+                else if (field == "decline_reply") quest.decline_reply = text_at(row, 1);
+                else if (field == "named_more") quest.named_more = text_at(row, 1);
+                else if (field == "named_more_reply") quest.named_more_reply = text_at(row, 1);
                 else if (field == "named_row") quest.named_row = text_at(row, 1);
                 else if (field == "named_reply") quest.named_reply = text_at(row, 1);
                 else if (field == "give_up_reply") quest.give_up_reply = text_at(row, 1);

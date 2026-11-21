@@ -639,11 +639,13 @@ TEST_CASE("the accepting row picked straight after the offer takes the errand") 
     CHECK_FALSE(f.game.menu().empty());
 }
 
-TEST_CASE("the refusal told, on the written row, names the house-girl and closes the conversation like the first yes") {
-    // notes.md 14 Oct 2026 (In the Stocks): back at Benesh with Paul's refusal, Henry's row
-    // names the house-girl and was followed by a list; the giver's answer is the last
-    // word, as it is on the first accept. Since bugs.txt 20 Nov 2026 the row is Henry's
-    // telling of the refusal, answered with the giver's speech.
+TEST_CASE("the refusal told, on the written row, leaves the talk open on the chest rows; taking the chest up names the house-girl and closes it") {
+    // notes.md 14 Oct 2026 (In the Stocks): back at Benesh with Paul's refusal. Since
+    // bugs.txt 20 Nov 2026 the row is Henry's telling of the refusal, answered with the
+    // giver's speech; the telling is owed as told_rebuffed and the talk stays open on the
+    // rows laid after it (the chest taken up, declined as thieving, her asked about, and
+    // the give-up row), since it used to close on the speech and Henry had no say. Taking
+    // the chest up is where the naming goes out, and that closes it like the first yes.
     Fixture f;
     f.session.set_persona_source(
         [](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
@@ -654,6 +656,10 @@ TEST_CASE("the refusal told, on the written row, names the house-girl and closes
             quest.greet_rebuffed = "He would not hear of it? Then take it from his chest. Elsbeth keeps the house.";
             quest.greet_owed = "Any luck with Julian?";
             quest.rebuffed_row = "He wouldn't hear a word of it. He showed me the door.";
+            quest.named_row = "All right. Where do I find this Elsbeth?";
+            quest.named_reply = "Round the back of the house, most days. Go gently.";
+            quest.named_more = "Elsbeth? Who's she?";
+            quest.named_more_reply = "The girl who keeps his house. She'll want paying.";
             QuestFacts rebuffed;
             rebuffed.accepted = true;
             rebuffed.rebuffed = true;
@@ -668,11 +674,36 @@ TEST_CASE("the refusal told, on the written row, names the house-girl and closes
     f.play_all(tailer);
     REQUIRE_FALSE(f.game.menu().empty());
     CHECK(f.game.menu()[0] == "He wouldn't hear a word of it. He showed me the door.");
+    // The chest rows are not on the list before the telling.
+    for (const std::string& row : f.game.menu()) CHECK(row != "All right. Where do I find this Elsbeth?");
     f.game.picked(1, "report_rebuffed", f.game.menu()[0]);
     f.drain(tailer);
     f.play_all(tailer);
     REQUIRE(f.recorded.size() == 1);
-    CHECK(f.recorded[0].second == kQuestNamed);
+    CHECK(f.recorded[0].second == kQuestToldRebuffed);
+    CHECK_FALSE(f.said("the errand is taken, so the conversation closes and no rows are offered"));
+    CHECK(f.game.directives().back() != "@end");
+    std::vector<std::string> menu = f.game.menu();
+    REQUIRE(menu.size() >= 3);
+    CHECK(menu[0] == "All right. Where do I find this Elsbeth?");
+    CHECK(menu[1].find("thieving") != std::string::npos);
+    CHECK(menu[2] == "Elsbeth? Who's she?");
+    CHECK(std::find(menu.begin(), menu.end(), std::string(kGiveUpRow)) != menu.end());
+    // Asking about her is answered and the list comes back without that row.
+    f.game.picked(3, "named_more", menu[2]);
+    f.drain(tailer);
+    f.play_all(tailer);
+    CHECK(f.recorded.size() == 1);
+    CHECK(f.game.directives().back() != "@end");
+    menu = f.game.menu();
+    CHECK(menu[0] == "All right. Where do I find this Elsbeth?");
+    CHECK(std::find(menu.begin(), menu.end(), "Elsbeth? Who's she?") == menu.end());
+    // The chest taken up: the naming goes out and the conversation closes on the reply.
+    f.game.picked(1, "take_chest", menu[0]);
+    f.drain(tailer);
+    f.play_all(tailer);
+    REQUIRE(f.recorded.size() == 2);
+    CHECK(f.recorded[1].second == kQuestNamed);
     CHECK(f.said("the errand is taken, so the conversation closes and no rows are offered"));
     const std::vector<std::string>& directives = f.game.directives();
     REQUIRE(directives.size() >= 2);

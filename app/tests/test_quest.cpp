@@ -1194,7 +1194,10 @@ TEST_CASE("an unyielding holder's giver, told of the refusal, sends Henry to the
 
     // Back with the refusal (the store's n): the giver does not know how it went and asks
     // (bugs.txt 20 Nov 2026); Henry's telling is the row, answered with the speech sending
-    // him to the chest, and the naming rides on it, with the give-up row beside it.
+    // him to the chest. The telling is owed (the store's T) and does not close the talk:
+    // under it, laid for after it, Henry takes the chest up (the naming rides on that, and
+    // it closes), declines it as thieving (given up; closes) or asks about her (open), with
+    // the give-up row beside them.
     QuestFacts rebuffed = at("accepted");
     rebuffed.rebuffed = true;
     QuestPlan out = plan_quest(quest, rebuffed, {});
@@ -1203,22 +1206,72 @@ TEST_CASE("an unyielding holder's giver, told of the refusal, sends Henry to the
     CHECK(out.block.find("You do not yet know how it went") != std::string::npos);
     CHECK(out.block.find("will say so, and name Elsbeth") != std::string::npos);
     CHECK(out.block.find("took offence") == std::string::npos);
-    REQUIRE(out.rows.size() == 2);
+    REQUIRE(out.rows.size() == 5);
     CHECK(out.rows[0].intent == "report_rebuffed");
     CHECK(out.rows[0].text == "He would not hear a word of it. He showed me the door.");
     CHECK(out.rows[0].reply == quest.greet_rebuffed);
-    CHECK(out.rows[0].command == kQuestNamed);
-    CHECK(out.rows[1].intent == "give_up");
-    CHECK(out.rows[1].text == kGiveUpRow);
-    CHECK(out.rows[1].command == kQuestAbandon);
+    CHECK(out.rows[0].command == kQuestToldRebuffed);
+    CHECK(out.rows[0].group == "report_rebuffed");
+    CHECK_FALSE(out.rows[0].closes);
+    CHECK(out.rows[0].after_intent.empty());
+    CHECK(out.rows[1].intent == "take_chest");
+    CHECK(out.rows[1].text == "The chest, then. I'll find this Elsbeth.");
+    CHECK(out.rows[1].command == kQuestNamed);
+    CHECK(out.rows[1].after_intent == "report_rebuffed");
+    CHECK(out.rows[1].closes);
+    CHECK(out.rows[2].intent == "decline_chest");
+    CHECK(out.rows[2].text.find("thieving") != std::string::npos);
+    CHECK(out.rows[2].command == kQuestAbandon);
+    CHECK(out.rows[2].after_intent == "report_rebuffed");
+    CHECK(out.rows[2].closes);
+    CHECK(out.rows[1].group == out.rows[2].group);
+    CHECK(out.rows[3].intent == "named_more");
+    CHECK(out.rows[3].text == "Who is this Elsbeth?");
+    CHECK(out.rows[3].command.empty());
+    CHECK(out.rows[3].after_intent == "report_rebuffed");
+    CHECK_FALSE(out.rows[3].closes);
+    CHECK(out.rows[4].intent == "give_up");
+    CHECK(out.rows[4].text == kGiveUpRow);
+    CHECK(out.rows[4].command == kQuestAbandon);
     CHECK(out.question.empty());
-    // Written words for the asking and the telling, where the lines have them.
+    // Written words for the asking, the telling and the rows under it, where the lines
+    // have them.
     quest.greet_rebuffed_ask = "Well? Don't stand there, what did Paul say?";
     quest.rebuffed_row = "He wouldn't hear a word of it. Called me a thief's friend.";
+    quest.named_row = "All right. Where do I find this Elsbeth?";
+    quest.named_reply = "Round the back of the house, most days. Go gently.";
+    quest.decline_row = "That's thieving, whatever you call it.";
+    quest.decline_reply = "Then it stays where it is, and so does my name.";
+    quest.named_more = "Elsbeth? Who's she?";
+    quest.named_more_reply = "The girl who keeps his house. She'll want paying.";
     QuestPlan worded = plan_quest(quest, rebuffed, {});
     CHECK(worded.greeting == quest.greet_rebuffed_ask);
     CHECK(worded.rows[0].text == quest.rebuffed_row);
     CHECK(worded.rows[0].reply == quest.greet_rebuffed);
+    CHECK(worded.rows[1].text == quest.named_row);
+    CHECK(worded.rows[1].reply == quest.named_reply);
+    CHECK(worded.rows[2].text == quest.decline_row);
+    CHECK(worded.rows[2].reply == quest.decline_reply);
+    CHECK(worded.rows[3].text == quest.named_more);
+    CHECK(worded.rows[3].reply == quest.named_more_reply);
+
+    // Told and gone away without answering (the store's n and T): no asking, the speech
+    // in the past tense, and the three rows laid at once with the give-up row.
+    QuestFacts told = rebuffed;
+    told.told_rebuffed = true;
+    QuestPlan back = plan_quest(quest, told, {});
+    CHECK(back.greeting == quest.greet_owed);
+    CHECK(back.opening_commands.empty());
+    CHECK(back.block.find("told you he took offence") != std::string::npos);
+    CHECK(back.block.find("have not yet said whether they will go to her") != std::string::npos);
+    REQUIRE(back.rows.size() == 4);
+    CHECK(back.rows[0].intent == "take_chest");
+    CHECK(back.rows[0].after_intent.empty());
+    CHECK(back.rows[1].intent == "decline_chest");
+    CHECK(back.rows[1].after_intent.empty());
+    CHECK(back.rows[2].intent == "named_more");
+    CHECK(back.rows[2].after_intent.empty());
+    CHECK(back.rows[3].intent == "give_up");
 
     // Named already (the store's a): owed again, nothing fired, the paragraph in the past
     // tense, and only the give-up row left of the two.

@@ -659,6 +659,7 @@ Args parse(int argc, char** argv, bool* stop) {
                 // An unyielding holder's: Henry refused to his face; the giver has named the
                 // one who keeps the house; she has let him in; she has stolen him the key.
                 else if (state == "rebuffed") args.facts.rebuffed = args.facts.accepted = true;
+                else if (state == "told_rebuffed") args.facts.told_rebuffed = args.facts.rebuffed = args.facts.accepted = true;
                 else if (state == "named") args.facts.named = args.facts.rebuffed = args.facts.accepted = true;
                 else if (state == "letin") args.facts.letin = args.facts.named = args.facts.rebuffed = args.facts.accepted = true;
                 else if (state == "keyed") args.facts.keyed = args.facts.named = args.facts.rebuffed = args.facts.accepted = true;
@@ -677,7 +678,7 @@ Args parse(int argc, char** argv, bool* stop) {
                     throw std::runtime_error(
                         "--quest-state takes none, accepted, handed, done, broker, apologised, "
                         "refused, seen, beaten, prayed, left, heard, looted, cursed, directed, "
-                        "ambushed, dead, checked, onward, keepsake, rebuffed, named, letin, keyed, denounced, abandoned, "
+                        "ambushed, dead, checked, onward, keepsake, rebuffed, told_rebuffed, named, letin, keyed, denounced, abandoned, "
                         "unlearned, how:<how> or wrote:<digits>, joined by commas");
                 }
             }
@@ -2514,6 +2515,10 @@ int main(int argc, char** argv) try {
             if (!quest.greet_rebuffed.empty()) std::cout << "greet_rebuffed: " << quest.greet_rebuffed << "\n";
             if (!quest.greet_rebuffed_ask.empty()) std::cout << "greet_rebuffed_ask: " << quest.greet_rebuffed_ask << "\n";
             if (!quest.rebuffed_row.empty()) std::cout << "rebuffed_row: " << quest.rebuffed_row << "\n";
+            if (!quest.decline_row.empty()) std::cout << "decline_row: " << quest.decline_row << "\n";
+            if (!quest.decline_reply.empty()) std::cout << "decline_reply: " << quest.decline_reply << "\n";
+            if (!quest.named_more.empty()) std::cout << "named_more: " << quest.named_more << "\n";
+            if (!quest.named_more_reply.empty()) std::cout << "named_more_reply: " << quest.named_more_reply << "\n";
             if (!quest.greet_gone_target.empty()) std::cout << "greet_gone_target: " << quest.greet_gone_target << "\n";
             if (!quest.greet_wed_target.empty()) std::cout << "greet_wed_target: " << quest.greet_wed_target << "\n";
             if (!quest.greet_wed.empty()) std::cout << "greet_wed: " << quest.greet_wed << "\n";

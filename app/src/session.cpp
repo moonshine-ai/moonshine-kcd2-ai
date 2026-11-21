@@ -1881,14 +1881,14 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.what = "the writer's answer to " + std::string(intent) +
                        (row.check.empty() ? "" : ", the speech check won");
             if (!row.command.empty()) out.commands.push_back(row.command);
-            // The chest taken up again settles nothing, and a grouped row (the giver's
-            // carrying and its refusal) spends its group alone; every other row of the
+            // A grouped row (the giver's carrying and its refusal; the telling of a refusal
+            // and the chest rows under it) spends its group alone; every other row of the
             // director's ends the errand, so the rest are taken as told too.
             if (!row.group.empty()) {
                 for (const DirectorRow& other : persona_.quest.rows) {
                     if (other.group == row.group) out.spent.emplace_back(other.intent);
                 }
-            } else if (row.command != kQuestNamed) {
+            } else {
                 // All but the rows laid for after this one (DirectorRow::after_intent: the
                 // plea's yes and no after the truth told).
                 for (const DirectorRow& other : persona_.quest.rows) {
@@ -1899,8 +1899,6 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
                 // row stood on the list after Anna had been told where her cat was (notes.md,
                 // 8 Oct 2026).
                 out.spent.emplace_back("remind");
-            } else {
-                out.spent.emplace_back(intent);
             }
             break;
         }
@@ -2440,6 +2438,19 @@ std::string Session::direction_for(std::string_view intent) const {
     if (intent == "accept_again") {
         return " [They have just agreed to take it up again the way you have put it to them. "
                "Answer as you would, in a line or two, and let them go to it.]";
+    }
+    if (intent == "take_chest") {
+        return " [They have just agreed to go to the girl you named and get into his chest. "
+               "Answer as you would, in a line or two, and let them go to it.]";
+    }
+    if (intent == "decline_chest") {
+        return " [They have just refused to go at his chest; they call it thieving, and they are "
+               "done with the errand. It is over between you from here. Answer as you would, in "
+               "a line or two, and ask nothing more of them.]";
+    }
+    if (intent == "named_more") {
+        return " [They have asked who the girl you named is. Tell them, in a line or two: who she "
+               "is to the house, where she is found by day, and that she has her price.]";
     }
     return {};
 }

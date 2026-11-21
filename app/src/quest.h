@@ -254,12 +254,17 @@ struct Quest {
     // the moment Henry came back): he opens by asking (`greet_rebuffed_ask`, or the plain
     // words), and the telling is Henry's row (`rebuffed_row`), answered with the giver's
     // speech sending Henry to the chest and naming her (`greet_rebuffed`), on which the
-    // naming (kQuestNamed) rides: the mod opens her menu and marks her on the map. The
-    // give-up row stands beside it. `named_row` and `named_reply` are the older shape, the
-    // agreement as a row of its own, kept for the rows the writer put on them. Empty for a
-    // holder who can be talked round.
+    // telling is owed to the mod as kQuestToldRebuffed (the flag T), and the talk stays
+    // open on the speech (bugs.txt 20 Nov 2026: it closed, and Henry had no say): under it
+    // Henry agrees to the chest on `named_row` (answered with `named_reply`; the naming,
+    // kQuestNamed, rides on that -- the mod opens her menu and marks her on the map),
+    // declines it as thieving on `decline_row` (answered with `decline_reply`; the errand
+    // given up), or asks about her on `named_more` (answered with `named_more_reply`). The
+    // give-up row stands beside them. Back later with the chest neither taken up nor
+    // refused, the same rows are laid at once. Empty for a holder who can be talked round.
     bool unyielding = false;
     std::string helper_name, greet_rebuffed, greet_rebuffed_ask, rebuffed_row, named_row, named_reply;
+    std::string decline_row, decline_reply, named_more, named_more_reply;
     // The sheet in the holder's chest, in Henry's pocket (QuestFacts::paper, the mod's flag j;
     // bugs.txt 18 Nov 2026, In the Stocks' list of names): Henry's row putting it to the
     // giver (`paper_ask`) and the giver's answer (`paper_ask_reply`), while the errand is
@@ -495,6 +500,7 @@ struct QuestFacts {
     // for his money (i), and she has stolen him the chest's key (q). The giver's rows turn
     // on the first two; the last two are hers and the mod's.
     bool rebuffed = false;
+    bool told_rebuffed = false;  // Henry has told the giver of the refusal (the flag T)
     bool named = false;
     bool letin = false;
     bool keyed = false;
@@ -610,9 +616,12 @@ inline constexpr std::string_view kQuestOnward = "onward";
 // begged Henry to go back, and waits on his answer -- the plea rows, `onward` for yes, the
 // plain complete for no. The mod pays here and queues no beat; the letter P in the dump.
 inline constexpr std::string_view kQuestPlead = "plead";
-// An unyielding holder's retrieve: the giver, told the holder refused, names the one who
-// keeps the holder's house. Owed on the opening line (greet_rebuffed) the first time Henry
-// is back with the refusal; the mod sets the store's a, opens her menu and marks her.
+// An unyielding holder's retrieve: Henry has told the giver the holder refused (the telling
+// row, rebuffed_row); the mod sets the store's T, and the giver's speech naming the one who
+// keeps the holder's house answers it.
+inline constexpr std::string_view kQuestToldRebuffed = "told_rebuffed";
+// And Henry has agreed to go to her for the chest (named_row): the mod sets the store's a,
+// opens her menu and marks her.
 inline constexpr std::string_view kQuestNamed = "named";
 // Henry giving an errand up to the giver's face (the "I give up" row on every list while
 // one of theirs is open; notes.md 13 Oct 2026): the mod fails the quest in the book, the

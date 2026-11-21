@@ -138,6 +138,7 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.ambushed = at->second.find('m') != std::string::npos;
         facts.onward = at->second.find('w') != std::string::npos;
         facts.pleaded = at->second.find('P') != std::string::npos;
+        facts.told_rebuffed = at->second.find('T') != std::string::npos;
         facts.keepsake = at->second.find('e') != std::string::npos;
         facts.paper = at->second.find('j') != std::string::npos;
         facts.rebuffed = at->second.find('n') != std::string::npos;

@@ -1359,10 +1359,10 @@ std::string visit_greeting(const Quest& quest, const QuestFacts& facts, const Qu
     if (quest.role != QuestRole::Giver) return {};
     // Back from an unyielding holder with his refusal, the first time: the giver does not
     // know how it went, and asks (bugs.txt 20 Nov 2026); his speech sending Henry to the
-    // chest answers Henry's telling, below. After the naming, the owed line serves as for
-    // any open errand.
-    if (quest.has_helper() && facts.rebuffed && !facts.named && facts.accepted && !facts.done &&
-        facts.have <= 0) {
+    // chest answers Henry's telling, below. Once told (and after the naming), the owed line
+    // serves as for any open errand.
+    if (quest.has_helper() && facts.rebuffed && !facts.told_rebuffed && !facts.named && facts.accepted &&
+        !facts.done && facts.have <= 0) {
         return quest.greet_rebuffed_ask.empty() ? "Well? You have been to him. What did he say?"
                                                 : quest.greet_rebuffed_ask;
     }
@@ -1767,6 +1767,44 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
                                   " has been any help; that is between them and her.";
                     return plan;
                 }
+                // The rows under the speech (bugs.txt 20 Nov 2026: the telling used to close
+                // the talk, and Henry had no say): the chest taken up (the naming rides on
+                // it), declined as thieving (the errand given up), or her asked about. Laid
+                // after the telling on the first visit back, and at once on a later one.
+                const auto chest_rows = [&](const std::string& after) {
+                    DirectorRow yes{"take_chest",
+                                    quest.named_row.empty() ? "The chest, then. I'll find this " + she + "." : quest.named_row,
+                                    quest.named_reply, std::string(kQuestNamed)};
+                    yes.closes = true;
+                    yes.after_intent = after;
+                    yes.group = "chest";
+                    DirectorRow no{"decline_chest",
+                                   quest.decline_row.empty() ? "That sounds like thieving to me. I'll not break into a man's chest."
+                                                             : quest.decline_row,
+                                   quest.decline_reply, std::string(kQuestAbandon)};
+                    no.closes = true;
+                    no.after_intent = after;
+                    no.group = "chest";
+                    DirectorRow more{"named_more",
+                                     quest.named_more.empty() ? "Who is this " + she + "?" : quest.named_more,
+                                     quest.named_more_reply, {}};
+                    more.after_intent = after;
+                    more.group = "named_more";
+                    plan.rows.push_back(std::move(yes));
+                    plan.rows.push_back(std::move(no));
+                    plan.rows.push_back(std::move(more));
+                };
+                if (facts.told_rebuffed) {
+                    plan.block += " They have been to " + holder + " about it, and told you he took offence "
+                                  "and would not hear of it; you expected no better. You want " + item +
+                                  " out of his chest regardless, and you have said so, and named " + she +
+                                  ", the servant girl who keeps the house he lodges in and is about outside "
+                                  "it by day, whose word would get them in, and who has her price. They have "
+                                  "not yet said whether they will go to her. You do not say the word steal, "
+                                  "and you do not want to hear how it is done.";
+                    chest_rows("");
+                    return plan;
+                }
                 plan.block += " They have been to " + holder + " about it. You do not yet know how it went: "
                               "you have just asked, and wait to hear. If he would not hear of it, you expect "
                               "no better of him, and you want " + item + " out of his chest regardless; you "
@@ -1774,11 +1812,14 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
                               "lodges in and is about outside it by day, whose word would get them in, and "
                               "who has her price. You do not say the word steal, and you do not want to hear "
                               "how it is done.";
-                plan.rows.push_back({"report_rebuffed",
-                                     quest.rebuffed_row.empty()
-                                         ? "He would not hear a word of it. He showed me the door."
-                                         : quest.rebuffed_row,
-                                     quest.greet_rebuffed, std::string(kQuestNamed)});
+                DirectorRow telling{"report_rebuffed",
+                                    quest.rebuffed_row.empty()
+                                        ? "He would not hear a word of it. He showed me the door."
+                                        : quest.rebuffed_row,
+                                    quest.greet_rebuffed, std::string(kQuestToldRebuffed)};
+                telling.group = "report_rebuffed";
+                plan.rows.push_back(std::move(telling));
+                chest_rows("report_rebuffed");
                 return plan;
             }
             if (quest.has_expose()) {
