@@ -334,6 +334,31 @@ struct Quest {
         return !fast_travel_row.empty() && !fast_travel_reply.empty() && !fast_travel_later_row.empty() &&
                !fast_travel_later_reply.empty();
     }
+    // The wait for its hours (`fast_travel_wait`, Henry's row; `fast_travel_wait_reply`, the
+    // giver's answer; bugs.txt 21 Nov 2026, In the Stocks): asked outside the hours, Henry
+    // may wait with the giver for them and go at once -- the mod winds the clock on to the
+    // window's start before the carry (kQuestFastTravelWait). Laid where the carrying would
+    // be and the hour is outside it, only when written.
+    std::string fast_travel_wait_row, fast_travel_wait_reply;
+    bool has_fast_travel_wait() const {
+        return has_fast_travel() && !fast_travel_wait_row.empty() && !fast_travel_wait_reply.empty();
+    }
+    // The offer answered another way (bugs.txt 21 Nov 2026, In the Stocks). `offer_threat`
+    // is Henry's row at an ask's offer saying he will go to the man behind the matter
+    // himself (Father Adam's witness: Paul Schmidt threatened rather than Benesh brought
+    // round), answered with `offer_threat_reply`; the errand is taken and ended the way
+    // `threatened` in one breath (kQuestAccept, then kQuestThreaten), which the duel scene
+    // follows. `offer_no` is Henry's row declining an offer outright where declining is an
+    // ending (the duel refused: the story fails), answered with `offer_no_reply`; the
+    // errand is taken and given up in one breath (kQuestAccept, then kQuestAbandon), so the
+    // journal has the challenge and its refusal. Each laid beside the accepting row only
+    // where written.
+    std::string offer_threat, offer_threat_reply, offer_no, offer_no_reply;
+    // A deliver whose receiver's interrogation settles the errand on the truth
+    // (`truth_settles`; the mod's npcdb.hpp): told the truth, the receiver asks the next
+    // thing of Henry on the spot and the giver is never reported to; the giver's done
+    // paragraph says so when the how is the truth.
+    bool truth_settles = false;
     // A retrieve of the very letter an earlier scene's dictation wrote (`item_of`: that
     // scene's quest id): the holder was brought it and kept it, he never borrowed it, and
     // his paragraph says so.
@@ -677,6 +702,9 @@ inline constexpr std::string_view kQuestAbandon = "abandon";
 // takes Henry to the errand's spot and winds the clock on to its hour (emit.cpp,
 // FastTravelArm). Nothing in the store or the journal.
 inline constexpr std::string_view kQuestFastTravel = "fast_travel";
+// The same carrying asked outside its hours (Quest::fast_travel_wait_row): the mod winds the
+// clock on to the window's start first (bugs.txt 21 Nov 2026).
+inline constexpr std::string_view kQuestFastTravelWait = "fast_travel_wait";
 // The row's words, and the plan's direction to the model when no answer was written.
 inline constexpr std::string_view kGiveUpRow = "I give up. I can't do what you asked of me.";
 // A letter written at dictation (Quest::Dictation): `wrote_<digits>`, one digit per part

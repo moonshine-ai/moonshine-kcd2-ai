@@ -1520,37 +1520,70 @@ case("Onward: the telling pays and sends Henry on; the word said completes and p
     check(E.find("fired by the row's own port"), "and the log says why")
 end)
 
--- bugs.txt 19 Nov 2026: Father Adam, Benesh's plea refused on the game's Talk, is to put
--- A Witness Before the Bailiff to Henry at once. The scene before carries `leadNext`, the
--- scene after it at the very soul its last row is said to; once that row's complete has
--- fired, the Lua waits for the Talk to come down and opens the held conversation with
--- that soul itself, `lead=<id>` on the begin line.
-case("Lead: the scene after is opened by the mod at the soul the last row was said to, once the Talk is down, with lead= on the begin line", function(E, M, check)
+-- bugs.txt 19-21 Nov 2026: the truth told to Father Adam settles Back on the Altar where it
+-- is said (truthSettles: no going back to Benesh, no plea), and Adam is to put A Witness
+-- Before the Bailiff to Henry at once. The scene before carries `leadNext`, the scene after
+-- it at the very soul the truth is told to; once the row's complete has fired, the Lua waits
+-- for the Talk to come down and opens the held conversation with that soul itself,
+-- `lead=<id>` on the begin line.
+case("Settled: the truth told to the receiver completes the carrying on the spot, how truth, with no complete beat queued and the scene after open", function(E, M, check)
+    local id, q = byName(M, "Back on the Altar")
+    if q == nil then check(true, "no Back on the Altar in this data"); return end
+    check(q.truthSettles == true and q.onward == nil, "the truth settles it, and nobody is sent on to")
+    local giver = E.soul(q.giver)
+    local adam = E.soul(q.target, { pos = { x = 100, y = 100, z = 0 } })
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    M.npc = adam
+    local mark = E.mark()
+    E.delivered(id, "truth")
+    local f = M.state.quests[id]
+    check(f.done == true and f.handed == true and f.how == "truth", "done where it was said, how truth")
+    check(adam.inventory:GetCountOfClass(q.item) == 1 and player.inventory:GetCountOfClass(q.item) == 0, "the cup moved to him: adam=" .. adam.inventory:GetCountOfClass(q.item) .. " henry=" .. player.inventory:GetCountOfClass(q.item))
+    check(E.find("the truth told to " .. q.target .. " settles it; complete on the spot", mark), "logged as settled")
+    check(E.questState[id].state == "done", "the graph's complete from the row's port")
+    local queued = false
+    for _, code in ipairs(M.questQueue) do if code == M.questCodes[id .. " complete"] then queued = true end end
+    check(not queued and M.questCode ~= M.questCodes[id .. " complete"], "no complete beat queued behind it")
+    check(q.leadNext ~= nil and M.QuestLinkState(q.leadNext) == "open", "the scene after is open")
+    -- A lie is not the truth: a tale ends it fibbed and opens nothing after.
+    M.state.quests[id] = nil
+    E.questState[id] = nil
+    M.npc = giver
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    M.npc = adam
+    mark = E.mark()
+    E.delivered(id, "fibbed")
+    check(M.state.quests[id].how == "fibbed" and M.state.quests[id].done ~= true, "a tale is the plain handover, told to Benesh after")
+    check(not E.find("settles it", mark), "not settled")
+    check(M.QuestLinkState(q.leadNext) ~= "open", "the scene after stays shut")
+end)
+
+case("Lead: the scene after is opened by the mod at the soul the truth was told to, once the Talk is down, with lead= on the begin line", function(E, M, check)
     local id, q = byName(M, "Back on the Altar")
     if q == nil then check(true, "no Back on the Altar in this data"); return end
     local nextId = q.leadNext
     check(nextId ~= nil and M.quests[nextId] ~= nil and M.quests[nextId].name == "A Witness Before the Bailiff",
           "Back on the Altar leads on to A Witness Before the Bailiff, got " .. tostring(nextId))
     local nq = M.quests[nextId]
-    check(nq.giver == q.onward and nq.after == id, "the scene after is the onward soul's, and follows this one")
+    check(nq.giver == q.target and nq.after == id and nq.afterHow == "truth", "the scene after is the receiver's, and follows this one on the truth")
     local leads = 0
     for _, oq in pairs(M.quests) do if oq.leadNext ~= nil then leads = leads + 1 end end
     check(leads >= 1, leads .. " scene(s) lead on")
     local giver = E.soul(q.giver)
-    local adam = E.soul(q.onward, { pos = { x = 100, y = 100, z = 0 } })
+    local adam = E.soul(q.target, { pos = { x = 100, y = 100, z = 0 } })
     player:SetWorldPos({ x = 101, y = 100, z = 0 })
     M.npc = giver
     M.QuestCommand(id, "accept")
-    E.holderGave(id, "persuade")
-    M.QuestCommand(id, "onward")
     E.firePort(id .. " accept")
-    E.firePort(id .. " onward")
-    -- The plea said on the game's Talk: the row's complete, and the lead armed while the
+    -- The truth said on the game's Talk: the row's complete, and the lead armed while the
     -- Talk is still up.
     E.dialog.open = true
     M.npc = adam
     local mark = E.mark()
-    E.carried(id)
+    E.delivered(id, "truth")
     check(M.state.quests[id].done == true, "done where it was said")
     check(M.QuestLinkState(nextId) == "open" and M.QuestOfferable(nextId), "the scene after is open to offer")
     check(E.find("BRIDGE quest " .. nextId .. " to be led on to from " .. id, mark), "the lead armed")
@@ -1560,8 +1593,8 @@ case("Lead: the scene after is opened by the mod at the soul the last row was sa
     -- The Talk comes down: the held conversation opens with Adam, lead= on its begin line.
     E.dialog.open = false
     E.advance(1100)
-    check(E.find("BRIDGE quest " .. nextId .. " lead: opening with " .. q.onward, mark), "opened by the mod")
-    local begin = E.find("BRIDGE begin npc=" .. q.onward, mark)
+    check(E.find("BRIDGE quest " .. nextId .. " lead: opening with " .. q.target, mark), "opened by the mod")
+    local begin = E.find("BRIDGE begin npc=" .. q.target, mark)
     check(begin ~= nil and string.find(begin, " lead=" .. nextId, 1, true) ~= nil, "lead= on the begin line: " .. tostring(begin))
     check(M.active == true and M.leadQuest == nil, "the conversation is up, the lead spent")
     -- And not again: a second conversation with him has no lead on it.
@@ -1569,7 +1602,7 @@ case("Lead: the scene after is opened by the mod at the soul the last row was sa
     M.OnClosed()
     mark = E.mark()
     M.OnConversation(adam, player, nil)
-    begin = E.find("BRIDGE begin npc=" .. q.onward, mark)
+    begin = E.find("BRIDGE begin npc=" .. q.target, mark)
     check(begin ~= nil and string.find(begin, " lead=", 1, true) == nil, "no lead on the next begin line")
     M.Leave("test")
     M.OnClosed()
@@ -1580,39 +1613,82 @@ case("Lead: nothing is opened for a scene that is not offerable, nor when the Ta
     if q == nil or q.leadNext == nil then check(true, "no lead in this data"); return end
     local nextId = q.leadNext
     local giver = E.soul(q.giver)
-    local adam = E.soul(q.onward, { pos = { x = 100, y = 100, z = 0 } })
+    local adam = E.soul(q.target, { pos = { x = 100, y = 100, z = 0 } })
     player:SetWorldPos({ x = 101, y = 100, z = 0 })
     -- Already taken up: nothing to lead on to.
     M.state.quests[nextId] = { accepted = true }
     M.npc = giver
     M.QuestCommand(id, "accept")
-    E.holderGave(id, "persuade")
-    M.QuestCommand(id, "onward")
     E.firePort(id .. " accept")
-    E.firePort(id .. " onward")
     M.npc = adam
     local mark = E.mark()
-    E.carried(id)
+    E.delivered(id, "truth")
     check(E.find("BRIDGE quest " .. nextId .. " not led on to: not offerable", mark) and M.leadQuest == nil, "an accepted scene is not led on to")
     E.advance(3000)
     check(not E.find("BRIDGE begin npc=", mark), "nothing opened")
     -- Offerable, but the Talk stays up past the wait: given up.
     M.state.quests[nextId] = nil
     M.state.quests[id] = nil
+    E.questState[id] = nil
     M.npc = giver
     M.QuestCommand(id, "accept")
-    E.holderGave(id, "persuade")
-    M.QuestCommand(id, "onward")
+    E.firePort(id .. " accept")
     E.dialog.open = true
     M.npc = adam
     mark = E.mark()
-    E.carried(id)
+    E.delivered(id, "truth")
     check(M.leadQuest == nextId, "armed")
     E.advance(31000)
     check(E.find("BRIDGE quest " .. nextId .. " lead given up", mark) and M.leadQuest == nil, "given up after the wait")
     E.dialog.open = false
     E.advance(2000)
     check(not E.find("BRIDGE begin npc=", mark), "and nothing opened after")
+end)
+
+-- bugs.txt 21 Nov 2026: A Witness Before the Bailiff has two answers at the offer (the app's
+-- accept then `threaten`) and, Benesh refusing the persuasion on the game's Talk, two more
+-- rows on his menu: turn (the same `threaten`) and abandon. The lost check's stage raises
+-- the refused global the rows are gated on; threatened is a way the ask ends, and the way
+-- the duel scene opens from; abandoned is the story failed.
+case("Turn: the ask's lost persuasion raises the refused global; threaten ends it threatened (the duel scene opens) and abandon ends it abandoned", function(E, M, check)
+    local id, q = byName(M, "A Witness Before the Bailiff")
+    if q == nil then check(true, "no A Witness Before the Bailiff in this data"); return end
+    check(q.refusedVar ~= nil, "the refused global is in the table")
+    check(M.questCodes[id .. " complete_threatened"] ~= nil, "threatened has its beat")
+    local duelId, duel = byName(M, "Under the Light of the Moon")
+    check(duel ~= nil and duel.after == id and duel.afterHow == "threatened", "the duel follows this scene on threatened")
+    local adam = E.soul(q.giver)
+    local benesh = E.soul(q.target, { pos = { x = 100, y = 100, z = 0 } })
+    M.npc = adam
+    M.QuestCommand(id, "accept")
+    E.firePort(id .. " accept")
+    check(E.gvar(q.refusedVar) == 0 or E.gvar(q.refusedVar) == nil, "not refused yet")
+    -- The persuasion lost on his menu: the branch's stage.
+    M.npc = benesh
+    M.QuestStage(id, "refused persuade")
+    check(M.state.quests[id].refused == true, "refused in the store")
+    check(E.gvar(q.refusedVar) == 1, "the refused global up for the turn and abandon rows")
+    -- Turn: the row's ExitScript is the app's own threaten.
+    local mark = E.mark()
+    M.QuestCommand(id, "threaten", true)
+    local f = M.state.quests[id]
+    check(f.done == true and f.how == "threatened", "done, threatened")
+    check(duelId ~= nil and M.QuestLinkState(duelId) == "open", "the duel scene is open")
+    -- Abandon, from the same place.
+    M.state.quests[id] = nil
+    M.npc = adam
+    M.QuestCommand(id, "accept")
+    M.npc = benesh
+    M.QuestStage(id, "refused persuade")
+    M.QuestCommand(id, "abandon", true)
+    f = M.state.quests[id]
+    check(f.done == true and f.how == "abandoned", "done, abandoned")
+    check(duelId == nil or M.QuestLinkState(duelId) ~= "open", "and the duel scene stays shut")
+    -- The flags come back from the store onto the global after a load.
+    M.state.quests[id] = { accepted = true, refused = true }
+    E.globals[q.refusedVar] = 0
+    M.QuestFlags()
+    check(E.gvar(q.refusedVar) == 1, "the global restored from the store")
 end)
 
 case("QuestDelivered: the letter moves to the receiver and how is delivered", function(E, M, check)
@@ -1834,9 +1910,14 @@ case("The holder's Talk: CanTalk comes and goes with the errand", function(E, M,
     local holder = E.soul(q.target)
     check(holder.actor:CanTalk(player.id) == false, "no Talk before")
     E.firePort(id .. " accept")
-    check(holder.actor:CanTalk(player.id) == true, "Talk while Active")
-    local acts = E.look(holder) -- the frame that grants the role offers nothing of ours
-    check(#acts == 1 and acts[1].base, "the base Talk alone on the granting frame")
+    -- The menu speaks through the holder's role, which this soul has not been granted
+    -- yet (nothing has looked at him and no accept of the mod's named him).
+    check(holder.actor:CanTalk(player.id) == false, "no Talk while Active without the role")
+    -- The frame that grants the role offers nothing: the engine's own prompt read the
+    -- soul before the grant, and ours stands back for it.
+    local acts = E.look(holder)
+    check(holder.actor:CanTalk(player.id) == true, "Talk while Active, with the role")
+    check(#acts == 0, "nothing on the granting frame")
     acts = E.look(holder)
     check(#acts == 1 and acts[1].base, "the base Talk alone, ours stands down")
     check(E.find("leaving the base talk option alone on " .. q.target), "said so once")
@@ -2072,6 +2153,37 @@ case("Store: the save round-trips and OnInit resets", function(E, M, check)
     check(soul.stats.trust == 0.75, "the stat back")
     check(M.state.quests[id].accepted == true, "the quest back")
     check(E.find("BRIDGE state loaded via OnLoad version=1 souls=1"), "loaded line")
+end)
+
+case("Store: a load over an open conversation ends it, and the next Talk opens a new one", function(E, M, check)
+    -- bugs.txt 21 Nov 2026: an earlier save loaded from the pause menu mid-conversation
+    -- left Father Adam's greeting on the screen and nobody talkable: the session went
+    -- with the old world, the pump's timer with it, and `active` stayed up, so every
+    -- Begin returned at once.
+    local npc = E.soul("kkut_additive_man_47")
+    turn(E, 1, "Good day. What brings you?")
+    turn(E, 2, "@opt 1 ask 20:Who are your people? @rows 1")
+    check(E.begin(npc), "begun")
+    check(untilMenu(E), "menu presented")
+    check(M.active == true, "a conversation up")
+    local save = E.save()
+    local mark = E.mark()
+    E.timers = {} -- the load wipes every timer armed while it ran, the pump's among them
+    check(E.load(save), "loaded over it")
+    check(M.active == false, "the conversation is over")
+    check(E.find("BRIDGE left, a world arrived over the conversation", mark), "said why")
+    check(E.gvar(M.talkVar) ~= 1, "the talking global down")
+    -- And the next Talk is a conversation, not a return.
+    E.files = {}
+    M.turn = 0
+    turn(E, 1, "Back again?")
+    turn(E, 2, "@rows 0")
+    mark = E.mark()
+    check(E.begin(npc), "begun again")
+    check(M.active == true, "a new conversation up")
+    check(E.find("BRIDGE begin npc=kkut_additive_man_47", mark), "the begin line")
+    check(untilMenu(E), "its menu presented")
+    E.pick(1)
 end)
 
 case("Store: a save with no store in it loads fresh", function(E, M, check)
@@ -3947,6 +4059,82 @@ case("Watch: the loop a load wiped is armed again from the player's first key, a
     check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed on the re-armed loop")
 end)
 
+case("Watch: a load with the game up (OnLoad alone) is a new world too: the road is read afresh and the hail comes", function(E, M, check)
+    -- bugs.txt 21 Nov 2026: on one run Benesh did not hail. The save had been loaded
+    -- from the pause menu with the game up, which fires OnLoad and not OnInit, and the
+    -- world's resets were OnInit's alone: the watch kept where Henry stood in the old
+    -- world, read its first tick in the new one as a jump of hundreds of metres (and the
+    -- clock wound back), and held its hails for the travel grace while Henry walked up.
+    local id, q = byName(M, "In the Stocks")
+    if q == nil or q.hail == nil then check(false, "In the Stocks has a hail") return end
+    E.soul(q.giver, { pos = { x = 100, y = 100, z = 0 } })
+    -- Henry far off, the loop ticking: where he stands is kept.
+    player:SetWorldPos({ x = 1000, y = 1000, z = 0 })
+    M.OnWorld("OnInit", player)
+    M.OnWorld("OnLoad", player)
+    E.advance(2100)
+    check(M.travelLast ~= nil and M.travelLast.x == 1000, "where he stood is kept")
+    local save = E.save()
+    -- The save has him beside Benesh; loaded from the pause menu, OnLoad alone.
+    player:SetWorldPos({ x = 100 + M.hailMetres - 2, y = 100, z = 0 })
+    local mark = E.mark()
+    check(E.load(save, { reload = true }), "loaded with the game up")
+    check(E.find("BRIDGE state reset, a world is arriving (OnLoad)", mark), "the world's reset ran on OnLoad")
+    check(M.travelLast == nil, "where he stood went with the old world")
+    E.timers = {} -- the load wipes every timer armed while it ran
+    E.advance(3000) -- the loading screen; then the player's first key arms the loop again
+    Player:OnAction("move_forward", 1, 1)
+    E.advance(2100)
+    check(not E.find("BRIDGE watch travelling", mark), "the first tick is a reading, not a jump")
+    check(E.find("BRIDGE quest " .. id .. " hail " .. q.giver, mark), "hailed on the first tick")
+end)
+
+case("Roles: a load takes the holder's role with the world, and the watch grants it again by name before Henry looks at him", function(E, M, check)
+    -- bugs.txt 21 Nov 2026: after an autosave made once Henry had agreed to carry the
+    -- chalice, Father Adam had no hand-in. The role his menu speaks through had been
+    -- granted at the accept, but a metarole granted at run time is not in the save; on
+    -- sight it was granted again on the very frame Henry looked at him, and the engine's
+    -- CanTalk had not caught up when he pressed Talk, so the mod's own conversation
+    -- opened instead. Now the watch grants every open errand's roles by name in its first
+    -- ticks after a world arrives, and a soul seen before the load is not passed over.
+    local id, q = byName(M, "Charity Begins at Home")
+    local giver = E.soul(q.giver, { pos = { x = 1, y = 0, z = 0 } })
+    local holder = E.soul(q.target, { pos = { x = 400, y = 0, z = 0 } })
+    holder.inventory:CreateItem(q.item, 100, 1)
+    player:SetWorldPos({ x = 0, y = 0, z = 0 })
+    -- Seen once before anything is accepted: the on-sight grant, and its once-per-soul memo.
+    E.look(holder)
+    check(holder.soul.metaroles[q.holderMeta], "the holder has his role from the look")
+    check(M.holderGranted[q.target] == true, "and the memo says so")
+    turn(E, 1, "Good day. What brings you?")
+    turn(E, 2, "@opt 1 accept 23:I'll get it back for you. @rows 1")
+    check(E.begin(giver), "begun")
+    check(untilMenu(E), "menu presented")
+    turn(E, 3, "@quest " .. id .. " accept @end Bless you.")
+    E.pick(1)
+    E.advance(20000)
+    check(M.state.quests[id].accepted == true, "accepted in the store")
+    check(holder.actor:CanTalk(player.id), "Talk on the holder")
+
+    local save = E.save()
+    E.arrive()
+    check(holder.soul.metaroles[q.holderMeta] == nil, "the world took the role with it")
+    check(M.holderGranted[q.target] == nil, "the memo emptied with the world")
+    local mark = E.mark()
+    check(E.load(save), "loaded")
+    check(not holder.actor:CanTalk(player.id), "no Talk on him until the role is back")
+    -- The loop armed as the world arrived ticks; the holder is granted his role by name,
+    -- with Henry four hundred metres off and not looking.
+    E.advance(2100)
+    check(holder.soul.metaroles[q.holderMeta], "granted again from the watch")
+    check(E.find("BRIDGE quest " .. id .. " holder role " .. q.holderMeta .. " granted to " .. q.target, mark),
+          "said in the log")
+    check(holder.actor:CanTalk(player.id), "Talk on him again before any look")
+    -- Once per soul: the next ticks grant nothing more, and the regrant runs out.
+    E.advance(2100)
+    check(E.count("BRIDGE quest " .. id .. " holder role", mark) == 1, "granted once")
+end)
+
 case("Dress: the holder with a preset written is put in it once a session, said in the log", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.dress ~= nil, "In the Stocks dresses its holder")
@@ -4002,7 +4190,8 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     check(q and q.unyielding == true and q.helper ~= nil and q.token ~= nil and q.keyClass ~= nil,
           "In the Stocks has an unyielding holder, a helper, a naming token and a key")
     if q == nil or q.helper == nil then return end
-    check(q.doorPrice == 60 and q.keyPrice == 150, "her prices are the generator's")
+    -- The door's price came down from sixty (bugs.txt 21 Nov 2026).
+    check(q.doorPrice == 20 and q.keyPrice == 150, "her prices are the generator's")
     local benesh = E.soul(q.giver)
     local elsbeth = E.soul(q.helper)
     M.npc = benesh
@@ -4032,12 +4221,12 @@ case("Unyielding: the sacristan's refusal is in the store, the giver's naming ma
     -- Her door: sixty groschen to her, the store's i.
     local purse = player.inventory:GetMoney()
     M.QuestHelper(id, "door")
-    check(elsbeth.inventory:GetMoney() == 60, "sixty groschen to her")
-    check(math.abs(player.inventory:GetMoney() - (purse - 60)) < 0.01, "and off Henry")
+    check(elsbeth.inventory:GetMoney() == 20, "twenty groschen to her")
+    check(math.abs(player.inventory:GetMoney() - (purse - 20)) < 0.01, "and off Henry")
     check(M.state.quests[id].letin == true, "let in, in the store")
     -- Her key: a hundred and fifty, the key in his pocket, the store's q.
     M.QuestHelper(id, "key")
-    check(elsbeth.inventory:GetMoney() == 210, "a hundred and fifty more to her")
+    check(elsbeth.inventory:GetMoney() == 170, "a hundred and fifty more to her")
     check(M.Count(player, q.keyClass) == 1, "the chest's key in Henry's pocket")
     check(M.state.quests[id].keyed == true, "keyed, in the store")
     check(M.QuestFlagLetters(M.state.quests[id]) == "nTaiq", "the facts letters read nTaiq")
@@ -5598,6 +5787,36 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     f = M.state.quests[id]
     check(f.cowed == true and E.find("fought alone and is down; he is cowed", mark), "his own knock-out cows him")
     man.down = nil
+end)
+
+-- bugs.txt 21 Nov 2026: the duel's carry asked before dark (fast_travel_wait): the clock is
+-- wound on to the window's start first, then the carry as before.
+case("Carried: fast_travel_wait winds the clock on to the window's start when it is outside it, and not when it is inside", function(E, M, check)
+    local id, q = byKind(M, "duel")
+    if id == nil then check(true, "no duel in this data"); return end
+    check(q.fastTravel ~= nil and q.fastTravel.from ~= nil and q.fastTravel.to ~= nil, "the window in the table")
+    local ft = q.fastTravel
+    local man = E.soul(q.giver)
+    M.npc = man
+    M.QuestCommand(id, "accept")
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    E.interior = false
+    local was = E.hour
+    E.hour = 14
+    M.QuestCommand(id, "fast_travel_wait")
+    E.advance(1100)
+    local pp = player:GetWorldPos()
+    check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard")
+    check(math.abs(E.hour - ft.from) < 0.01, "the clock wound to the window's start, got " .. tostring(E.hour))
+    -- Inside the window the wait is a plain carry.
+    M.state.quests[id] = { accepted = true }
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    E.hour = ft.from + 0.5
+    M.QuestCommand(id, "fast_travel_wait")
+    E.advance(1100)
+    check(math.abs(E.hour - (ft.from + 0.5)) < 0.01, "the clock untouched inside the window")
+    E.hour = was
 end)
 
 case("Fall: the telling arranges the morning (the letter A, nothing paid, the clock set to the next fall hour); at the hour the one asked is gone from the world and the store says fallen (F, x, how fallen); the giver's complete pays nothing and is the fallen beat; he is kept gone after a load", function(E, M, check)

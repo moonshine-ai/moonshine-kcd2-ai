@@ -2645,7 +2645,11 @@ TEST_CASE("a conversation the mod opened to have a scene offered opens on the of
     CHECK(f.recorded[0] == std::make_pair(witness.id, std::string(kQuestAccept)));
     CHECK(f.session.history().back().content == witness.offer_2);
 
-    // A lead for some other errand, or none, and the ordinary greeting serves.
+    // A lead for some other errand, or none: not opened as the offer. The greeting is still
+    // the scene's own line, since a story's later scene is offered to a man Henry has met,
+    // and its greet_offer was written for that moment (bugs.txt 21 Nov 2026: Paul opened
+    // the threat visit with "I don't believe we've been introduced"); the offer itself
+    // waits to be asked.
     Fixture g(false);
     g.session.set_persona_source(
         [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
@@ -2664,7 +2668,124 @@ TEST_CASE("a conversation the mod opened to have a scene offered opens on the of
     g.game.begin_with(kBartel, " lead=000000000000");
     g.drain(tailer2);
     CHECK_FALSE(g.said("the mod opened this conversation"));
-    CHECK(g.session.history().back().content == "Walk steadfast in the light. What brings you to the church?");
+    CHECK(g.session.history().back().content == witness.greet_offer);
+    // A scene that follows nothing is the first meeting's alone: met before, the ordinary
+    // greeting serves.
+    Quest first = witness;
+    first.after_quest_id.clear();
+    first.after_how.clear();
+    CHECK(plan_quest(first, {}, {}, 3).greeting.empty());
+    CHECK(plan_quest(first, {}, {}, 1).greeting == witness.greet_offer);
+    CHECK(plan_quest(witness, {}, {}, 3).greeting == witness.greet_offer);
+}
+
+TEST_CASE("an offer's written threat and decline are laid with the accepting row; each takes the errand and ends it in one breath") {
+    // bugs.txt 21 Nov 2026 (In the Stocks): Father Adam's offer is to be answered by going
+    // to Benesh or by going to threaten Paul instead (offer_threat: the yes then `threaten`,
+    // the errand ended threatened); Paul's challenge by taking it up or declining it, the
+    // declining failing the quest (offer_no: the yes then `abandon`), and nothing else on
+    // that list. Both as written, both closing the conversation.
+    Quest witness;
+    witness.id = "506fd2dfa88c";
+    witness.kind = "ask";
+    witness.name = "A Witness Before the Bailiff";
+    witness.role = QuestRole::Giver;
+    witness.giver_soul = kBartel;
+    witness.giver_name = "Father Adam";
+    witness.target_soul = "kkut_additive_man_52";
+    witness.target_name = "Benesh";
+    witness.after_quest_id = "895f926a2b54";
+    witness.after_how = "truth";
+    witness.offer = "Come with me to the bailiff tomorrow, and bring Benesh.";
+    witness.accept = "All right. I'll go to Benesh.";
+    witness.offer_threat = "Benesh is too frightened. I'll go to Paul myself and put the fear of God into him.";
+    witness.offer_threat_reply = "That is not what I asked of you, and I'll not bless it. Go carefully.";
+    witness.more = "Why won't the bailiff take your word?";
+    witness.more_reply = "Because Paul drinks with half the watch.";
+    SUBCASE("the threat: accept then threaten, the giver's answer the last word") {
+        Fixture f(false);
+        f.session.set_persona_source(
+            [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+                -> std::optional<Persona> {
+                const Standing standing = standing_of(record);
+                Persona persona{"Father Adam", "You are Father Adam, a priest in Kuttenberg.", "Walk steadfast in the light."};
+                QuestFacts facts = standing.facts_of(witness.id);
+                persona.quest_of = witness;
+                persona.quest = plan_quest(witness, facts, approach, 3);
+                persona.scripted = plan_scripted("", {}, {}, witness, facts, standing, {witness}, {facts});
+                return persona;
+            });
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.game.begin_with(kBartel, " lead=" + witness.id);
+        f.drain(tailer);
+        f.play_all(tailer);
+        REQUIRE(f.game.menu().size() >= 3);
+        CHECK(f.offered[0].intent == "accept");
+        CHECK(f.offered[1].intent == "offer_threat");
+        CHECK(f.game.menu()[1] == witness.offer_threat);
+        CHECK(f.offered[2].intent == "more");
+        f.game.picked(2, "offer_threat", witness.offer_threat);
+        f.drain(tailer);
+        REQUIRE(f.recorded.size() == 2);
+        CHECK(f.recorded[0] == std::make_pair(witness.id, std::string(kQuestAccept)));
+        CHECK(f.recorded[1] == std::make_pair(witness.id, std::string(kQuestThreaten)));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == witness.offer_threat_reply);
+        CHECK(f.game.directives().back() == "@end");
+        CHECK(f.llm.calls.empty());
+    }
+    SUBCASE("the decline: accept then abandon, the list closed to the two answers") {
+        Quest duel = witness;
+        duel.id = "40b49f90c3fc";
+        duel.kind = "duel";
+        duel.name = "Under the Light of the Moon";
+        duel.giver_name = "Paul Schmidt";
+        duel.target_soul = kBartel;
+        duel.target_name = "Paul Schmidt";
+        duel.after_quest_id = witness.id;
+        duel.after_how = "threatened";
+        duel.offer = "Meet me in the yard under the moon, you and I.";
+        duel.accept = "Name your yard, then. I'll be there.";
+        duel.offer_threat.clear();
+        duel.offer_threat_reply.clear();
+        duel.more.clear();
+        duel.more_reply.clear();
+        duel.offer_no = "No. I'll not fight you over this. The bailiff can deal with you.";
+        duel.offer_no_reply = "The bailiff. Ha. Run along to him, then.";
+        Fixture f(false);
+        f.session.set_persona_source(
+            [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+                -> std::optional<Persona> {
+                const Standing standing = standing_of(record);
+                Persona persona{"Paul Schmidt", "You are Paul Schmidt, the sacristan.", "You again."};
+                QuestFacts facts = standing.facts_of(duel.id);
+                persona.quest_of = duel;
+                persona.quest = plan_quest(duel, facts, approach, 3);
+                persona.scripted = plan_scripted("", {}, {}, duel, facts, standing, {duel}, {facts});
+                return persona;
+            });
+        LogTailer tailer(f.game.log());
+        f.game.launch();
+        f.game.begin_with(kBartel, " lead=" + duel.id);
+        f.drain(tailer);
+        f.play_all(tailer);
+        // The two answers and nothing else: no seeds, no say row.
+        REQUIRE(f.game.menu().size() == 2);
+        CHECK(f.offered[0].intent == "accept");
+        CHECK(f.offered[1].intent == "offer_no");
+        CHECK(f.game.menu()[1] == duel.offer_no);
+        CHECK(f.said("answers to the challenge"));
+        f.game.picked(2, "offer_no", duel.offer_no);
+        f.drain(tailer);
+        REQUIRE(f.recorded.size() == 2);
+        CHECK(f.recorded[0] == std::make_pair(duel.id, std::string(kQuestAccept)));
+        CHECK(f.recorded[1] == std::make_pair(duel.id, std::string(kQuestAbandon)));
+        f.play_all(tailer);
+        CHECK(f.session.history().back().content == duel.offer_no_reply);
+        CHECK(f.game.directives().back() == "@end");
+        CHECK(f.llm.calls.empty());
+    }
 }
 
 TEST_CASE("a letter's writer may be asked what is in it, and answers by Henry's Speech against his own") {

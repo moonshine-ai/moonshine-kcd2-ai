@@ -281,7 +281,9 @@ local function soulComponent(e)
     -- The soul's ui name key (char_26_uiName on Henry, char_BOHUTA_uiName on Godwin, a
     -- mod's own key on a renamed soul); nil until a case or makePlayer says.
     function soul:GetNameStringId() return self.nameKey end
-    function soul:GetStatLevel() return 1 end
+    -- Stats by the game's names (speech, str...), 1 unless a case or the host says.
+    soul.statLevels = {}
+    function soul:GetStatLevel(name) return self.statLevels[name] or 1 end
     -- Skills by the game's names (scholarship, speech...), 1 unless a case says.
     soul.skills = {}
     function soul:GetSkillLevel(name) return self.skills[name] or 1 end
@@ -597,16 +599,23 @@ end
 
 -- The holder's menu is enterable while Port('active') AND !Port('handed') and the
 -- talking global is down (README, *Two enterable dialogues on one request*).
+-- And the menu speaks through a role only the holder carries (the dialogue is under
+-- the quest's metarole), so without it on the soul there is no dialogue to enter: a
+-- role granted at run time is not in the save (Engine.arrive wipes them, as a load does).
 function Engine.holderMenuOpen(soulName)
     if Engine.gvar(Moonshine.talkVar) == 1 then return false end
+    local e = Engine.entities[soulName]
+    local function carries(meta)
+        return e == nil or e.soul == nil or meta == nil or e.soul.metaroles[meta] == true
+    end
     for id, q in pairs(Moonshine.quests) do
         local qs = Engine.questState[id]
-        if q.target == soulName then
+        if q.target == soulName and carries(q.holderMeta) then
             if qs ~= nil and qs.state == "active" and not qs.handed then return true end
         end
         -- The onward soul's door: Port('active') off onwardState, !Port('handed') off its
         -- own handover, which is not the holder's.
-        if q.onward == soulName and q.onward ~= "" then
+        if q.onward == soulName and q.onward ~= "" and carries(q.onwardMeta) then
             if qs ~= nil and qs.state == "active" and qs.onward == "active" and not qs.onwardHanded then return true end
         end
     end
@@ -633,6 +642,9 @@ function Engine.delivered(id, how)
     -- A word deliver's hand row is the graph's plain complete (emit.cpp row_completes).
     local q = Moonshine.quests[id]
     if q ~= nil and q.item == "" then Engine.firePort(id .. " complete") end
+    -- A thing's truth row where the truth settles it (emit.cpp settles_on_truth; bugs.txt
+    -- 21 Nov 2026): the row's own port is the graph's plain complete too.
+    if q ~= nil and q.truthSettles == true and how == "truth" then Engine.firePort(id .. " complete") end
     Moonshine.QuestDelivered(id, how)
 end
 
@@ -719,7 +731,10 @@ end
 -- Load: a world arrives (OnInit resets the store), then OnLoad with the saved table,
 -- unless a string in it is at or over the limit, in which case the engine's "Game
 -- load failed" is what happens and nothing is called.
-function Engine.load(textOrPath)
+-- `opts.reload`: a load made with the game already up (the pause menu), which the game
+-- does not re-init the player for -- OnLoad fires alone, no OnInit (kcd.log, 21 Nov 2026:
+-- "a world is arriving" once a run, "loaded via OnLoad" at every load).
+function Engine.load(textOrPath, opts)
     local text = textOrPath
     if string.sub(text, 1, 7) ~= "return " then
         text = readFile(textOrPath)
@@ -732,7 +747,7 @@ function Engine.load(textOrPath)
         Engine.log("[harness] Game load failed: a string of " .. longest(saved) .. " bytes")
         return false, "Game load failed"
     end
-    Engine.arrive()
+    if opts ~= nil and opts.reload then Engine.worldGone() else Engine.arrive() end
     Engine.questState = saved.__harnessQuestState or {}
     saved.__harnessQuestState = nil
     if Player.OnLoadAI then Player.OnLoadAI(player, saved) end
@@ -740,11 +755,22 @@ function Engine.load(textOrPath)
     return true
 end
 
+-- What any load does to the world before the hooks: the dialogue goes, the globals
+-- are the save's, and the souls come back as the save knew them, without the metaroles
+-- granted at run time (measured live, 21 Nov 2026: the holder's role was granted again
+-- on sight after a load); the mod's RegrantRoles is what gives them back.
+function Engine.worldGone()
+    Engine.closeDialog("world changed")
+    Engine.globals = {}
+    for _, e in pairs(Engine.entities) do
+        if e.soul ~= nil and e.soul.metaroles ~= nil then e.soul.metaroles = {} end
+    end
+end
+
 -- A world arriving with no save of ours in it: OnInit, OnSpawn, and the rules'
 -- start-of-level, which is what a save from before the mod looks like.
 function Engine.arrive()
-    Engine.closeDialog("world changed")
-    Engine.globals = {}
+    Engine.worldGone()
     if Player.OnInit then Player.OnInit(player) end
     if Player.OnSpawn then Player.OnSpawn(player) end
     if SinglePlayer and SinglePlayer.Server and SinglePlayer.Server.OnStartLevel then

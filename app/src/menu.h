@@ -38,6 +38,7 @@ inline constexpr int kMenuOptions = 4;
 inline constexpr std::string_view kIntents[] = {
     "help", "accept", "ask", "about", "agree", "decline", "press", "joke", "leave_soon", "farewell",
     "remind", "more", "more_2", "alms", "pry", "pry_press", "paper", "opinion_1", "opinion_2", "opinion_3",
+    "offer_threat", "offer_no",
 };
 // Henry's row at a beggar, while he carries something the mod says he could spare
 // (approach.h, alms); picked, it is answered with the rows for what he has -- `alms:money`,
@@ -70,7 +71,7 @@ inline constexpr std::string_view kDirectorIntents[] = {"apologise", "refuse_apo
                                                         "tell", "lie", "quiet", "fought", "confess",
                                                         "lie_soft", "lie_big", "give", "lie_have",
                                                         "give_up", "accept_again", "dictate",
-                                                        "fast_travel", "fast_travel_later",
+                                                        "fast_travel", "fast_travel_later", "fast_travel_wait",
                                                         "plea_yes", "plea_no", "plea_threat", "take_chest", "decline_chest",
                                                         "named_more", "spare", "fallen"};
 bool known_intent(std::string_view intent);

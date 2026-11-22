@@ -176,7 +176,14 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
                 : "This person carried your letter to " + to + " for you, or told you they "
                   "had, and that is settled between you";
             plan.block += money ? "; you paid them " + pay + " for it." : "; you gave them " + pay + " for it.";
-            if (plea && facts.onward) {
+            if (quest.truth_settles && facts.how == "truth") {
+                // The truth told to the receiver settled it there (Quest::truth_settles;
+                // bugs.txt 21 Nov 2026): this person never came back to say so, and what the
+                // receiver did about it is between him and this person.
+                plan.block += " They did not come back to tell you how it went: " + to + " has the truth of it "
+                              "from them, and whatever he does about it is his to do and theirs to carry. You "
+                              "know the thing is back where it belongs.";
+            } else if (plea && facts.onward) {
                 plan.block += " When they told you they had told " + to + " the whole truth of it, you sent "
                               "them back to beg him to let the matter rest; they have been, and whatever " +
                               to + " said to that is said. You do not ask them to go again.";
@@ -1042,6 +1049,16 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
                          "and you do not go over it again.";
             return plan;
         }
+        if (facts.done && facts.how == "threatened") {
+            // Henry's own way (Quest::offer_threat, the holder's turn row; bugs.txt 21 Nov
+            // 2026): not the asking of this person, a threat to the man behind the matter.
+            plan.block = "You asked this person to bring " + who + " round to standing before the bailiff "
+                         "with you, and they would not go that way, or went and got nothing: they said they "
+                         "would go to the thief himself and frighten him off. You did not ask for that, you "
+                         "paid nothing, and you are afraid of what comes of it, for them and for you; it is "
+                         "settled between you and you do not ask again.";
+            return plan;
+        }
         if (facts.done) {
             plan.block = onward
                 ? "This person went to " + who + " for you, came back and told you what they got "
@@ -1409,7 +1426,11 @@ QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach&
                      "your way, which this person does not know. " +
                      (dark ? "It is dark and you are ready to go now, this moment, if they are; you say so."
                            : "It is not dark yet; you tell them to find you here after dark, and you "
-                             "will take them there yourself.") +
+                             "will take them there yourself" +
+                             std::string(quest.has_fast_travel_wait()
+                                             ? " -- or, if they cannot wait to be beaten, they can drink with you "
+                                               "till it is and go then."
+                                             : ".")) +
                      " You are easy and a little mocking about it. You do not speak of the cup or of "
                      "the bell-ringer unasked, and you admit nothing.";
         return plan;
@@ -1549,7 +1570,12 @@ std::string visit_greeting(const Quest& quest, const QuestFacts& facts, const Qu
     // before Henry asks (Benesh, notes.md 13 Oct 2026). Only the once -- back a second time
     // with it still unasked, the soul's own greeting serves, and the opening row still leads
     // to the offer.
-    if (!plan.question.empty() && !facts.accepted && met <= 1) return quest.greet_offer;
+    // A story's later scene is offered to a man Henry has met before (Paul, In the Stocks:
+    // the threat visit opened "I don't believe we've been introduced"; bugs.txt 21 Nov 2026),
+    // and its line was written for that moment, so it is said whatever the count.
+    if (!plan.question.empty() && !facts.accepted && (met <= 1 || !quest.after_quest_id.empty())) {
+        return quest.greet_offer;
+    }
     return {};
 }
 
@@ -1696,6 +1722,24 @@ QuestPlan plan_quest(const Quest& quest, const QuestFacts& facts, const Approach
             go.closes = true;
             go.group = "fast_travel";
             plan.rows.push_back(std::move(go));
+            if (!facts.accepted) {
+                DirectorRow later{"fast_travel_later", quest.fast_travel_later_row, quest.fast_travel_later_reply, {}};
+                later.after_yes = true;
+                later.closes = true;
+                later.group = "fast_travel";
+                plan.rows.push_back(std::move(later));
+            }
+        } else if (quest.has_fast_travel_wait() && open && approach.hour != kUnread) {
+            // Outside the hours, where a waiting was written (Quest::fast_travel_wait_row;
+            // bugs.txt 21 Nov 2026): the same carrying, the mod winding the clock on to the
+            // window's start first. The duel's: Henry has agreed and would rather have it
+            // over than come back after dark.
+            DirectorRow wait{"fast_travel_wait", quest.fast_travel_wait_row, quest.fast_travel_wait_reply,
+                             std::string(kQuestFastTravelWait)};
+            wait.after_yes = !facts.accepted;
+            wait.closes = true;
+            wait.group = "fast_travel";
+            plan.rows.push_back(std::move(wait));
             if (!facts.accepted) {
                 DirectorRow later{"fast_travel_later", quest.fast_travel_later_row, quest.fast_travel_later_reply, {}};
                 later.after_yes = true;

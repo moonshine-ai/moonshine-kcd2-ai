@@ -1375,6 +1375,53 @@ TEST_CASE("a giver who can carry Henry to the errand's hour lays the rows after 
     for (const DirectorRow& row : plan_quest(quest, at("done"), noon).rows) CHECK(row.intent != "fast_travel");
 }
 
+TEST_CASE("outside the carrying's hours a written wait takes its place, the mod winding the clock on first") {
+    // bugs.txt 21 Nov 2026 (In the Stocks): the duel agreed by day, Henry should be able to
+    // wait with Paul for dark and go at once, rather than come back. The row stands where the
+    // carrying would, only outside the hours and only when written; inside them the carrying
+    // itself; without the wait written, nothing by day as before.
+    Quest quest = bartels_axe(QuestRole::Giver);
+    quest.fast_travel_row = "It's dark enough. Let's go to your yard now.";
+    quest.fast_travel_reply = "Now? Good. After you.";
+    quest.fast_travel_later_row = "Not tonight.";
+    quest.fast_travel_later_reply = "Lost your stomach already?";
+    quest.fast_travel_from = 21.0;
+    quest.fast_travel_to = 24.0;
+    Approach noon;
+    noon.hour = 12.0;
+    Approach night;
+    night.hour = 21.5;
+    CHECK_FALSE(quest.has_fast_travel_wait());
+    CHECK(plan_quest(quest, at("accepted"), noon).rows.size() == 1);   // the give-up row alone
+    quest.fast_travel_wait_row = "I'll wait for dark with you. Let's have it over with.";
+    quest.fast_travel_wait_reply = "Eager to die, brother? Sit, then, and drink.";
+    CHECK(quest.has_fast_travel_wait());
+
+    // Fresh, by day: the wait and the refusal after the yes, in the carrying's place.
+    QuestPlan fresh = plan_quest(quest, {}, noon);
+    REQUIRE(fresh.rows.size() == 2);
+    CHECK(fresh.rows[0].intent == "fast_travel_wait");
+    CHECK(fresh.rows[0].text == quest.fast_travel_wait_row);
+    CHECK(fresh.rows[0].reply == quest.fast_travel_wait_reply);
+    CHECK(fresh.rows[0].command == kQuestFastTravelWait);
+    CHECK(fresh.rows[0].after_yes);
+    CHECK(fresh.rows[0].closes);
+    CHECK(fresh.rows[0].group == "fast_travel");
+    CHECK(fresh.rows[1].intent == "fast_travel_later");
+    // Agreed, by day: the wait alone with the give-up row; by night, the carrying as before.
+    QuestPlan back = plan_quest(quest, at("accepted"), noon);
+    REQUIRE(back.rows.size() == 2);
+    CHECK(back.rows[1].intent == "fast_travel_wait");
+    CHECK_FALSE(back.rows[1].after_yes);
+    QuestPlan dark = plan_quest(quest, at("accepted"), night);
+    REQUIRE(dark.rows.size() == 2);
+    CHECK(dark.rows[1].intent == "fast_travel");
+    for (const DirectorRow& row : dark.rows) CHECK(row.intent != "fast_travel_wait");
+    // Not with the hour unread, and not once the errand is done.
+    CHECK(plan_quest(quest, {}, {}).rows.empty());
+    for (const DirectorRow& row : plan_quest(quest, at("done"), noon).rows) CHECK(row.intent != "fast_travel_wait");
+}
+
 namespace {
 
 // The pilot's find: Mangy Margery the beggar wants four chamomile, and pays in a token.

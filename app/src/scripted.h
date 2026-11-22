@@ -229,6 +229,16 @@ struct Scripted {
     // intent `more_2`, so either may be asked first and the other stays.
     std::string more_2_row;
     std::string more_2_reply;
+    // The offer answered another way, where written (quest.h offer_threat, offer_no; bugs.txt
+    // 21 Nov 2026): Henry's row saying he will go to the man behind the matter himself
+    // (`offer_threat`, answered with `threat_reply`: the errand taken and ended `threatened`
+    // in one breath), and his row declining an offer whose declining is an ending
+    // (`offer_no`, answered with `no_reply`: taken and given up in one breath). Laid beside
+    // the accepting row wherever it is.
+    std::string threat_row;
+    std::string threat_reply;
+    std::string no_row;
+    std::string no_reply;
     // Said to `remind` while the giver's errand is taken up and not yet done: the offer
     // over again. The opening round's offer of help gives way to the remind row while this
     // is set (menu.h, kRemindRow).

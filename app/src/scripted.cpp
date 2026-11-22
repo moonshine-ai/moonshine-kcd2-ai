@@ -272,6 +272,15 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
             out.more_2_row = quest.more_2;
             out.more_2_reply = quest.more_2_reply;
         }
+        // The offer answered another way, where written (quest.h offer_threat, offer_no).
+        if (!quest.offer_threat.empty() && !quest.offer_threat_reply.empty()) {
+            out.threat_row = quest.offer_threat;
+            out.threat_reply = quest.offer_threat_reply;
+        }
+        if (!quest.offer_no.empty() && !quest.offer_no_reply.empty()) {
+            out.no_row = quest.offer_no;
+            out.no_reply = quest.offer_no_reply;
+        }
     }
     // A letter's writer may be asked what is in it from the offer on (notes.md 9 Oct 2026:
     // not gated on holding the letter) until it is handed over: both answers written, or no

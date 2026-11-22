@@ -192,6 +192,12 @@ struct Quest {
     std::string fast_travel_to;
     double fast_travel_at = -1.0;  // hours of the day, decimal; -1 for none written
     bool has_fast_travel() const { return !fast_travel_to.empty() && (fast_travel_at >= 0 || is_duel()); }
+    // The hours the carrying is asked in (`fast_travel_hours`, "from-to"; -1 for none
+    // written). The app lays the row between them; the mod reads them for the wait
+    // (bugs.txt 21 Nov 2026, In the Stocks: the duel agreed before dark, Henry may wait
+    // for it with the man -- the app's `fast_travel_wait` -- and the clock is wound on to
+    // the window's start before the carry).
+    double fast_travel_from = -1.0, fast_travel_to_hour = -1.0;
     // The holder set down for the carry (`fast_travel_holder_to`, "x,y,z", a spot measured
     // on his own road home in sight of the landing; README, "The holder set down at the
     // gate", 15 Nov 2026): at 20:30 he is wherever his evening has him, two hundred metres
@@ -290,6 +296,23 @@ struct Quest {
     std::string tell_threat, tell_threat_yes, tell_threat_no;
     std::string log_completed_pinned, log_completed_covered, log_completed_fibbed, log_completed_evaded,
         log_completed_caught;
+    // The truth after a tale (npc_quest_lines "tell_late", "tell_late_reply", "tell_hold",
+    // "tell_hold_reply"; bugs.txt 21 Nov 2026, In the Stocks): a tale the receiver sees
+    // through ends on his pushback and a menu of two instead of the handover -- Henry comes
+    // clean (`tell_late`, answered with `tell_late_reply`: the truth's how, "truth", and
+    // all that follows from it) or stands by his story (`tell_hold`, `tell_hold_reply`: the
+    // tale's how, "fibbed"). All four written, or the tales end as before.
+    std::string tell_late, tell_late_reply, tell_hold, tell_hold_reply;
+    // A deliver whose interrogation settles the errand on the truth (npc_quest_lines
+    // "truth_settles" = 1; bugs.txt 21 Nov 2026, In the Stocks: Father Adam, told the
+    // truth, asks the next thing of Henry on the spot rather than sending him back to
+    // Benesh). The truth row fires the Talk's `truth` port instead of the handover: the
+    // leg's plain complete (log_completed), no "Return to <giver>", and the Lua completes
+    // the errand there and leads on to the scene that follows at the receiver (leadNext),
+    // as a word deliver's hand row does. The other answers still hand over and send Henry
+    // back to the giver as before. Nothing without the interrogation, and never beside a
+    // plea (the two are the same moment answered two ways).
+    bool truth_settles = false;
     // A deliver whose letter Henry writes himself, at the giver's dictation (npc_quest_lines
     // dictate_*; Words Must Not Fail, notes.md 9 Oct 2026): the giver says the prayer in
     // kDictationParts parts, and after each Henry chooses how it goes down -- as said
@@ -716,6 +739,22 @@ struct Quest {
     std::string objective_arranged;
     std::string log_arranged;
     std::string log_completed_fallen;
+    // An ask Henry may turn from to the man behind it (In the Stocks, bugs.txt 21 Nov 2026:
+    // Father Adam asks Henry to bring Benesh round to standing witness against Paul Schmidt;
+    // Henry may say he will go to Paul himself instead). Two places for it, both ending the
+    // errand the way `threatened` (log_completed_threatened), which a duel scene follows
+    // (after_how "threatened"): at the offer, the app's `offer_threat` row beside the
+    // accepting one (answered with `offer_threat_reply`; the app sends accept and threaten
+    // together, so the journal has the errand taken and ended); and on the one asked's menu
+    // once his persuasion has failed (the `refused` flag the Lua raises on a lost check),
+    // the `turn` row (`turn_reply`), which fires the menu's `turned` port, beside a giving
+    // up (`abandon` / `abandon_reply`, the menu's `abandoned` port: the story fails, as the
+    // give-up row at the giver's does). With the turn written the menu is the persuasion
+    // alone -- no coin, no threat to the one asked -- so that the turn and the giving up
+    // are what a failed persuasion leaves, as the design says.
+    std::string offer_threat, offer_threat_reply;
+    std::string holder_turn, holder_turn_reply;
+    std::string holder_abandon, holder_abandon_reply;
     // A reward that is a thing (npc_quest_lines "reward_class": one item class guid): made
     // in Henry's pocket at the hand-in beside whatever the words promise and the groschen,
     // by PayReward (Heinz's digestive potion in *Barking Stew*). Empty for a reward in
@@ -859,6 +898,24 @@ struct Quest {
     }
     // The plea: a deliver's word carried back to the receiver (above).
     bool pleads() const { return has_interrogation() && !onward_soul.empty(); }
+    // The truth settling the errand at the receiver (above): never beside a plea.
+    bool settles_on_truth() const { return has_interrogation() && truth_settles && !pleads(); }
+    // The truth after a tale (above): all four lines written, on an interrogation with a
+    // tale to see through.
+    bool has_late_truth() const {
+        return has_interrogation() && !tell_late.empty() && !tell_late_reply.empty() && !tell_hold.empty() &&
+               !tell_hold_reply.empty() && (!tell_vision.empty() || !tell_tale.empty());
+    }
+    // An ask Henry may turn from to the man behind it (above): the turn on the one asked's
+    // menu, with the journal's line for the ending; and the giving up beside it.
+    bool has_turn() const {
+        return is_ask() && !log_completed_threatened.empty() && !holder_turn.empty() && !holder_turn_reply.empty();
+    }
+    bool has_holder_abandon() const { return has_turn() && !holder_abandon.empty() && !holder_abandon_reply.empty(); }
+    // The same turn at the offer (the app's row); the journal's line is wanted for it too.
+    bool has_offer_threat() const {
+        return is_ask() && !log_completed_threatened.empty() && !offer_threat.empty() && !offer_threat_reply.empty();
+    }
     // A find whose marker is a keepsake laid at the spot the things grow (above).
     bool has_keepsake() const { return is_find() && !keepsake_class.empty() && !spot_pos.empty(); }
     // A seek with clue-holders (above) and the place named for its search objective, whose

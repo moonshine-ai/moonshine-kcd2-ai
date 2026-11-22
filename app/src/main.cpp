@@ -1210,15 +1210,23 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // and Elsbeth's first answers went unheard, their lips still, when the player tapped
     // through Henry's line, since the whole queue was hushed).
     int line_skips_early = 0;
+    // And the conversation's end ("BRIDGE left"), the same way: the player holding the
+    // button to go while the loop is held in the model left the voice talking to nobody
+    // until the reply was written (bugs.txt 21 Nov 2026: the TTS should stop when the
+    // conversation closes). The loop hushes again when it reaches the event, which costs
+    // nothing.
+    int lefts_early = 0;
     const auto hush_line = [speaker] {
         if (!speaker) return;
         std::cout << "-- the player skipped the line; the voice drops it\n" << std::flush;
         speaker->hush_line();
     };
-    const auto skipped_since = [&tailer, &hush_all, &hush_line, &skips_early, &line_skips_early](int turn) {
+    const auto skipped_since = [&tailer, &hush_all, &hush_line, &skips_early, &line_skips_early,
+                                &lefts_early](int turn) {
         tailer.pending();
         int seen = 0;
         int lines = 0;
+        int lefts = 0;
         bool of_turn = false;
         // A line skip is dropped early only while it is of a line already queued: one that
         // comes after a voice marker the loop has not reached is of a line not yet queued,
@@ -1234,6 +1242,11 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         while (skips_early < seen) {
             ++skips_early;
             std::cout << "-- the player skipped the line; the voice is hushed\n" << std::flush;
+            hush_all();
+        }
+        while (lefts_early < lefts) {
+            ++lefts_early;
+            std::cout << "-- the conversation is over; the voice is hushed\n" << std::flush;
             hush_all();
         }
         while (line_skips_early < lines) {
@@ -1500,6 +1513,9 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                     event.marker == Marker::Restarted) {
                     hush_all();
                 }
+                // An end hushed when it was seen ahead of the loop (skipped_since) is
+                // accounted for, so the next end is hushed early too.
+                if (event.marker == Marker::Left && lefts_early > 0) --lefts_early;
                 // The player skipped the line: hushed when it was seen, if the loop was held
                 // in the model then (skipped_since), and again now. Again, because the early
                 // hush emptied the queue as it stood then, and the lines the mod showed

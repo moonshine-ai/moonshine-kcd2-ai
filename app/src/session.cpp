@@ -411,6 +411,8 @@ void Session::open(std::string_view soul, const Approach& approach,
                                                                  : persona_.quest_of.greet_offer + "\n\n" + coming.offer;
         preset_.clear();
         if (!coming.accept_row.empty()) preset_.push_back({0, "accept", coming.accept_row});
+        if (!coming.threat_row.empty()) preset_.push_back({0, "offer_threat", coming.threat_row});
+        if (!coming.no_row.empty()) preset_.push_back({0, "offer_no", coming.no_row});
         if (!coming.more_row.empty()) preset_.push_back({0, "more", coming.more_row});
         if (!coming.more_2_row.empty()) preset_.push_back({0, "more_2", coming.more_2_row});
         told_.emplace_back("help");
@@ -448,6 +450,8 @@ void Session::open(std::string_view soul, const Approach& approach,
                 persona_.greeting += "\n\n" + coming.offer;
                 preset_.clear();
                 if (!coming.accept_row.empty()) preset_.push_back({0, "accept", coming.accept_row});
+                if (!coming.threat_row.empty()) preset_.push_back({0, "offer_threat", coming.threat_row});
+                if (!coming.no_row.empty()) preset_.push_back({0, "offer_no", coming.no_row});
                 if (!coming.more_row.empty()) preset_.push_back({0, "more", coming.more_row});
                 if (!coming.more_2_row.empty()) preset_.push_back({0, "more_2", coming.more_2_row});
                 told_.emplace_back("help");
@@ -1034,7 +1038,7 @@ void Session::owe(std::string_view command) {
         closing_ = true;
     }
     if (command.substr(0, kQuestWrote.size()) == kQuestWrote) closing_ = true;
-    if (command == kQuestFastTravel) closing_ = true;
+    if (command == kQuestFastTravel || command == kQuestFastTravelWait) closing_ = true;
     status("quest " + persona_.quest_of.id + ": " + std::string(command));
     if (listener_.on_quest) listener_.on_quest(persona_.quest_of.id, command);
 }
@@ -1614,6 +1618,9 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.reply = written.offer;
             out.what = "the offer";
             if (!written.accept_row.empty()) out.next.push_back({0, "accept", written.accept_row});
+            // The offer's other answers, where written (scripted.h threat_row, no_row).
+            if (!written.threat_row.empty()) out.next.push_back({0, "offer_threat", written.threat_row});
+            if (!written.no_row.empty()) out.next.push_back({0, "offer_no", written.no_row});
             // And under it Henry's one question about the errand, while it is unasked, and
             // a letter's "what is in it?", which he may ask before he agrees to carry it.
             if (!written.more_row.empty() && once("more")) out.next.push_back({0, "more", written.more_row});
@@ -1647,6 +1654,24 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             }
             out.commands.push_back(persona_.quest.on_yes);
         }
+        out.spent.emplace_back("accept");
+    } else if (intent == "offer_threat" || intent == "offer_no") {
+        // The offer answered another way (scripted.h threat_row, no_row; bugs.txt 21 Nov
+        // 2026): Henry will go to the man behind the matter himself, or will not take the
+        // offer at all. Either is the errand taken and ended in one breath -- the yes it
+        // owes the game, then the ending (threatened, or given up) -- so the journal has
+        // the errand and how it went; the giver's written answer is the last word.
+        const bool threat = intent == "offer_threat";
+        const std::string& reply = threat ? written.threat_reply : written.no_reply;
+        if (!reply.empty() && !persona_.quest.question.empty()) {
+            out.reply = reply;
+            out.what = threat ? "the giver's answer to Henry going to the man himself; the errand taken and ended threatened"
+                              : "the giver's answer to Henry declining; the errand taken and given up";
+            out.commands.push_back(persona_.quest.on_yes);
+            out.commands.emplace_back(threat ? kQuestThreaten : kQuestAbandon);
+            out.closes = true;
+        }
+        out.spent.emplace_back(intent);
         out.spent.emplace_back("accept");
     } else if (intent == kDictateIntent) {
         // The dictation picked up (or begun, after a yes the judge read): the giver's line
@@ -1693,6 +1718,8 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.reply = answer;
             out.what = "the written answer to his question about the errand";
             if (!written.accept_row.empty()) out.next.push_back({0, "accept", written.accept_row});
+            if (!written.threat_row.empty()) out.next.push_back({0, "offer_threat", written.threat_row});
+            if (!written.no_row.empty()) out.next.push_back({0, "offer_no", written.no_row});
             if (!second && !written.more_2_row.empty() && once("more_2")) {
                 out.next.push_back({0, "more_2", written.more_2_row});
             }
@@ -1977,6 +2004,11 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
         }
         break;
     }
+    // The offer answered another way (written_answer offer_threat / offer_no): the errand
+    // is taken and ended in one breath, and the record is kept as for a hand-in row.
+    if (intent == "offer_threat" || intent == "offer_no") {
+        ending = settle(intent == "offer_threat" ? kQuestThreaten : kQuestAbandon);
+    }
     // An errand ended with nothing to lead on to closes the conversation on the giver's
     // answer, as taking one up does (notes.md 23 Oct 2026: Christine thanked Henry for the
     // prayer and the menu stood there). Whatever else they have to say is a fresh talk --
@@ -2033,6 +2065,7 @@ Session::Settled Session::settle(std::string_view command) {
     const std::string how = command == kQuestLie ? "lied" : command == kQuestKeep ? "kept"
                             : command == kQuestQuiet ? "quiet" : command == kQuestConfess ? "dead"
                             : command == kQuestAbandon ? "abandoned"
+                            : command == kQuestThreaten ? "threatened"
                             : std::string();
     const auto put = [](std::vector<std::pair<std::string, std::string>>& list, const std::string& id,
                         const std::string& value) {
@@ -2155,6 +2188,8 @@ std::vector<MenuOption> Session::written_fill(bool first_round, int room) {
     // model made in its own words.)
     if (!written.accept_row.empty() && spent("help") && !persona_.quest.question.empty()) {
         take("accept", written.accept_row);
+        if (!written.threat_row.empty() && !spent("offer_threat")) take("offer_threat", written.threat_row);
+        if (!written.no_row.empty() && !spent("offer_no")) take("offer_no", written.no_row);
         // His question about it stays under the accepting row until asked, and so does a
         // letter's "what is in it?".
         if (!written.more_row.empty() && !spent("more")) take("more", written.more_row);
@@ -2282,6 +2317,15 @@ void Session::offer() {
         add(std::move(preset));
         send(/*closed=*/true);
         status("offered the " + std::to_string(rows_.size()) + " answers to the question back");
+        return;
+    }
+    // An offer whose declining is an ending (Scripted::no_row; bugs.txt 21 Nov 2026, In the
+    // Stocks: Paul's challenge): the offer's rows and nothing else, closed as the question
+    // back is -- a man called out answers yes or no, and does not ask about the weather.
+    if (std::any_of(preset.begin(), preset.end(), [](const MenuOption& row) { return row.intent == "offer_no"; })) {
+        add(std::move(preset));
+        send(/*closed=*/true);
+        status("offered the " + std::to_string(rows_.size()) + " answers to the challenge");
         return;
     }
     // The dictation due and not begun (the errand taken up on a yes the judge read): the row

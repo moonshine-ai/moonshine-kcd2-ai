@@ -1012,6 +1012,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'told_cursed', 'told_mocked', 'told_reply_cursed', 'told_reply_mocked', "
                 "'told_denounced', 'told_reply_denounced', "
                 "'unyielding', 'helper_name', 'greet_rebuffed', 'greet_rebuffed_ask', 'rebuffed_row', 'named_row', 'decline_row', 'decline_reply', 'named_more', 'named_more_reply', "
+                "'offer_threat', 'offer_threat_reply', 'offer_no', 'offer_no_reply', 'truth_settles', "
                 "'named_reply', 'give_up_reply', "
                 "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name', "
                 "'greet_gone_target', 'greet_wed_target', 'greet_wed', 'wed_more_target', 'wed_more_target_reply', "
@@ -1064,6 +1065,13 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 else if (field == "fast_travel_reply") quest.fast_travel_reply = text_at(row, 1);
                 else if (field == "fast_travel_later") quest.fast_travel_later_row = text_at(row, 1);
                 else if (field == "fast_travel_later_reply") quest.fast_travel_later_reply = text_at(row, 1);
+                else if (field == "fast_travel_wait") quest.fast_travel_wait_row = text_at(row, 1);
+                else if (field == "fast_travel_wait_reply") quest.fast_travel_wait_reply = text_at(row, 1);
+                else if (field == "offer_threat") quest.offer_threat = text_at(row, 1);
+                else if (field == "offer_threat_reply") quest.offer_threat_reply = text_at(row, 1);
+                else if (field == "offer_no") quest.offer_no = text_at(row, 1);
+                else if (field == "offer_no_reply") quest.offer_no_reply = text_at(row, 1);
+                else if (field == "truth_settles") quest.truth_settles = std::atoi(text_at(row, 1).c_str()) != 0;
                 else if (field == "fast_travel_hours") {
                     // "from-to", hours of the day; the written default stands over a bad one.
                     double from = 0, to = 0;

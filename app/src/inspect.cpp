@@ -240,6 +240,11 @@ std::string persona_json(const Soul& soul,
         out += "    \"accept_reply\": " + json_string(written.accept_reply) + ",\n";
         out += "    \"more_row\": " + json_string(written.more_row) + ",\n";
         out += "    \"more_reply\": " + json_string(written.more_reply) + ",\n";
+        // The offer's other answers, where written (scripted.h threat_row, no_row).
+        out += "    \"threat_row\": " + json_string(written.threat_row) + ",\n";
+        out += "    \"threat_reply\": " + json_string(written.threat_reply) + ",\n";
+        out += "    \"no_row\": " + json_string(written.no_row) + ",\n";
+        out += "    \"no_reply\": " + json_string(written.no_reply) + ",\n";
         out += "    \"help\": " + json_string(written.help) + ",\n";
         out += "    \"about\": " + json_string(written.about) + ",\n";
         out += "    \"about_told\": " + std::string(yes_no(written.about_told)) + ",\n";

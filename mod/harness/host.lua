@@ -14,6 +14,7 @@
 --   soul <name> [x y z]             make a soul (idempotent); the player is "dude" at 0,0,0
 --   give <soul|player> <class> <n>  put n of a class in a pocket
 --   count <soul|player> <class>     ok <n>
+--   stat <soul|player> <name> <n>   set a stat level (speech...) the mod reads off the soul
 --   kill <soul>                     the soul dies
 --   look <soul>                     ok favour|plain|talk|none   (what the prompt reads)
 --   begin <soul>                    press the mod's prompt
@@ -121,6 +122,15 @@ function handlers.count(a)
     local e = who(a[2])
     if e == nil then return err("no soul " .. tostring(a[2])) end
     return ok(tostring(e.inventory:GetCountOfClass(a[3])))
+end
+
+function handlers.stat(a)
+    local e = who(a[2])
+    if e == nil then return err("no soul " .. tostring(a[2])) end
+    local v = tonumber(a[4])
+    if a[3] == nil or v == nil then return err("stat <soul|player> <name> <n>") end
+    e.soul.statLevels[a[3]] = v
+    return ok(tostring(e.soul:GetStatLevel(a[3])))
 end
 
 function handlers.kill(a)

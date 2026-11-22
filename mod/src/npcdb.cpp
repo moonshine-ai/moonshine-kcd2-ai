@@ -309,6 +309,29 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
         if (!q.fast_travel_holder_to.empty() && !q.has_fast_travel()) {
             throw std::runtime_error("quest " + q.id + " has fast_travel_holder_to and no carrying to set him down for");
         }
+        // The truth settling at the receiver (npcdb.hpp truth_settles) wants the
+        // interrogation, and is the plea's moment answered the other way: not both.
+        if (q.truth_settles && !q.has_interrogation()) {
+            throw std::runtime_error("quest " + q.id + " has truth_settles and no interrogation for the truth to be told at");
+        }
+        if (q.truth_settles && q.pleads()) {
+            throw std::runtime_error("quest " + q.id + " has truth_settles and a plea (onward_soul); the truth cannot both settle and send back");
+        }
+        // The turn to the man behind the asking (npcdb.hpp holder_turn): an ask's, written
+        // whole or not at all, with the journal's line for the ending.
+        if ((!q.holder_turn.empty() || !q.holder_turn_reply.empty() || !q.offer_threat.empty() || !q.offer_threat_reply.empty()) &&
+            !q.is_ask()) {
+            throw std::runtime_error("quest " + q.id + " has a turn (turn / offer_threat) but is a " + q.kind);
+        }
+        if (q.is_ask() && (!q.holder_turn.empty() || !q.holder_turn_reply.empty()) && !q.has_turn()) {
+            throw std::runtime_error("quest " + q.id + " has a turn half written: turn, turn_reply and log_completed_threatened are all wanted");
+        }
+        if (q.is_ask() && (!q.offer_threat.empty() || !q.offer_threat_reply.empty()) && !q.has_offer_threat()) {
+            throw std::runtime_error("quest " + q.id + " has offer_threat half written: offer_threat, offer_threat_reply and log_completed_threatened are all wanted");
+        }
+        if (q.is_ask() && (!q.holder_abandon.empty() || !q.holder_abandon_reply.empty()) && !q.has_holder_abandon()) {
+            throw std::runtime_error("quest " + q.id + " has the one asked's abandon half written, or written without the turn");
+        }
         // An exposure (npcdb.hpp, expose): the witness by soul_name, resolved to a guid --
         // they are never spoken to or marked, so they need not be renamed -- and the
         // household the holder is caught in, which is the witness's, for the welcome that
@@ -592,6 +615,10 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "tell_threat") return &q.tell_threat;
         if (field == "tell_threat_yes") return &q.tell_threat_yes;
         if (field == "tell_threat_no") return &q.tell_threat_no;
+        if (field == "tell_late") return &q.tell_late;
+        if (field == "tell_late_reply") return &q.tell_late_reply;
+        if (field == "tell_hold") return &q.tell_hold;
+        if (field == "tell_hold_reply") return &q.tell_hold_reply;
         if (field == "log_completed_pinned") return &q.log_completed_pinned;
         if (field == "log_completed_covered") return &q.log_completed_covered;
         if (field == "log_completed_evaded") return &q.log_completed_evaded;
@@ -744,6 +771,12 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "objective_arranged") return &q.objective_arranged;
         if (field == "log_arranged") return &q.log_arranged;
         if (field == "log_completed_fallen") return &q.log_completed_fallen;
+        if (field == "offer_threat") return &q.offer_threat;
+        if (field == "offer_threat_reply") return &q.offer_threat_reply;
+        if (field == "turn") return &q.holder_turn;
+        if (field == "turn_reply") return &q.holder_turn_reply;
+        if (field == "abandon") return &q.holder_abandon;
+        if (field == "abandon_reply") return &q.holder_abandon_reply;
         // An ambush's, a buy's and a duel's Document pages go where a deliver's letter does:
         // one page per quest, whatever the kind calls it (the duel's is the note on the man).
         if (field == "directions" || field == "charm" || field == "note") return &q.letter;
@@ -862,9 +895,19 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                 if (std::sscanf(words.c_str(), "%d:%d", &hh, &mm) >= 1 && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
                     q.home_at = hh + mm / 60.0;
                 }
-            } else if (field == "fast_travel_hours" || field == "fast_travel" || field == "fast_travel_reply" ||
-                       field == "fast_travel_later" || field == "fast_travel_later_reply") {
-                // The app's: the rows, the answers and the hours Henry can ask it in.
+            } else if (field == "fast_travel_hours") {
+                // The hours Henry can ask the carrying in, "from-to" of the day: the app's
+                // for laying the row, and the mod's for the wait (npcdb.hpp fast_travel_from:
+                // a duel's carry asked before dark winds the clock on to the window's start).
+                double from = 0, to = 0;
+                if (std::sscanf(words.c_str(), "%lf-%lf", &from, &to) == 2 && from < to) {
+                    q.fast_travel_from = from;
+                    q.fast_travel_to_hour = to;
+                }
+            } else if (field == "fast_travel" || field == "fast_travel_reply" || field == "fast_travel_wait" ||
+                       field == "fast_travel_wait_reply" || field == "fast_travel_later" ||
+                       field == "fast_travel_later_reply") {
+                // The app's: the rows and the answers.
             } else if (field == "blackmail_groschen") {
                 // The bedside's price for Henry's silence, over the thing itself.
                 q.blackmail_groschen = std::max(0, std::atoi(words.c_str()));
@@ -872,6 +915,9 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                 // The giver's house open to Henry from accept on, which every quest has
                 // unless this says a plain no (read_household resolves who lives there).
                 q.welcome = !(words == "0" || words == "no" || words == "false");
+            } else if (field == "truth_settles") {
+                // The interrogation's truth settles the errand at the receiver (npcdb.hpp).
+                q.truth_settles = words == "1" || words == "yes" || words == "true";
             } else if (field == "unyielding") {
                 // A holder who cannot be moved: the menu's rows are refusals (In the Stocks).
                 q.unyielding = words == "1" || words == "yes" || words == "true";
@@ -1253,6 +1299,8 @@ std::vector<std::string> Quest::resolutions() const {
         if (!log_completed_dead.empty()) out.emplace_back("dead");
         // The one asked fallen before the morning's meeting (has_fall).
         if (has_fall()) out.emplace_back("fallen");
+        // Henry turned from the asking to the man behind it (has_turn, has_offer_threat).
+        if (is_ask() && (has_turn() || has_offer_threat())) out.emplace_back("threatened");
         return out;
     }
     if (is_buy()) {

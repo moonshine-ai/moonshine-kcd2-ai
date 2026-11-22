@@ -1974,6 +1974,9 @@ struct LegOut {
     // And the triggers among them that end the leg a way of their own with no row said (a
     // duel's man killed: "targetDeath.OnDeath", "dead"), for the run's Done.
     std::vector<std::pair<std::string, std::string>> way_completes;
+    // And the Talk rows that give the errand up where they are said (the one asked's
+    // abandon row: "holder.abandoned"), for the run's Failed beside the giver's give-up.
+    std::vector<std::string> fail_sources;
 };
 
 LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx) {
@@ -2077,6 +2080,10 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     std::vector<std::string> plain_completes = {P("complete")};
     if (onward) out.row_completes.push_back("onwardTalk.handover");
     if (quest.carries_word() && holder) out.row_completes.push_back("holder.handover");
+    // The truth told where it settles the errand (npcdb.hpp truth_settles): the receiver
+    // menu's own `truth` port is the plain complete, the way a word deliver's hand row is.
+    const bool settles = quest.settles_on_truth() && holder;
+    if (settles) out.row_completes.push_back("holder.truth");
     for (const std::string& src : out.row_completes) {
         plain_completes.push_back(src);
         out.complete_ports.push_back(src);
@@ -2132,6 +2139,20 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // Given up to the giver's face (the app's `abandon`): the objective's own Canceled
     // line, and the quest's failure follows (questState below) for everything else.
     s += t(5) + "<Edge From=\"" + P("abandon") + "\" To=\"SetAbandoned\" />\r\n";
+    // Henry turned from an ask to the man behind it (npcdb.hpp holder_turn): the one
+    // asked's menu's `turned` port is the `threatened` ending, with no row said at the
+    // giver's (LegOut::way_completes); and given up to the one asked's face, the same
+    // Canceled line as the giver's give-up, with the run's failure (fail_sources).
+    const bool turn = quest.has_turn() && holder;
+    if (turn) {
+        s += t(5) + "<Edge From=\"holder.turned\" To=\"Set" + resolution_state("threatened") + "\" />\r\n";
+        out.way_completes.emplace_back("holder.turned", "threatened");
+        out.complete_ports.push_back("holder.turned");
+    }
+    if (quest.has_holder_abandon() && holder) {
+        s += t(5) + "<Edge From=\"holder.abandoned\" To=\"SetAbandoned\" />\r\n";
+        out.fail_sources.push_back("holder.abandoned");
+    }
     // A letter read on the way: the seal is broken the moment the page opens, and the
     // objective says so (Updated, log_opened), whoever it was meant for.
     const bool opened = quest.is_deliver() && !quest.log_opened.empty();
@@ -3229,6 +3250,11 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (holder) {
         s += t(4) + "<State Name=\"handed\" TypeT=\"bool\">\r\n";
         s += t(5) + "<Edge From=\"holder.handover\" To=\"SetTrue\" />\r\n";
+        // The truth that settles the errand closes the receiver's menu as the handover would
+        // (npcdb.hpp truth_settles); the turn and the giving up close the one asked's.
+        if (settles) s += t(5) + "<Edge From=\"holder.truth\" To=\"SetTrue\" />\r\n";
+        if (turn) s += t(5) + "<Edge From=\"holder.turned\" To=\"SetTrue\" />\r\n";
+        if (quest.has_holder_abandon()) s += t(5) + "<Edge From=\"holder.abandoned\" To=\"SetTrue\" />\r\n";
         // The thing out of the chest closes the holder's menu as his giving it would.
         if (quest.has_chest()) s += t(5) + "<Edge From=\"taken.OnAcquire\" To=\"SetTrue\" />\r\n";
         // A beat's menu also closes when the man goes down: there is nothing left to talk
@@ -4002,6 +4028,11 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             if (way.first.compare(0, name.size() + 1, name + ".") == 0) way.first = name + sfx + way.first.substr(name.size());
         }
     }
+    for (std::string& src : leg.fail_sources) {
+        for (const std::string& name : names) {
+            if (src.compare(0, name.size() + 1, name + ".") == 0) src = name + sfx + src.substr(name.size());
+        }
+    }
     return sfx;
 }
 
@@ -4128,6 +4159,10 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     for (std::size_t i = 0; i < legs.size(); ++i) {
         s += t(5) + "<Edge From=\"" + (multi ? quest_port({run.legs[i]->id, "abandon", 0}) : std::string("abandon")) +
              "\" To=\"SetFailed\" />\r\n";
+        // And to the one asked's face (LegOut::fail_sources).
+        for (const std::string& src : legs[i].fail_sources) {
+            s += t(5) + "<Edge From=\"" + src + "\" To=\"SetFailed\" />\r\n";
+        }
     }
     s += t(5) + "<Edge From=\"giverDeath.OnDeath\" To=\"SetFailed\" />\r\n";
     s += t(4) + "</State>\r\n";
@@ -4640,6 +4675,19 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     if (quest.is_unyielding()) {
         s += t(4) + "<Port Name=\"rebuffed\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     }
+    // The truth settling the errand at the receiver (npcdb.hpp truth_settles): the truth
+    // row's own port, the leg's plain complete, in place of the handover.
+    if (quest.settles_on_truth()) {
+        s += t(4) + "<Port Name=\"truth\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    }
+    // Henry turned from the asking to the man behind it (npcdb.hpp holder_turn): the
+    // `threatened` ending; and the errand given up to the one asked's face.
+    if (quest.has_turn()) {
+        s += t(4) + "<Port Name=\"turned\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    }
+    if (quest.has_holder_abandon()) {
+        s += t(4) + "<Port Name=\"abandoned\" Direction=\"Out\" Type=\"trigger\" />\r\n";
+    }
     // The bedside's denouncing: Henry walked out with nothing (the objective's Updated line,
     // the marker on the giver, who is to be told).
     if (quest.has_bedside()) {
@@ -4739,19 +4787,50 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             auto delivered = [&](const char* how) {
                 return std::string("Moonshine.QuestDelivered('") + quest.id + "', '" + how + "')";
             };
-            // One answer: Henry's row, the receiver's reply, the handover and the end.
+            // One answer: Henry's row, the receiver's reply, the handover and the end. The
+            // truth's port is its own where the truth settles the errand (npcdb.hpp
+            // truth_settles): the leg's plain complete, and no "Return to <giver>".
             auto answer = [&](int depth, const char* tag, const char* henry, const std::string& henry_words,
                               const char* reply, const std::string& reply_words, const char* how) {
+                const bool settles = quest.settles_on_truth() && std::string(how) == "truth";
                 std::string c;
                 c += t(depth) + "<Sequence EndType=\"EndDialogue\" Name=\"" + std::string(tag) + "\" ExitScript=\"" +
                      delivered(how) + "\">\r\n";
                 c += prompt(depth + 1, henry, henry_words);
-                c += t(depth + 1) + "<Triggers>\r\n" + t(depth + 2) + "<Port Name=\"handover\" />\r\n" + t(depth + 1) +
-                     "</Triggers>\r\n";
+                c += t(depth + 1) + "<Triggers>\r\n" + t(depth + 2) + "<Port Name=\"" + (settles ? "truth" : "handover") +
+                     "\" />\r\n" + t(depth + 1) + "</Triggers>\r\n";
                 c += t(depth + 1) + "<Elements>\r\n";
                 c += line(depth + 2, "HENRY", henry, henry_words);
                 c += line(depth + 2, role, reply, reply_words);
                 c += t(depth + 1) + "</Elements>\r\n";
+                c += t(depth) + "</Sequence>\r\n";
+                return c;
+            };
+            // A tale with the truth still open after it (npcdb.hpp has_late_truth; bugs.txt
+            // 21 Nov 2026): the receiver's pushback, then a menu of two -- Henry comes clean
+            // (the truth's answer, with all that follows from it) or stands by the tale
+            // (the fibbed one). Without the late truth written, the tale is one answer.
+            auto tale = [&](int depth, const char* tag, const char* henry, const std::string& henry_words,
+                            const char* reply, const std::string& reply_words) {
+                if (!quest.has_late_truth()) {
+                    return answer(depth, tag, henry, henry_words, reply, reply_words, "fibbed");
+                }
+                std::string c;
+                c += t(depth) + "<Sequence EndType=\"Decision\" Name=\"" + std::string(tag) + "\" ExitScript=\"" +
+                     stage(std::string("row ") + tag) + "\">\r\n";
+                c += prompt(depth + 1, henry, henry_words);
+                c += t(depth + 1) + "<Elements>\r\n";
+                c += line(depth + 2, "HENRY", henry, henry_words);
+                c += line(depth + 2, role, reply, reply_words);
+                c += t(depth + 1) + "</Elements>\r\n";
+                c += t(depth + 1) + "<Decision Name=\"" + std::string(tag) + "_out\" Priority=\"General\">\r\n";
+                c += t(depth + 2) + "<Sequences>\r\n";
+                c += answer(depth + 3, (std::string(tag) + "_late").c_str(), "tell_late", quest.tell_late, "tell_late_reply",
+                            quest.tell_late_reply, "truth");
+                c += answer(depth + 3, (std::string(tag) + "_hold").c_str(), "tell_hold", quest.tell_hold, "tell_hold_reply",
+                            quest.tell_hold_reply, "fibbed");
+                c += t(depth + 2) + "</Sequences>\r\n";
+                c += t(depth + 1) + "</Decision>\r\n";
                 c += t(depth) + "</Sequence>\r\n";
                 return c;
             };
@@ -4818,12 +4897,10 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
                 // word about lying to a priest; one how for the two, since the giver's
                 // answer and the journal's line are the same for either.
                 if (!quest.tell_vision.empty() && !quest.tell_vision_reply.empty()) {
-                    s += answer(12, "vision", "tell_vision", quest.tell_vision, "tell_vision_reply",
-                                quest.tell_vision_reply, "fibbed");
+                    s += tale(12, "vision", "tell_vision", quest.tell_vision, "tell_vision_reply", quest.tell_vision_reply);
                 }
                 if (!quest.tell_tale.empty() && !quest.tell_tale_reply.empty()) {
-                    s += answer(12, "tale", "tell_tale", quest.tell_tale, "tell_tale_reply", quest.tell_tale_reply,
-                                "fibbed");
+                    s += tale(12, "tale", "tell_tale", quest.tell_tale, "tell_tale_reply", quest.tell_tale_reply);
                 }
                 s += t(11) + "</Sequences>\r\n";
                 s += t(10) + "</Decision>\r\n";
@@ -5342,9 +5419,42 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
                    "persuade_yes", quest.holder_persuade_yes, "persuade_no", quest.holder_persuade_no);
         // Nobody frightens a woman for a kettle: a female holder gets no dread option, so
         // Henry talks, pays, brokers or steals (data/kcd2/quest-design/survey-followups.md §1).
-        if (quest.target_gender != "female") {
+        // Nor is the one asked threatened or bought where Henry may turn on the man behind
+        // the asking instead (has_turn): the persuasion is the one way, and the turn and the
+        // giving up are what its failing leaves.
+        if (quest.target_gender != "female" && !quest.has_turn()) {
             s += check("threaten", "dread", "threaten", quest.holder_threaten, "threaten_yes",
                        quest.holder_threaten_yes, "threaten_no", quest.holder_threaten_no);
+        }
+    }
+    // The turn (npcdb.hpp holder_turn; In the Stocks, bugs.txt 21 Nov 2026): once the
+    // persuasion has failed -- the quest's `refused` global, which the Lua raises on the
+    // lost check's exit (QuestStage) and keeps from the store -- Henry may say he will go to
+    // the man himself, which ends the errand the way `threatened` (the menu's `turned` port,
+    // the Lua's QuestCommand with the row's own port fired), or give it up to the one
+    // asked's face (`abandoned`: the story fails, as the giver's give-up row has it). Each
+    // ends the talk.
+    if (quest.has_turn()) {
+        const std::string refused_when = "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "refused")) + "')==1";
+        s += t(9) + "<Sequence EntryCondition=\"" + refused_when + "\" EndType=\"EndDialogue\" Name=\"turn\" ExitScript=\"Moonshine.QuestCommand('" +
+             quest.id + "', 'threaten', true)\">\r\n";
+        s += prompt(10, "turn", quest.holder_turn);
+        s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"turned\" />\r\n" + t(10) + "</Triggers>\r\n";
+        s += t(10) + "<Elements>\r\n";
+        s += line(11, "HENRY", "turn", quest.holder_turn);
+        s += line(11, role, "turn_reply", quest.holder_turn_reply);
+        s += t(10) + "</Elements>\r\n";
+        s += t(9) + "</Sequence>\r\n";
+        if (quest.has_holder_abandon()) {
+            s += t(9) + "<Sequence EntryCondition=\"" + refused_when + "\" EndType=\"EndDialogue\" Name=\"abandon\" ExitScript=\"Moonshine.QuestCommand('" +
+                 quest.id + "', 'abandon', true)\">\r\n";
+            s += prompt(10, "abandon", quest.holder_abandon);
+            s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"abandoned\" />\r\n" + t(10) + "</Triggers>\r\n";
+            s += t(10) + "<Elements>\r\n";
+            s += line(11, "HENRY", "abandon", quest.holder_abandon);
+            s += line(11, role, "abandon_reply", quest.holder_abandon_reply);
+            s += t(10) + "</Elements>\r\n";
+            s += t(9) + "</Sequence>\r\n";
         }
     }
 
@@ -5354,8 +5464,9 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     // only offered to a player who can afford it, so the menu never shows an option that
     // would fail for want of coin. Left off altogether when the errand has no price
     // (pay_groschen 0): the giver is paying money, and a man who pays Henry to fetch a
-    // thing would sooner have paid the holder himself. And off for an unyielding holder.
-    if (quest.pay_groschen > 0 && !quest.is_unyielding() && !quest.has_debate()) {
+    // thing would sooner have paid the holder himself. And off for an unyielding holder,
+    // and where the turn is written (has_turn, above).
+    if (quest.pay_groschen > 0 && !quest.is_unyielding() && !quest.has_debate() && !quest.has_turn()) {
         s += t(9) + "<Sequence EntryCondition=\"!ThisSequenceUsed() AND GetActorMoney()[0] &gt;= " +
              std::to_string(quest.pay_groschen) + "\" EndType=\"" + won_end + "\" Name=\"pay\" ExitScript=\"" +
              gave("pay") + "\">\r\n";
@@ -5594,6 +5705,13 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
             for (const auto& [field, words] : tells) {
                 if (!words->empty()) rows.emplace_back(key(field), *words);
             }
+            // The truth after a tale (has_late_truth): the two rows and their answers.
+            if (quest.has_late_truth()) {
+                rows.emplace_back(key("tell_late"), quest.tell_late);
+                rows.emplace_back(key("tell_late_reply"), quest.tell_late_reply);
+                rows.emplace_back(key("tell_hold"), quest.tell_hold);
+                rows.emplace_back(key("tell_hold_reply"), quest.tell_hold_reply);
+            }
         }
         // A dictated letter's reading: a remark per part per outcome, and the verdicts.
         if (quest.has_dictation()) {
@@ -5663,6 +5781,15 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
             rows.emplace_back(key("gift_take_reply"), quest.holder_gift_take_reply);
             rows.emplace_back(key("gift_refuse"), quest.holder_gift_refuse);
             rows.emplace_back(key("gift_refuse_reply"), quest.holder_gift_refuse_reply);
+        }
+        // The turn to the man behind the asking, and the giving up (has_turn).
+        if (quest.has_turn()) {
+            rows.emplace_back(key("turn"), quest.holder_turn);
+            rows.emplace_back(key("turn_reply"), quest.holder_turn_reply);
+        }
+        if (quest.has_holder_abandon()) {
+            rows.emplace_back(key("abandon"), quest.holder_abandon);
+            rows.emplace_back(key("abandon_reply"), quest.holder_abandon_reply);
         }
         // The counsel's argument put to a beat's target (Blind Pride).
         if (quest.has_counsel()) {
@@ -7541,10 +7668,30 @@ std::string state_lua(const std::string& g) {
     // what the newer one knew.
     s += g + ".worldHooks = {}\n";
     s += "function " + g + ".OnWorld(via, entity)\n";
+    // A conversation the load came down over (the player loading from the pause menu
+    // mid-talk) is over: the dialogue session went with the old world, and the pump's
+    // timer was wiped with it, so nothing of ours would ever close it -- `active` stayed
+    // up, every Begin after it returned at once (no Talk on anyone), and the caption
+    // element kept the last line (bugs.txt 21 Nov 2026: Father Adam's greeting stayed
+    // on the screen after an earlier save was loaded). Left here, before the store is
+    // reset, so the ending is written into the store that is about to go, not the new one.
+    // Only on the hooks a load fires: OnWorld also comes round from the player's OnTimer
+    // and OnSpawn, which are no world change (the timer fires five seconds into a run,
+    // conversation or not).
+    s += "\tif " + g + ".active and (via == \"OnInit\" or via == \"OnLoad\" or via == \"OnLoadAI\") then\n";
+    s += "\t\tpcall(" + g + ".Leave, \"a world arrived over the conversation\")\n";
+    s += "\tend\n";
     // Every time, not once: a load is the player changing worlds, and the engine does not
     // call OnLoad for a save that has nothing of ours, so this is the only reset that
     // save gets. OnLoad, when it comes, replaces the fresh store with what was saved.
-    s += "\tif via == \"OnInit\" then\n";
+    // On OnLoad as well as OnInit: the first load of a run fires both, but a load made
+    // from the pause menu with the game already up fires OnLoad alone (kcd.log, 21 Nov
+    // 2026: "a world is arriving" once a run, "loaded via OnLoad" at every load), and
+    // without the reset the watch read the new world's first tick as a jump from where
+    // Henry stood in the old one and held its hails for the travel grace (bugs.txt 21
+    // Nov 2026: Benesh did not hail). The fresh store OnLoad makes here is replaced by
+    // the saved one a moment later, so it costs nothing.
+    s += "\tif via == \"OnInit\" or via == \"OnLoad\" then\n";
     s += "\t\t" + g + ".state = " + g + ".FreshState()\n";
     s += "\t\t" + g + ".stateSoul = nil\n";
     // The world's entities are new with it: a keepsake scaled in the last one is not
@@ -7557,13 +7704,21 @@ std::string state_lua(const std::string& g) {
     // A Talk's caption of ours is the last world's too; the new world's HUD is its own.
     s += "\t\t" + g + ".talkCaption = false\n";
     s += "\t\t" + g + ".voicedTalk = false\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving\")\n";
+    // And the roles granted to the last world's souls went with it: a metarole added at
+    // run time is not in the save, so every holder of an errand under way is granted
+    // theirs again by name from the watch (RegrantRoles), and the once-per-soul memo of
+    // the on-sight grant is emptied so that a soul seen before the load is not passed
+    // over after it (bugs.txt 21 Nov 2026: no hand-in on Father Adam after a load).
+    s += "\t\t" + g + ".holderGranted = {}\n";
+    s += "\t\t" + g + ".regrantLeft = " + g + ".regrantTicks\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving (\" .. tostring(via) .. \")\")\n";
     s += "\tend\n";
     s += "\tif not " + g + ".worldHooks[via] then\n";
     s += "\t\t" + g + ".worldHooks[via] = true\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state hook \" .. tostring(via) .. \" fired\")\n";
     s += "\t\tif via == \"OnInit\" then\n";
     s += "\t\t\tpcall(" + g + ".PatchRules)\n";
+    s += "\t\t\tpcall(" + g + ".MapProbe)\n";
     s += "\t\t\tlocal ok, err = pcall(function() entity:SetTimer(31337, 5000) end)\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE state hook entity:SetTimer -> \" .. tostring(ok) .. \" \" .. tostring(err))\n";
     s += "\t\tend\n";
@@ -7742,6 +7897,8 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif facts.doneAt == nil then facts.doneAt = " + g + ".WorldTime(); facts.doneHour = " + g + ".HourOfDay() end\n";
     s += "\tend\n";
     s += "\tif command == \"seen\" then facts.seen = true end\n";
+    // The one asked's persuasion failed (QuestStage), for the turn's menu rows.
+    s += "\tif command == \"refused\" then facts.refused = true end\n";
     // A seek's family gone from the place (the morning after the hand-in, bugs.txt 9 Nov
     // 2026: "Litter should vanish the day after the quest is handed in").
     s += "\tif command == \"gone\" then facts.gone = true end\n";
@@ -8042,6 +8199,10 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif q.followedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, (f.followed and not f.followedSaid) and 1 or 0) end)\n";
     s += "\t\tend\n";
+    // The one asked's persuasion failed (QuestStage): the turn and the giving up read it.
+    s += "\t\tif q.refusedVar ~= nil then\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.refusedVar, f.refused and 1 or 0) end)\n";
+    s += "\t\tend\n";
     s += "\t\tif q.letterOf ~= nil then\n";
     s += "\t\t\tlocal of, off = " + g + ".quests[q.letterOf], quests[q.letterOf] or {}\n";
     s += "\t\t\tif of ~= nil and of.dictated and off.wrote ~= nil then q.item = " + g + ".LetterClass(of, off.wrote) end\n";
@@ -8176,7 +8337,7 @@ std::string state_lua(const std::string& g) {
     s += "\tif wanted == nil or wanted == \"\" then return true end\n";
     s += "\thow = how or \"\"\n";
     s += "\tlocal untrue = { lied = true, quiet = true, kept = true, dead = true, fallen = true,\n";
-    s += "\t\tpinned = true, covered = true, fibbed = true, evaded = true, caught = true }\n";
+    s += "\t\tpinned = true, covered = true, fibbed = true, evaded = true, caught = true, abandoned = true }\n";
     s += "\tfor token in string.gmatch(wanted, \"[^|]+\") do\n";
     s += "\t\tif token == how then return true end\n";
     s += "\t\tif token == \"truth\" and not untrue[how] then\n";
@@ -9397,9 +9558,10 @@ std::string emit_conversation_lua(const std::string& modid,
             // Witness Before the Bailiff at once): once the row's complete has fired, the
             // Lua opens the held conversation with that soul itself, with `lead=` on the
             // begin line for the app to open on the offer (QuestLead). The soul is the
-            // onward one for a word carried on, the target for a word delivered.
+            // onward one for a word carried on, the target for a word delivered or for a
+            // truth that settles the errand where it is told (truth_settles).
             const std::string& said_to = q.carries_on() ? q.onward_soul : q.target_soul;
-            if (!said_to.empty() && (q.carries_on() || q.carries_word())) {
+            if (!said_to.empty() && (q.carries_on() || q.carries_word() || q.settles_on_truth())) {
                 for (const Quest& after : quests) {
                     if (after.after_quest_id == q.id && after.giver_soul == said_to) {
                         s += ", leadNext = \"" + lua_escape(after.id) + "\"";
@@ -9511,6 +9673,12 @@ std::string emit_conversation_lua(const std::string& modid,
             std::snprintf(spot, sizeof spot, ", fastTravel = { x = %.2f, y = %.2f, z = %.2f, at = %.2f", x, y, z,
                           q.fast_travel_at);
             s += spot;
+            // The hours it is asked in, for the wait (FastTravelGo with `wait`: the clock
+            // wound on to the window's start when the hour is outside it).
+            if (q.fast_travel_from >= 0 && q.fast_travel_to_hour >= 0) {
+                std::snprintf(spot, sizeof spot, ", from = %.2f, to = %.2f", q.fast_travel_from, q.fast_travel_to_hour);
+                s += spot;
+            }
             if (!q.fast_travel_holder_to.empty()) {
                 // Where the holder is set down as Henry lands (FastTravelHolder).
                 std::sscanf(q.fast_travel_holder_to.c_str(), "%lf,%lf,%lf", &x, &y, &z);
@@ -9576,6 +9744,17 @@ std::string emit_conversation_lua(const std::string& modid,
                  "\", counselVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "counsel")) + "\"";
             // The notes they hand over as their talk ends (QuestCounsel).
             s += ", counselNotes = \"" + lua_escape(counsel_notes_class(q)) + "\"";
+        }
+        if (q.has_turn()) {
+            // The turn to the man behind the asking (npcdb.hpp holder_turn): the global the
+            // one asked's menu reads for his persuasion having failed (QuestStage raises
+            // it on the lost check, QuestFlags keeps it from the store).
+            s += ", refusedVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "refused")) + "\"";
+        }
+        if (q.settles_on_truth()) {
+            // The truth settling the errand at the receiver (npcdb.hpp truth_settles):
+            // QuestDelivered completes it there and leads on.
+            s += ", truthSettles = true";
         }
         if (q.has_debate()) {
             // The disputation (npcdb.hpp DebateStage): the globals the holder menu reads --
@@ -10489,6 +10668,57 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. tag .. \" end\")\n";
     s += "end\n";
     s += "\n";
+    // The map, listened to (bugs.txt 21 Nov 2026: fast travel from the map to a quest
+    // marker in the same town). The game's map is the ApseMap UI element
+    // (Libs/UI/UIElements/ApseMap.xml), and its events reach Lua through
+    // UIAction.RegisterElementListener: OnDoubleClicked(Id), OnHighlightFastTravelPoint(Id,
+    // Text), OnUnhighlightFastTravelPoint, OnCursorOnActiveAreaChanged, OnUpdatingChanged;
+    // its arrays (QuestMarkers, PoiMarkers) through UIAction.GetArray. Whether the
+    // double-click is raised for a quest marker and not only a fast travel point, and what
+    // the Id of one is, is what this probe is for: every event the element raises is
+    // logged with its arguments, and on OnDoubleClicked the quest marker array is read and
+    // its first values logged, so the next session with the map opened says what Lua can
+    // see. Nothing is done with any of it yet. Registered once a run, from the first world.
+    s += g + ".mapProbed = false\n";
+    s += g + ".MapListener = {}\n";
+    s += "function " + g + ".MapListener:OnMapEvent(element, instance, event, args)\n";
+    s += "\tlocal parts = {}\n";
+    s += "\tif type(args) == \"table\" then\n";
+    s += "\t\tfor k, v in pairs(args) do parts[#parts + 1] = tostring(k) .. \"=\" .. tostring(v) end\n";
+    s += "\telseif args ~= nil then\n";
+    s += "\t\tparts[1] = tostring(args)\n";
+    s += "\tend\n";
+    s += "\ttable.sort(parts)\n";
+    s += "\t" + g + ".Log(\"BRIDGE map \" .. tostring(element) .. \"/\" .. tostring(instance) .. \" \" ..\n";
+    s += "\t\ttostring(event) .. \" \" .. table.concat(parts, \" \"))\n";
+    s += "\tif tostring(event) == \"OnDoubleClicked\" then\n";
+    s += "\t\tfor _, name in ipairs({ \"QuestMarkers\", \"PoiMarkers\" }) do\n";
+    s += "\t\t\tlocal ok, got = pcall(function() return UIAction.GetArray(\"ApseMap\", -1, name) end)\n";
+    s += "\t\t\tif not ok then\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE map \" .. name .. \" raised \" .. tostring(got))\n";
+    s += "\t\t\telseif type(got) ~= \"table\" then\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE map \" .. name .. \" is \" .. type(got))\n";
+    s += "\t\t\telse\n";
+    s += "\t\t\t\tlocal head = {}\n";
+    s += "\t\t\t\tfor i = 1, math.min(#got, 24) do head[i] = tostring(got[i]) end\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE map \" .. name .. \" \" .. #got .. \" values: \" .. table.concat(head, \" | \"))\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "function " + g + ".MapProbe()\n";
+    s += "\tif " + g + ".mapProbed then return end\n";
+    s += "\t" + g + ".mapProbed = true\n";
+    s += "\tif UIAction == nil or UIAction.RegisterElementListener == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE map no UIAction.RegisterElementListener; the map is not listened to\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal ok, err = pcall(function()\n";
+    s += "\t\tUIAction.RegisterElementListener(" + g + ".MapListener, \"ApseMap\", -1, \"\", \"OnMapEvent\")\n";
+    s += "\tend)\n";
+    s += "\t" + g + ".Log(\"BRIDGE map listener on ApseMap -> \" .. tostring(ok) .. \" \" .. tostring(err))\n";
+    s += "end\n";
+    s += "\n";
 	// STORM assigns roles when a soul is created, so a save made before this mod
     // was enabled has souls our rules never touched, and the dialogue has nobody
     // to speak it. Granting the metarole is what reaches those souls, and it is
@@ -11133,17 +11363,19 @@ std::string emit_conversation_lua(const std::string& modid,
     // CutsceneHolder) and the console's `wh_pl_FakeFastTravelTo` were both tried and set
     // aside: the first wants level data the mod does not ship, the second -devmode (README,
     // "The quest's own carriage").
-    s += "function " + g + ".FastTravelArm(id, q, tries)\n";
+    // `wait` is the app's fast_travel_wait (bugs.txt 21 Nov 2026): the carry asked outside
+    // its hours, and the clock to be wound on to the window's start first (FastTravelGo).
+    s += "function " + g + ".FastTravelArm(id, q, tries, wait)\n";
     s += "\ttries = tries or 0\n";
     s += "\tif not " + g + ".InDialog() and not " + g + ".active then\n";
-    s += "\t\t" + g + ".FastTravelGo(id, q)\n";
+    s += "\t\t" + g + ".FastTravelGo(id, q, wait)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif tries >= 120 then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" carrying given up, the conversation never ended\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tpcall(function() Script.SetTimer(1000, function() " + g + ".FastTravelArm(id, q, tries + 1) end) end)\n";
+    s += "\tpcall(function() Script.SetTimer(1000, function() " + g + ".FastTravelArm(id, q, tries + 1, wait) end) end)\n";
     s += "end\n";
     // The holder set down for the carry (npcdb.hpp fast_travel_holder_to; emit.hpp
     // kCarryHolder*; README, "The holder set down at the gate"): as Henry lands, the man he
@@ -11225,7 +11457,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tok and \"\" or \", SetWorldPos raised\"))\n";
     s += "\tagain()\n";
     s += "end\n";
-    s += "function " + g + ".FastTravelGo(id, q)\n";
+    s += "function " + g + ".FastTravelGo(id, q, wait)\n";
     s += "\tlocal me = " + g + ".Player()\n";
     s += "\tlocal ft = q.fastTravel\n";
     s += "\tif me == nil or me.GetWorldPos == nil or ft == nil then return end\n";
@@ -11234,9 +11466,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tlocal ahead = nil\n";
     s += "\t\tlocal hour, now = nil, " + g + ".WorldTime()\n";
     s += "\t\tpcall(function() hour = Calendar.GetWorldHourOfDay() end)\n";
-    // A duel's carry is now (npcdb.hpp: no fast_travel_at, at -1): the clock stands.
-    s += "\t\tif type(hour) == \"number\" and now ~= nil and ft.at ~= nil and ft.at >= 0 then\n";
-    s += "\t\t\tahead = (ft.at - hour) % 24\n";
+    // A duel's carry is now (npcdb.hpp: no fast_travel_at, at -1): the clock stands --
+    // unless Henry asked to wait for its hours (`wait`, the app's fast_travel_wait) with
+    // the hour outside them, when it is wound on to their start (bugs.txt 21 Nov 2026).
+    s += "\t\tlocal at = ft.at\n";
+    s += "\t\tif wait and type(hour) == \"number\" and ft.from ~= nil and ft.to ~= nil\n";
+    s += "\t\t\t\tand (hour < ft.from or hour >= ft.to) then\n";
+    s += "\t\t\tat = ft.from\n";
+    s += "\t\tend\n";
+    s += "\t\tif type(hour) == \"number\" and now ~= nil and at ~= nil and at >= 0 then\n";
+    s += "\t\t\tahead = (at - hour) % 24\n";
     s += "\t\t\tif ahead > 0.01 then pcall(function() Calendar.SetWorldTime(now + ahead * 3600) end) end\n";
     s += "\t\tend\n";
     s += "\t\tpcall(function()\n";
@@ -14981,8 +15220,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".watchTicked = now\n";
     s += "\t" + g + ".watchDoubt = false\n";
     s += "\t" + g + ".watchAt = now\n";
+    // A world just arrived: the roles its souls lost with the load, before anything else
+    // (RegrantRoles), whether or not any kind has a watch of its own pending.
+    s += "\tpcall(" + g + ".RegrantRoles)\n";
     s += "\tlocal pending = " + g + ".WatchPending()\n";
     s += "\tif #pending == 0 then\n";
+    // Nothing of the kinds' to look at, but roles still to grant again: the loop stays
+    // up for those few ticks, since a soul not yet streamed in is found on a later one.
+    s += "\t\tif " + g + ".regrantLeft > 0 then\n";
+    s += "\t\t\tScript.SetTimer(2000, " + g + ".WatchTick)\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
     s += "\t\t" + g + ".watching = false\n";
     s += "\t\t" + g + ".Log(\"BRIDGE watch idle, nothing to look at\")\n";
     s += "\t\treturn\n";
@@ -15026,6 +15274,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\telseif q.kind == \"retrieve\" then\n";
     s += "\t\t\t\tif q.chest ~= nil then " + g + ".WatchChest(id, q, pp) end\n";
     s += "\t\t\t\tif q.seenWith ~= nil then " + g + ".WatchExpose(id, q, pp) end\n";
+    s += "\t\t\tend\n";
     s += "\t\t\tend\n";
     s += "\t\tend\n";
     s += "\tend\n";
@@ -17195,8 +17444,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" \" .. command .. \" -- \" .. quest.name)\n";
     s += "\tpcall(" + g + ".StateQuest, id, command)\n";
     // The giver's carrying (FastTravelArm): nothing for the store or the book.
-    s += "\tif command == \"fast_travel\" then\n";
-    s += "\t\tif quest.fastTravel ~= nil then " + g + ".FastTravelArm(id, quest) end\n";
+    s += "\tif command == \"fast_travel\" or command == \"fast_travel_wait\" then\n";
+    s += "\t\tif quest.fastTravel ~= nil then " + g + ".FastTravelArm(id, quest, 0, command == \"fast_travel_wait\") end\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif command == \"handover\" then\n";
@@ -17719,6 +17968,36 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(function() " + g + ".GrantHolder(holder) end)\n";
     s += "end\n";
     s += "\n";
+    // After a load, the same by name for every errand under way, from the watch's first
+    // ticks in the new world. A metarole granted at run time is not written into the save,
+    // so the holder of a letter accepted before the save comes back without his menu's
+    // role; granted on sight alone, it lands on the frame Henry looks at him, and the
+    // engine's CanTalk has not caught up by the time he presses Talk -- the mod's own
+    // conversation opens instead, where the receiver has no hand-in (bugs.txt 21 Nov 2026:
+    // Father Adam after an autosave). Tried for regrantTicks ticks, since a soul across
+    // town may not be streamed in on the first; GrantHolder's memo keeps each grant to one.
+    // Every soul with a role in the quest: the holder, the one the word goes on to, the
+    // one who lets Henry in, and the one with the chapter and verse.
+    s += g + ".regrantTicks = " + std::to_string(kRegrantTicks) + "\n";
+    s += g + ".regrantLeft = 0\n";
+    s += "function " + g + ".RegrantRoles()\n";
+    s += "\tif " + g + ".regrantLeft <= 0 then return end\n";
+    s += "\t" + g + ".regrantLeft = " + g + ".regrantLeft - 1\n";
+    s += "\tlocal quests = (" + g + ".state or {}).quests or {}\n";
+    s += "\tfor id, f in pairs(quests) do\n";
+    s += "\t\tlocal q = " + g + ".quests[id]\n";
+    s += "\t\tif type(f) == \"table\" and q ~= nil and f.accepted and not f.done then\n";
+    s += "\t\t\tfor _, name in ipairs({ q.target, q.onward, q.helper, q.counsel }) do\n";
+    s += "\t\t\t\tif name ~= nil and name ~= \"\" and not " + g + ".holderGranted[name] then\n";
+    s += "\t\t\t\t\tlocal soul = nil\n";
+    s += "\t\t\t\t\tpcall(function() soul = System.GetEntityByName(name) end)\n";
+    s += "\t\t\t\t\tif soul ~= nil then pcall(function() " + g + ".GrantHolder(soul) end) end\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
     // Named in the ExitScript of the holder menu's winning branches, so it runs once the
     // holder has said their piece and the port has fired. how is which branch won --
     // persuade, threaten or pay -- and pay is the one with money in it. The holder is
@@ -17740,6 +18019,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif tostring(what) == \"open followed\" then\n";
     s += "\t\tpcall(" + g + ".StateQuest, tostring(id), \"followed_said\")\n";
     s += "\t\tpcall(" + g + ".FollowOver, tostring(id))\n";
+    s += "\tend\n";
+    // A check lost on the one asked's menu (the `refused <row>` stage): where the turn is
+    // written (npcdb.hpp holder_turn), the store notes it and the menu's global goes up at
+    // once, so the turn and the giving up are on the menu as it is drawn again.
+    s += "\tif string.sub(tostring(what), 1, 8) == \"refused \" then\n";
+    s += "\t\tlocal q = " + g + ".quests[tostring(id)]\n";
+    s += "\t\tif q ~= nil and q.refusedVar ~= nil then\n";
+    s += "\t\t\tpcall(" + g + ".StateQuest, tostring(id), \"refused\")\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.refusedVar, 1) end)\n";
+    s += "\t\tend\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";
@@ -18100,6 +18389,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".QuestLead(id)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    // The truth that settles the errand where it is told (npcdb.hpp truth_settles): the
+    // thing moves as below, and then the errand is complete on the spot (the row's own
+    // `truth` port is the graph's plain complete) and the scene after is led on to.
+    s += "\tlocal settled = quest.truthSettles == true and how == \"truth\"\n";
+    s += "\tif settled then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" the truth told to \" .. quest.target .. \" settles it; complete on the spot\")\n";
+    s += "\tend\n";
     s += "\tlocal receiver = nil\n";
     s += "\tpcall(function() receiver = System.GetEntityByName(quest.target) end)\n";
     s += "\tlocal moved = 0\n";
@@ -18110,6 +18406,10 @@ std::string emit_conversation_lua(const std::string& modid,
          ".Count(" + g + ".Player(), quest.item) .. \")\")\n";
     s += "\telse\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest delivered, moved \" .. moved .. \" to \" .. quest.target)\n";
+    s += "\tend\n";
+    s += "\tif settled then\n";
+    s += "\t\t" + g + ".QuestCommand(id, \"complete\", true)\n";
+    s += "\t\t" + g + ".QuestLead(id)\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";

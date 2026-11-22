@@ -573,6 +573,10 @@ constexpr double kEnterNearMetres = 5.0;
 constexpr double kEnterSeeMetres = 30.0;
 constexpr double kEnterHoursBefore = 1.5;
 constexpr int kWatchQuickMs = 1000;
+// How many ticks of the watch, after a world arrives, grant by name the roles its souls
+// lost with the load (RegrantRoles): a soul across town may not be streamed in on the
+// first; ten two-second ticks is twenty seconds, long before Henry can walk to anyone.
+constexpr int kRegrantTicks = 10;
 // How many of the givers' marker tokens (WatchGiver) one tick of the watch may make. A new
 // game has most quests off, and all of their givers' markers come off together at the first
 // ticks; four a tick is eighteen seconds for the whole database, and no more than a few
