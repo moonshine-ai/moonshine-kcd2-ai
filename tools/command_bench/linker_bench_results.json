@@ -1,0 +1,134 @@
+{
+  "num_examples": 3397,
+  "num_unique_speakers": 463,
+  "db_load_ms": 216.5,
+  "avg_hop1_candidates": 8.22,
+  "avg_total_hop1_hop2_candidates": 27.46,
+  "conditions": {
+    "full_linker_clean": {
+      "overall_accuracy": 0.9873,
+      "command_only_accuracy": 0.9817,
+      "per_category_accuracy": {
+        "abstain_absentee": 1.0,
+        "abstain_stranger": 0.9651,
+        "cmd_follow_npc": 0.9789,
+        "cmd_travel_to": 1.0,
+        "locate_coref_multiturn": 0.9781,
+        "locate_homonym_salience": 1.0,
+        "locate_hop1_direct": 0.9667,
+        "locate_hop2_adjacent": 0.9705,
+        "locate_relational_trade": 0.9955,
+        "neg_idiom_rhetorical": 1.0,
+        "neg_kb_biographical_where": 1.0,
+        "neg_opinion_gossip": 1.0,
+        "neg_quest_offer_chat": 1.0
+      },
+      "latency_ms": {
+        "mean": 0.6686,
+        "p50": 0.2499,
+        "p95": 2.6751,
+        "p99": 4.3
+      }
+    },
+    "ablation_hop1_only": {
+      "overall_accuracy": 0.9185,
+      "command_only_accuracy": 0.8823,
+      "per_category_accuracy": {
+        "abstain_absentee": 1.0,
+        "abstain_stranger": 0.9913,
+        "cmd_follow_npc": 0.9789,
+        "cmd_travel_to": 1.0,
+        "locate_coref_multiturn": 0.9781,
+        "locate_homonym_salience": 0.9052,
+        "locate_hop1_direct": 0.9667,
+        "locate_hop2_adjacent": 0.0,
+        "locate_relational_trade": 1.0,
+        "neg_idiom_rhetorical": 1.0,
+        "neg_kb_biographical_where": 1.0,
+        "neg_opinion_gossip": 1.0,
+        "neg_quest_offer_chat": 1.0
+      },
+      "latency_ms": {
+        "mean": 0.3016,
+        "p50": 0.1546,
+        "p95": 1.4487,
+        "p99": 2.2693
+      }
+    },
+    "ablation_no_salience_prior": {
+      "overall_accuracy": 0.9411,
+      "command_only_accuracy": 0.915,
+      "per_category_accuracy": {
+        "abstain_absentee": 0.9808,
+        "abstain_stranger": 0.9651,
+        "cmd_follow_npc": 0.9409,
+        "cmd_travel_to": 1.0,
+        "locate_coref_multiturn": 0.9781,
+        "locate_homonym_salience": 0.3707,
+        "locate_hop1_direct": 0.9133,
+        "locate_hop2_adjacent": 0.9705,
+        "locate_relational_trade": 0.7919,
+        "neg_idiom_rhetorical": 1.0,
+        "neg_kb_biographical_where": 1.0,
+        "neg_opinion_gossip": 1.0,
+        "neg_quest_offer_chat": 1.0
+      },
+      "latency_ms": {
+        "mean": 0.675,
+        "p50": 0.2556,
+        "p95": 2.766,
+        "p99": 4.3582
+      }
+    },
+    "asr_corrupted_with_phonetics": {
+      "overall_accuracy": 0.9847,
+      "command_only_accuracy": 0.9779,
+      "per_category_accuracy": {
+        "abstain_absentee": 1.0,
+        "abstain_stranger": 0.9607,
+        "cmd_follow_npc": 0.9662,
+        "cmd_travel_to": 1.0,
+        "locate_coref_multiturn": 0.9781,
+        "locate_homonym_salience": 1.0,
+        "locate_hop1_direct": 0.9556,
+        "locate_hop2_adjacent": 0.9705,
+        "locate_relational_trade": 0.9955,
+        "neg_idiom_rhetorical": 1.0,
+        "neg_kb_biographical_where": 1.0,
+        "neg_opinion_gossip": 1.0,
+        "neg_quest_offer_chat": 1.0
+      },
+      "latency_ms": {
+        "mean": 0.6529,
+        "p50": 0.2504,
+        "p95": 2.5664,
+        "p99": 4.2635
+      }
+    },
+    "asr_corrupted_ortho_only": {
+      "overall_accuracy": 0.9826,
+      "command_only_accuracy": 0.9749,
+      "per_category_accuracy": {
+        "abstain_absentee": 1.0,
+        "abstain_stranger": 0.9607,
+        "cmd_follow_npc": 0.962,
+        "cmd_travel_to": 1.0,
+        "locate_coref_multiturn": 0.9781,
+        "locate_homonym_salience": 0.9914,
+        "locate_hop1_direct": 0.9489,
+        "locate_hop2_adjacent": 0.962,
+        "locate_relational_trade": 0.9955,
+        "neg_idiom_rhetorical": 1.0,
+        "neg_kb_biographical_where": 1.0,
+        "neg_opinion_gossip": 1.0,
+        "neg_quest_offer_chat": 1.0
+      },
+      "latency_ms": {
+        "mean": 0.4892,
+        "p50": 0.1825,
+        "p95": 2.0229,
+        "p99": 2.8665
+      }
+    }
+  }
+}

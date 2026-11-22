@@ -163,19 +163,16 @@ struct LlamaLlm::Impl {
     // than written out here: the template is a property of the weights, and a second copy in
     // this file would be a second thing to get wrong when the model changes. Ollama was
     // applying the same template on the other side of the socket.
-    std::string apply_template(const std::vector<Message>& messages) const {
+    std::string apply_template(const std::vector<Message>& messages,
+                               bool disable_thinking = true) const {
+        if (uses_gemma3_developer_turns(chat_template, messages)) {
+            return gemma3_turns(messages);
+        }
         std::vector<llama_chat_message> chat;
         chat.reserve(messages.size());
         for (const Message& message : messages) {
             chat.push_back({message.role.c_str(), message.content.c_str()});
         }
-        // Options::disable_thinking has no equivalent here and is not honoured. Ollama takes
-        // `think: false` over the wire; llama_chat_apply_template renders the template with
-        // no way to pass it a variable, so a template branching on enable_thinking would take
-        // its own default. This is safe for the model that ships -- qwen3:4b-instruct's
-        // template has no such branch, checked -- and would put reasoning into the subtitles
-        // of a thinking model pointed at by --gguf. That is the same disqualification
-        // benchmarks/README.md already applies to thinking models for latency.
         const char* tmpl = chat_template.empty() ? nullptr : chat_template.c_str();
         // Sized by asking, for the same reason as tokenising: the answer depends on the
         // template, which came out of a file.
@@ -198,6 +195,16 @@ struct LlamaLlm::Impl {
             throw std::runtime_error("llama.cpp could not apply the model's chat template");
         }
         out.resize(static_cast<std::size_t>(needed));
+        // Qwen3 hybrid-thinking templates emit an empty closed `<think>\n\n</think>\n\n` block
+        // when `enable_thinking=false`, whereas `Qwen3-4B-Instruct-2507`'s template has no
+        // `<think>` tag at all. Closing the block when `disable_thinking` is requested matches
+        // Hugging Face's `enable_thinking=False` byte-for-byte without touching non-thinking models.
+        const std::string_view ass_suffix = "<|im_start|>assistant\n";
+        if (disable_thinking && chat_template.find("<think>") != std::string::npos &&
+            out.size() >= ass_suffix.size() &&
+            std::string_view(out).substr(out.size() - ass_suffix.size()) == ass_suffix) {
+            out += "<think>\n\n</think>\n\n";
+        }
         return out;
     }
 };
@@ -337,7 +344,8 @@ Timing LlamaLlm::hold_branch(std::string_view system) {
 Timing LlamaLlm::chat(const std::vector<Message>& messages,
                       const Options& options,
                       const OnDelta& on_delta) {
-    const std::vector<llama_token> prompt = impl_->tokenize(impl_->apply_template(messages));
+    const std::vector<llama_token> prompt =
+        impl_->tokenize(impl_->apply_template(messages, options.disable_thinking));
     if (prompt.empty()) throw std::runtime_error("the prompt came to no tokens at all");
 
     // Room for the reply as well as the prompt. Said plainly rather than left to fail
@@ -424,14 +432,27 @@ Timing LlamaLlm::chat(const std::vector<Message>& messages,
     // Sampling in the app's own terms. The order is the one llama.cpp's own tools use: cut
     // the tail by count, then by mass, then flatten what is left by temperature, then draw.
     llama_sampler* chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    if (options.top_k > 0) {
-        llama_sampler_chain_add(chain, llama_sampler_init_top_k(options.top_k));
+    if (!options.grammar.empty()) {
+        llama_sampler* g =
+            llama_sampler_init_grammar(impl_->vocab, options.grammar.c_str(), "root");
+        if (!g) {
+            llama_sampler_free(chain);
+            throw std::runtime_error("llama.cpp could not parse the GBNF grammar");
+        }
+        llama_sampler_chain_add(chain, g);
     }
-    llama_sampler_chain_add(chain,
-                            llama_sampler_init_top_p(static_cast<float>(options.top_p), 1));
-    llama_sampler_chain_add(chain,
-                            llama_sampler_init_temp(static_cast<float>(options.temperature)));
-    llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    if (options.temperature <= 0.0) {
+        llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    } else {
+        if (options.top_k > 0) {
+            llama_sampler_chain_add(chain, llama_sampler_init_top_k(options.top_k));
+        }
+        llama_sampler_chain_add(chain,
+                                llama_sampler_init_top_p(static_cast<float>(options.top_p), 1));
+        llama_sampler_chain_add(chain,
+                                llama_sampler_init_temp(static_cast<float>(options.temperature)));
+        llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
     struct Free {
         llama_sampler* chain;
         ~Free() { llama_sampler_free(chain); }
@@ -448,7 +469,7 @@ Timing LlamaLlm::chat(const std::vector<Message>& messages,
         }
         timing.held_seconds += impl_->stand_aside();
 
-        llama_sampler_accept(chain, token);
+        // Note: llama_sampler_sample() already calls llama_sampler_accept(chain, token).
         impl_->held.push_back(token);
         llama_batch one = llama_batch_get_one(&impl_->held.back(), 1);
         if (llama_decode(impl_->ctx, one) != 0) {

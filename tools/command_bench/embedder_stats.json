@@ -1,0 +1,9 @@
+{
+  "count": 3397,
+  "dim": 768,
+  "embed_ms_mean": 6.31584129997056,
+  "embed_ms_p50": 6.123208,
+  "embed_ms_p95": 7.522792,
+  "rss_delta_mb": 437.234375,
+  "rss_total_mb": 445.96875
+}

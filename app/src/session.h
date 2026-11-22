@@ -23,6 +23,7 @@
 #include <string_view>
 #include <vector>
 
+#include "command.h"
 #include "gamelog.h"
 #include "knowledge.h"
 #include "llm.h"
@@ -86,6 +87,10 @@ struct Listener {
     // session tells the mod to take the keyboard instead (Moonshine.SayDeaf). What it hears
     // comes back through Session::heard().
     std::function<bool(bool on, std::string_view context)> on_listen;
+    // Proactive Pass-1 Moonshine STT keyterms (CSV of Hop-1 circle, kin, and quest names)
+    // and conditional Pass-2 buffered-PCM re-transcription callback.
+    std::function<void(std::string_view keyterms_csv)> on_keyterms;
+    std::function<std::string(std::string_view keyterms_csv)> on_retranscribe;
     // A piece of a reply being written, as the model finishes it (sentence.h): where the
     // voice speaks it now, in its turn behind the pieces before, rather than the whole
     // reply when the mod shows it. The mod is told on the same turn (@lip) so the mouth and
@@ -164,6 +169,9 @@ public:
     // that offers help is met with the giver's ask before any of that. Null, and the model
     // answers from the sheet alone, as it did before. Not owned.
     void set_knowledge(KnowledgeDirector* knowledge) { knowledge_ = knowledge; }
+    // Freeform player command understanding and social-graph entity resolution (`@locate`,
+    // `@follow`, `@travel`). Null leaves dialogue unaltered. Not owned.
+    void set_commands(CommandDirector* commands) { commands_ = commands; }
 
     // What the mod said. Drives everything: opens and closes conversations and
     // keeps the turn counter in step.
@@ -435,6 +443,8 @@ private:
     std::vector<Message> history_;
     bool talking_ = false;
     KnowledgeDirector* knowledge_ = nullptr;
+    CommandDirector* commands_ = nullptr;
+    bool last_said_voiced_ = false;
     // What each of the NPC's replies this conversation drew on, oldest first, with the reply:
     // an item of the knowledge base, the quest's ask, or nothing. For reading "please do"
     // against the offer it answers.

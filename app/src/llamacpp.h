@@ -77,6 +77,33 @@ inline bool uses_gemma_turns(const std::string& tmpl) {
     return tmpl.find("<|turn>") != std::string::npos;
 }
 
+// Gemma 3 / FunctionGemma uses `<start_of_turn>developer\n...<end_of_turn>\n`, which
+// `llama_chat_apply_template`'s built-in Gemma 2/3 branch silently drops because it only
+// switches on `system`, `user`, and `assistant`. Whenever a caller passes a `developer`
+// turn to a `<start_of_turn>` template, format the turns directly so function declarations
+// survive intact.
+inline bool uses_gemma3_developer_turns(const std::string& tmpl,
+                                        const std::vector<Message>& messages) {
+    if (tmpl.find("<start_of_turn>") == std::string::npos) return false;
+    for (const Message& m : messages) {
+        if (m.role == "developer") return true;
+    }
+    return false;
+}
+
+inline std::string gemma3_turns(const std::vector<Message>& messages) {
+    std::string out;
+    for (const Message& message : messages) {
+        out += "<start_of_turn>";
+        out += message.role == "assistant" ? "model" : message.role;
+        out += '\n';
+        out += message.content;
+        out += "<end_of_turn>\n";
+    }
+    out += "<start_of_turn>model\n";
+    return out;
+}
+
 // Gemma 4's prompt format, pinned against its real template rendered through Jinja rather
 // than guessed -- see the cases in test_llamacpp.cpp, which are that output byte for byte.
 //

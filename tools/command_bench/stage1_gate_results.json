@@ -1,0 +1,59 @@
+{
+  "embedder": "embeddinggemma-300m-q8_0.gguf (shared with KnowledgeDirector, 0 ms extra embed cost)",
+  "classifier_inference_us": 0.067,
+  "linear_weights_bytes": 12304,
+  "linear_4way": {
+    "test_4way_accuracy": 1.0,
+    "test_cmd_precision": 1.0,
+    "test_cmd_recall": 1.0,
+    "test_cmd_f1": 1.0,
+    "test_neg_fpr": 0.0,
+    "test_biographical_where_fpr": 0.0
+  },
+  "mlp_64_4way": {
+    "test_4way_accuracy": 0.9946,
+    "test_cmd_precision": 0.9962,
+    "test_cmd_recall": 0.9962,
+    "test_cmd_f1": 0.9962,
+    "test_neg_fpr": 0.0091,
+    "test_biographical_where_fpr": 0.0345
+  },
+  "gate_operating_points": [
+    {
+      "target_dev_recall": 0.995,
+      "threshold": 0.7076,
+      "dev_cmd_recall": 1.0,
+      "dev_noncmd_skip_rate": 1.0,
+      "test_cmd_recall": 0.9981,
+      "test_noncmd_skip_rate": 1.0,
+      "estimated_turn_skip_rate_85_15_mix": 0.8503
+    },
+    {
+      "target_dev_recall": 0.99,
+      "threshold": 0.7761,
+      "dev_cmd_recall": 0.9944,
+      "dev_noncmd_skip_rate": 1.0,
+      "test_cmd_recall": 0.9924,
+      "test_noncmd_skip_rate": 1.0,
+      "estimated_turn_skip_rate_85_15_mix": 0.8511
+    },
+    {
+      "target_dev_recall": 0.98,
+      "threshold": 0.8778,
+      "dev_cmd_recall": 0.9833,
+      "dev_noncmd_skip_rate": 1.0,
+      "test_cmd_recall": 0.9886,
+      "test_noncmd_skip_rate": 1.0,
+      "estimated_turn_skip_rate_85_15_mix": 0.8517
+    },
+    {
+      "target_dev_recall": 0.95,
+      "threshold": 0.9571,
+      "dev_cmd_recall": 0.9554,
+      "dev_noncmd_skip_rate": 1.0,
+      "test_cmd_recall": 0.9677,
+      "test_noncmd_skip_rate": 1.0,
+      "estimated_turn_skip_rate_85_15_mix": 0.8548
+    }
+  ]
+}

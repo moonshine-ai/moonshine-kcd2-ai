@@ -6577,4 +6577,77 @@ case("Switches: a new game's markers come off a few a tick, not all in one breat
     check(hidden == heads, "every off head's marker is closed in the end: " .. hidden .. " of " .. heads)
 end)
 
+case("Locate: @locate marks a loaded soul, follows her as she walks, and clears when Henry reaches her", function(E, M, check)
+    player:SetWorldPos({ x = 0, y = 0, z = 0 })
+    local target = E.soul("kkut_locate_margaret", { pos = { x = 120, y = 80, z = 14 } })
+    local spots = "8,18,50,60,10;18,8,200,210,12"
+    local raw = string.format("@locate kkut_locate_margaret %d:%s @heard kkut_locate_margaret She is at the bench.", #spots, spots)
+    local mark = E.mark()
+    local words = M.Directives(raw)
+    check(words == "She is at the bench.", "Directives strips @locate and @heard cleanly, got: " .. tostring(words))
+    check(M.state.known.kkut_locate_margaret == true, "@heard recorded alongside @locate")
+    check(type(M.state.locate) == "table" and M.state.locate.soul == "kkut_locate_margaret", "locate state active")
+    check(M.state.locate.source == "loaded" and M.state.locate.x == 120 and M.state.locate.y == 80, "prefers live entity position over routine spot")
+    check(E.find("BRIDGE locate kkut_locate_margaret at 120.0,80.0,14.0 (loaded)", mark) ~= nil, "locate logged")
+    check(M.Count(player, M.locateShownClass) == 1, "shown token placed in Henry's pocket")
+    local nearPin = E.entitiesInSphere({ x = 120, y = 80, z = 12 }, 1.0)
+    local foundPin = false
+    for _, e in ipairs(nearPin) do if e.itemClass == M.locatePinClass then foundPin = true end end
+    check(foundPin, "invisible locate pin placed underground at target x,y")
+    -- After 1.6s, the shown token cleans itself out of Henry's pocket.
+    E.advance(1600)
+    check(M.Count(player, M.locateShownClass) == 0, "shown token cleaned up")
+    -- Target walks >15m away; watch moves the ground pin to follow her.
+    target:SetWorldPos({ x = 150, y = 80, z = 15 })
+    mark = E.mark()
+    E.advance(2100)
+    check(E.find("BRIDGE locate moved kkut_locate_margaret to 150.0,80.0,15.0 (loaded)", mark) ~= nil, "watch moved pin with walking NPC")
+    local oldPin = false
+    for _, e in ipairs(E.entitiesInSphere({ x = 120, y = 80, z = 12 }, 1.0)) do
+        if e.itemClass == M.locatePinClass then oldPin = true end
+    end
+    local newPin = false
+    for _, e in ipairs(E.entitiesInSphere({ x = 150, y = 80, z = 13 }, 1.0)) do
+        if e.itemClass == M.locatePinClass then newPin = true end
+    end
+    check(not oldPin and newPin, "old ground pin removed and new pin laid at updated position")
+    -- Henry walks within locateReachMetres (6m) of Margaret: pin clears and hidden token fires.
+    player:SetWorldPos({ x = 147, y = 82, z = 15 })
+    mark = E.mark()
+    E.advance(400)
+    check(M.state.locate == nil, "locate state cleared upon arrival")
+    check(E.find("BRIDGE locate cleared kkut_locate_margaret (reached)", mark) ~= nil, "arrival logged")
+    check(M.Count(player, M.locateHiddenClass) == 1, "hidden token pulsed on arrival")
+    E.advance(1600)
+    check(M.Count(player, M.locateHiddenClass) == 0, "hidden token cleaned up")
+end)
+
+case("Locate: unloaded soul falls back to time-of-day routine spot, survives save/load, and clears on Begin", function(E, M, check)
+    player:SetWorldPos({ x = 0, y = 0, z = 0 })
+    E.hour = 23.0 -- Night window (21 -> 6 wraps midnight)
+    local soulName = "kkut_additive_man_47"
+    local spots = "6,21,300,310,20;21,6,410,420,25"
+    local raw = string.format("@locate %s %d:%s @follow %s @travel trosky_castle Check the tavern.", soulName, #spots, spots, soulName)
+    local mark = E.mark()
+    local words = M.Directives(raw)
+    check(words == "Check the tavern.", "Directives strips @locate, @follow, and @travel cleanly, got: " .. tostring(words))
+    check(E.find("BRIDGE command follow " .. soulName, mark) ~= nil, "@follow logged")
+    check(E.find("BRIDGE command travel trosky_castle", mark) ~= nil, "@travel logged")
+    check(type(M.state.locate) == "table" and M.state.locate.source == "spot", "unloaded soul uses routine spot")
+    check(M.state.locate.x == 410 and M.state.locate.y == 420, "picked midnight-wrapping 21..6 spot: " .. tostring(M.state.locate.x))
+    -- Save and reload: laid resets to nil and WatchLocate re-lays the pin on the next tick.
+    local saved = E.save()
+    local ok = E.load(saved)
+    check(ok and type(M.state.locate) == "table" and M.state.locate.laid == nil, "OnLoad marks locate pin for re-laying")
+    M.WatchArm("world")
+    E.advance(2100)
+    check(M.state.locate ~= nil and M.state.locate.laid == true, "WatchLocate re-laid pin after load")
+    -- Opening conversation with the located NPC clears the marker immediately.
+    local ernest = E.soul(soulName, { pos = { x = 410, y = 420, z = 25 } })
+    mark = E.mark()
+    E.begin(ernest)
+    check(M.state.locate == nil, "Begin with located NPC clears locate marker")
+    check(E.find("BRIDGE locate cleared " .. soulName .. " (talked)", mark) ~= nil, "cleared-by-talk logged")
+end)
+
 return { cases = cases, order = order }

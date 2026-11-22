@@ -1708,9 +1708,11 @@ std::string emit_quest_level(const std::string& modid,
     for (const bool female : {false, true}) {
         s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + thanks_node(female) + ".xml") + "\" />\r\n";
     }
+    s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + locate_node(level) + ".xml") + "\" />\r\n";
     s += "\t\t\t</Definitions>\r\n";
     s += "\t\t\t<Nodes>\r\n";
     s += "\t\t\t\t<" + dialogue_name + " Name=\"" + dialogue_name + "\" />\r\n";
+    s += "\t\t\t\t<" + locate_node(level) + " Name=\"" + locate_node(level) + "\" />\r\n";
     // A beggar's thanks for a garment, in his own mouth (emit.hpp, thanks_class): the
     // hail's nodes in the Level, since a beggar is in no quest's graph, once for each
     // beggar who lives here -- his token's class, the trigger on it in Henry's pocket and
@@ -4410,6 +4412,123 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     return s;
 }
 
+std::string locate_node(const std::string& level) {
+    require_identifier(level, "level");
+    return "q_locate_" + level;
+}
+
+std::string emit_locate_quest(const std::string& modid, const std::string& level) {
+    require_identifier(modid, "modid");
+    require_identifier(level, "level");
+    const std::string node = locate_node(level);
+    const std::string rfo = " RequiredForOutput=\"" + xml_escape(level) + "\"";
+    std::string upper_level = level;
+    for (char& c : upper_level) {
+        if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+    }
+    const std::string type_name = "MSQ_LOCATE_" + upper_level;
+    auto key = [&](const char* part) {
+        return modid + "_" + node + "_" + part;
+    };
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+
+    std::string s = skald_header(modid);
+    s += t(2) + "<Quest Name=\"" + node + "\" Type=\"Micro\">\r\n";
+    s += t(3) + "<Ports />\r\n";
+    s += t(3) + "<Nodes>\r\n";
+    s += t(4) + "<State Name=\"questState\"" + rfo + " TypeT=\"wh::questmodule::QuestProgress\">\r\n";
+    s += t(5) + "<Edge From=\"locateOpen.OnAcquire\" To=\"SetActive\" />\r\n";
+    s += t(4) + "</State>\r\n";
+    s += t(4) + "<ObjectProperties Name=\"playerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+    s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+    s += t(4) + "</ObjectProperties>\r\n";
+    s += t(4) + "<Function Name=\"locateShownClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                "DeclaringType=\"wh::entitymodule\">\r\n";
+    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateShownClass) + "\" />\r\n";
+    s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"locateOpen\">\r\n";
+    s += t(5) + "<Edge From=\"locateShownClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+    s += t(5) + "<Edge From=\"questState.None\" To=\"IsActive\" />\r\n";
+    s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"locateShown\">\r\n";
+    s += t(5) + "<Edge From=\"locateShownClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+    s += t(5) + "<Edge From=\"questState.Active\" To=\"IsActive\" />\r\n";
+    s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    s += t(4) + "<Function Name=\"locateHiddenClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                "DeclaringType=\"wh::entitymodule\">\r\n";
+    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateHiddenClass) + "\" />\r\n";
+    s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"locateHidden\">\r\n";
+    s += t(5) + "<Edge From=\"locateHiddenClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+    s += t(5) + "<Edge From=\"questState.Active\" To=\"IsActive\" />\r\n";
+    s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    s += t(4) + "<State Name=\"locateState\"" + rfo + " TypeT=\"" + type_name + "\">\r\n";
+    s += t(5) + "<Edge From=\"locateOpen.OnAcquire\" To=\"SetActive\" />\r\n";
+    s += t(5) + "<Edge From=\"locateShown.OnAcquire\" To=\"SetShown\" />\r\n";
+    s += t(5) + "<Edge From=\"locateHidden.OnAcquire\" To=\"SetHidden\" />\r\n";
+    s += t(4) + "</State>\r\n";
+    s += t(4) + "<locate Name=\"objectiveVisualLocate\"" + rfo + ">\r\n";
+    s += t(5) + "<Edge From=\"locateState.State\" To=\"Progress\" />\r\n";
+    s += t(4) + "</locate>\r\n";
+    s += t(4) + "<Output Name=\"Output\">\r\n";
+    s += t(5) + "<Edge From=\"questState.State\" To=\"Progress\" />\r\n";
+    s += t(4) + "</Output>\r\n";
+    s += t(3) + "</Nodes>\r\n";
+    s += t(3) + "<Types>\r\n";
+    s += t(4) + "<Type TypeName=\"" + type_name + "\">\r\n";
+    for (const auto& [name, value] : {std::pair{"None", "None"}, std::pair{"Active", "Started"},
+                                      std::pair{"Shown", "Updated"}, std::pair{"Hidden", "Updated"},
+                                      std::pair{"Done", "Completed"}, std::pair{"Canceled", "Canceled"}}) {
+        s += t(5) + "<StateTypeEnumeration Name=\"" + std::string(name) + "\" ObjectiveValueType=\"" +
+             value + "\" />\r\n";
+    }
+    s += t(4) + "</Type>\r\n";
+    s += t(3) + "</Types>\r\n";
+    s += t(3) + "<Assets>\r\n";
+    s += t(4) + "<SoulAsset Name=\"player\" SharedSoulGuids=\"" + std::string(kPlayerSoulGuid) + "\" />\r\n";
+    s += t(4) + "<ItemOnGroundAsset Name=\"locatemark\" ItemClassGuids=\"" + std::string(kLocatePinClass) +
+         "\" />\r\n";
+    s += t(3) + "</Assets>\r\n";
+    s += t(3) + "<Text StringName=\"" + key("title") + "\" Text=\"Directions\" />\r\n";
+    s += t(3) + "<QuestName StringName=\"" + key("name") + "\" Text=\"Directions\" />\r\n";
+    s += t(3) + "<QuestDescription StringName=\"" + key("description") +
+         "\" Text=\"Someone pointed Henry the way.\" />\r\n";
+    s += t(3) + "<Objectives>\r\n";
+    s += t(4) + "<Objective TypeT=\"" + type_name + "\" Name=\"locate\" IsOptional=\"true\">\r\n";
+    s += t(5) + "<LocalizedName StringName=\"" + key("objective") + "\" Text=\"Follow the directions given\" />\r\n";
+    s += t(5) + "<Logs>\r\n";
+    s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"locatemark\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Shown\" IsTracked=\"true\" Marker=\"locatemark\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Hidden\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
+    s += t(5) + "</Logs>\r\n";
+    s += t(4) + "</Objective>\r\n";
+    s += t(3) + "</Objectives>\r\n";
+    s += t(2) + "</Quest>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return s;
+}
+
+std::vector<std::pair<std::string, std::string>> locate_localization(const std::string& modid,
+                                                                     const std::string& level) {
+    const std::string node = locate_node(level);
+    auto key = [&](const char* part) { return modid + "_" + node + "_" + part; };
+    return {
+        {key("title"), "Directions"},
+        {key("name"), "Directions"},
+        {key("description"), "Someone pointed Henry the way."},
+        {key("objective"), "Follow the directions given"},
+    };
+}
+
 
 std::vector<std::pair<std::string, std::string>> quest_localization(const std::string& modid,
                                                                     const Quest& quest) {
@@ -6880,6 +6999,21 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         s += "\t\t\t<DocumentContent Parts=\"" + xml_escape(paper_page_key(modid, *q)) + "\" />\r\n";
         s += "\t\t</Document>\r\n";
     }
+    // Freeform @locate ground pin (invisible, VisibilityCoef 0) and its shown/hidden pocket tokens.
+    s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"egg\" UIInfo=\"" +
+         xml_escape(item_info_key(modid, kLocatePinName)) + "\" UIName=\"" +
+         xml_escape(item_ui_key(modid, kLocatePinName)) +
+         "\" PickpocketInPouch=\"true\" Model=\"manmade/food/food/egg.cgf\" Weight=\"0\" Price=\"0\" "
+         "FadeCoef=\"1\" VisibilityCoef=\"0\" Id=\"" + std::string(kLocatePinClass) + "\" Name=\"" +
+         xml_escape(modid + "_" + kLocatePinName) + "\" />\r\n";
+    for (const auto& [lname, lcls] : {std::pair{kLocateShownName, kLocateShownClass},
+                                      std::pair{kLocateHiddenName, kLocateHiddenClass}}) {
+        s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
+             xml_escape(item_info_key(modid, lname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, lname)) +
+             "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
+             "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" + std::string(lcls) +
+             "\" Name=\"" + xml_escape(modid + "_" + lname) + "\" />\r\n";
+    }
     s += "\t</ItemClasses>\r\n";
     s += "</database>\r\n";
     return s;
@@ -6967,6 +7101,12 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
     // One name and one line for every beggar's token (emit_item_table).
     rows.emplace_back(item_ui_key(modid, "thanks"), "A beggar's thanks");
     rows.emplace_back(item_info_key(modid, "thanks"), "A beggar thanked Henry for a garment.");
+    rows.emplace_back(item_ui_key(modid, kLocatePinName), "Waymark");
+    rows.emplace_back(item_info_key(modid, kLocatePinName), "Where someone pointed Henry.");
+    rows.emplace_back(item_ui_key(modid, kLocateShownName), "Directions given");
+    rows.emplace_back(item_info_key(modid, kLocateShownName), "Someone pointed Henry the way.");
+    rows.emplace_back(item_ui_key(modid, kLocateHiddenName), "Person found");
+    rows.emplace_back(item_info_key(modid, kLocateHiddenName), "Henry found who he was looking for.");
     // And the thanks itself, for its bubble (emit_thanks_dialogue).
     rows.emplace_back(thanks_key(modid), kAlmsClothesThanks);
     for (const Quest& q : quests) {
@@ -7805,6 +7945,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tf.laid = nil\n";
     s += "\t\tend\n";
     s += "\tend\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" then " + g + ".state.locate.laid = nil end\n";
     s += "end\n";
     s += "\n";
     // The store's contents (plan.md section 3). Per soul: met, first, last, rev, memory,
@@ -15187,6 +15328,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\tend\n";
     s += "\tend\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" then out[#out + 1] = \"@locate\" end\n";
     s += "\treturn out\n";
     s += "end\n";
     s += "\n";
@@ -15248,6 +15390,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif pp ~= nil then " + g + ".WatchRoad(pp, now) end\n";
     s += "\tif pp ~= nil then\n";
     s += "\t\tfor _, id in ipairs(pending) do\n";
+    s += "\t\t\tif id == \"@locate\" then\n";
+    s += "\t\t\t\tpcall(" + g + ".WatchLocate, pp)\n";
+    s += "\t\t\telse\n";
     s += "\t\t\tlocal q = " + g + ".quests[id]\n";
     s += "\t\t\tif q.hail ~= nil then pcall(" + g + ".WatchHail, id, q, pp) end\n";
     s += "\t\t\tif q.dress ~= nil then pcall(" + g + ".WatchDress, id, q, pp) end\n";
@@ -16502,6 +16647,154 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal have = " + g + ".Count(p, class)\n";
     s += "\tif have > 0 then pcall(function() p.inventory:DeleteItemOfClass(class, have) end) end\n";
     s += "\t" + g + ".Log(\"BRIDGE quest token gone, have=\" .. " + g + ".Count(p, class))\n";
+    s += "end\n";
+    s += "\n";
+
+    // Freeform @locate <soul> <len>:<spots>: places an invisible ground pin at the target
+    // NPC's live entity position (or time-of-day routine spot when unloaded), pulses the
+    // level's q_locate_<level> Shown token to put the marker on the map and compass HUD,
+    // follows the NPC if they walk > locateMoveMetres, and clears the marker when Henry
+    // reaches them or begins speaking to them.
+    s += g + ".locatePinClass = \"" + std::string(kLocatePinClass) + "\"\n";
+    s += g + ".locateShownClass = \"" + std::string(kLocateShownClass) + "\"\n";
+    s += g + ".locateHiddenClass = \"" + std::string(kLocateHiddenClass) + "\"\n";
+    s += g + ".locateReachMetres = " + health_text(kLocateReachMetres) + "\n";
+    s += g + ".locateMoveMetres = " + health_text(kLocateMoveMetres) + "\n";
+    s += "function " + g + ".LocateToken(class)\n";
+    s += "\tif class == nil then return end\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tif p == nil then return end\n";
+    s += "\tlocal ok, err = pcall(function() p.inventory:CreateItem(class, 100, 1) end)\n";
+    s += "\tif not ok then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate token could not be made: \" .. tostring(err))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE locate token made, have=\" .. " + g + ".Count(p, class))\n";
+    s += "\tScript.SetTimer(1500, function()\n";
+    s += "\t\tlocal pl = " + g + ".Player()\n";
+    s += "\t\tif pl == nil then return end\n";
+    s += "\t\tlocal have = " + g + ".Count(pl, class)\n";
+    s += "\t\tif have > 0 then pcall(function() pl.inventory:DeleteItemOfClass(class, have) end) end\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate token gone, have=\" .. " + g + ".Count(pl, class))\n";
+    s += "\tend)\n";
+    s += "end\n";
+    s += "function " + g + ".ParseSpots(raw)\n";
+    s += "\tlocal out = {}\n";
+    s += "\tif type(raw) ~= \"string\" or raw == \"\" then return out end\n";
+    s += "\tfor entry in string.gmatch(raw, \"[^;]+\") do\n";
+    s += "\t\tlocal h0, h1, sx, sy, sz = string.match(entry, \"^([^,]+),([^,]+),([^,]+),([^,]+),([^,]+)$\")\n";
+    s += "\t\tif h0 ~= nil then\n";
+    s += "\t\t\tlocal n0, n1, x, y, z = tonumber(h0), tonumber(h1), tonumber(sx), tonumber(sy), tonumber(sz)\n";
+    s += "\t\t\tif n0 ~= nil and n1 ~= nil and x ~= nil and y ~= nil and z ~= nil then\n";
+    s += "\t\t\t\tout[#out + 1] = { start = n0, stop = n1, x = x, y = y, z = z }\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\treturn out\n";
+    s += "end\n";
+    s += "function " + g + ".ResolveLocatePos(soul, spots)\n";
+    s += "\tlocal ent = nil\n";
+    s += "\tpcall(function() ent = System.GetEntityByName(soul) end)\n";
+    s += "\tif ent ~= nil and ent.GetWorldPos ~= nil then\n";
+    s += "\t\tlocal pos = nil\n";
+    s += "\t\tpcall(function() pos = ent:GetWorldPos() end)\n";
+    s += "\t\tif pos ~= nil and pos.x ~= nil and pos.y ~= nil then\n";
+    s += "\t\t\treturn pos.x, pos.y, pos.z or 0, \"loaded\"\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif type(spots) == \"table\" and #spots > 0 then\n";
+    s += "\t\tlocal h = 12\n";
+    s += "\t\tpcall(function() h = Calendar.GetWorldHourOfDay() end)\n";
+    s += "\t\tfor _, sp in ipairs(spots) do\n";
+    s += "\t\t\tif sp.start <= sp.stop then\n";
+    s += "\t\t\t\tif h >= sp.start and h < sp.stop then return sp.x, sp.y, sp.z, \"spot\" end\n";
+    s += "\t\t\telse\n";
+    s += "\t\t\t\tif h >= sp.start or h < sp.stop then return sp.x, sp.y, sp.z, \"spot\" end\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\t\treturn spots[1].x, spots[1].y, spots[1].z, \"spot\"\n";
+    s += "\tend\n";
+    s += "\treturn nil\n";
+    s += "end\n";
+    s += "function " + g + ".RemoveLocatePin(loc)\n";
+    s += "\tif type(loc) == \"table\" and loc.x ~= nil and loc.pinZ ~= nil then\n";
+    s += "\t\tpcall(function()\n";
+    s += "\t\t\tfor _, e in ipairs(System.GetEntitiesInSphere({ x = loc.x, y = loc.y, z = loc.pinZ }, 2.5) or {}) do\n";
+    s += "\t\t\t\tif e.class ~= \"AudioTriggerSpot\" and e.soul == nil and e.actor == nil then\n";
+    s += "\t\t\t\t\tSystem.RemoveEntity(e.id)\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend)\n";
+    s += "\tend\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tlocal sp = System.GetEntityByName(\"moonshine_locate_spot\")\n";
+    s += "\t\tif sp ~= nil then System.RemoveEntity(sp.id) end\n";
+    s += "\tend)\n";
+    s += "end\n";
+    s += "function " + g + ".LayLocatePin(x, y, z)\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tif p == nil then return false, z, z - 2.0 end\n";
+    s += "\tlocal gz = " + g + ".Ground(x, y, z)\n";
+    s += "\tlocal pinZ = gz - 2.0\n";
+    s += "\tlocal spot = " + g + ".SpotEntity(\"moonshine_locate_spot\", x, y, pinZ)\n";
+    s += "\tif spot == nil then return false, gz, pinZ end\n";
+    s += "\tlocal ok, err = pcall(function()\n";
+    s += "\t\tif " + g + ".Count(p, " + g + ".locatePinClass) <= 0 then p.inventory:CreateItem(" + g + ".locatePinClass, 100, 1) end\n";
+    s += "\t\tlocal wuid = p.inventory:FindItem(" + g + ".locatePinClass)\n";
+    s += "\t\tif wuid == nil then error(\"the locate pin could not be made\") end\n";
+    s += "\t\tp.human:PlaceItem(wuid, spot.id, false)\n";
+    s += "\tend)\n";
+    s += "\tif not ok or " + g + ".Count(p, " + g + ".locatePinClass) > 0 then\n";
+    s += "\t\tpcall(function() p.inventory:DeleteItemOfClass(" + g + ".locatePinClass, " + g + ".Count(p, " + g + ".locatePinClass)) end)\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate pin not laid: \" .. tostring(err))\n";
+    s += "\t\treturn false, gz, pinZ\n";
+    s += "\tend\n";
+    s += "\treturn true, gz, pinZ\n";
+    s += "end\n";
+    s += "function " + g + ".Locate(soul, rawSpots)\n";
+    s += "\tif type(soul) ~= \"string\" or soul == \"\" then return false end\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" then " + g + ".RemoveLocatePin(" + g + ".state.locate) end\n";
+    s += "\tlocal spots = " + g + ".ParseSpots(rawSpots)\n";
+    s += "\tlocal x, y, z, source = " + g + ".ResolveLocatePos(soul, spots)\n";
+    s += "\tif x == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" unresolved (not loaded, no spots)\")\n";
+    s += "\t\treturn false\n";
+    s += "\tend\n";
+    s += "\tlocal ok, gz, pinZ = " + g + ".LayLocatePin(x, y, z)\n";
+    s += "\t" + g + ".state.locate = { soul = soul, spots = spots, x = x, y = y, z = gz, pinZ = pinZ, laid = ok, source = source }\n";
+    s += "\t" + g + ".LocateToken(" + g + ".locateShownClass)\n";
+    s += "\tpcall(" + g + ".WatchArm, \"locate\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" at \" .. string.format(\"%.1f,%.1f,%.1f\", x, y, gz) .. \" (\" .. tostring(source) .. \")\")\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "function " + g + ".ClearLocate(why)\n";
+    s += "\tlocal loc = " + g + ".state.locate\n";
+    s += "\tif type(loc) ~= \"table\" then return false end\n";
+    s += "\t" + g + ".RemoveLocatePin(loc)\n";
+    s += "\tlocal soul = tostring(loc.soul or \"\")\n";
+    s += "\t" + g + ".state.locate = nil\n";
+    s += "\t" + g + ".LocateToken(" + g + ".locateHiddenClass)\n";
+    s += "\t" + g + ".Log(\"BRIDGE locate cleared \" .. soul .. \" (\" .. tostring(why) .. \")\")\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "function " + g + ".WatchLocate(pp)\n";
+    s += "\tlocal loc = " + g + ".state.locate\n";
+    s += "\tif type(loc) ~= \"table\" or pp == nil then return end\n";
+    s += "\tlocal tx, ty, tz, source = " + g + ".ResolveLocatePos(loc.soul, loc.spots)\n";
+    s += "\tif tx == nil then tx, ty, tz, source = loc.x, loc.y, loc.z, loc.source end\n";
+    s += "\tif tx == nil or ty == nil then return end\n";
+    s += "\tlocal dx, dy = pp.x - tx, pp.y - ty\n";
+    s += "\tif dx * dx + dy * dy <= " + g + ".locateReachMetres * " + g + ".locateReachMetres then\n";
+    s += "\t\t" + g + ".ClearLocate(\"reached\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal mdx, mdy = tx - (loc.x or tx), ty - (loc.y or ty)\n";
+    s += "\tif not loc.laid or mdx * mdx + mdy * mdy >= " + g + ".locateMoveMetres * " + g + ".locateMoveMetres then\n";
+    s += "\t\t" + g + ".RemoveLocatePin(loc)\n";
+    s += "\t\tlocal ok, gz, pinZ = " + g + ".LayLocatePin(tx, ty, tz)\n";
+    s += "\t\tloc.x, loc.y, loc.z, loc.pinZ, loc.laid, loc.source = tx, ty, gz, pinZ, ok, source\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate moved \" .. tostring(loc.soul) .. \" to \" .. string.format(\"%.1f,%.1f,%.1f\", tx, ty, gz) .. \" (\" .. tostring(source) .. \")\")\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
 
@@ -17809,6 +18102,30 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif type(" + g + ".state.known) ~= \"table\" then " + g + ".state.known = {} end\n";
     s += "\t\t\t" + g + ".state.known[tok] = true\n";
     s += "\t\t\twords = rest4\n";
+    s += "\t\telseif string.match(words, \"^@locate%s\") then\n";
+    // @locate <soul> [<len>:<spots>]: places a map & compass marker on the resolved soul.
+    s += "\t\t\tlocal lsoul, lslen, ltail = string.match(words, \"^@locate%s+(%S+)%s+(%d+):(.*)$\")\n";
+    s += "\t\t\tif lsoul ~= nil then\n";
+    s += "\t\t\t\tlocal llen = tonumber(lslen) or 0\n";
+    s += "\t\t\t\tlocal lspots = string.sub(ltail, 1, llen)\n";
+    s += "\t\t\t\tpcall(" + g + ".Locate, lsoul, lspots)\n";
+    s += "\t\t\t\twords = string.match(string.sub(ltail, llen + 1), \"^%s*(.*)$\")\n";
+    s += "\t\t\telse\n";
+    s += "\t\t\t\tlocal bsoul, brest = string.match(words, \"^@locate%s+(%S+)%s*(.*)$\")\n";
+    s += "\t\t\t\tif bsoul == nil then return words end\n";
+    s += "\t\t\t\tpcall(" + g + ".Locate, bsoul, \"\")\n";
+    s += "\t\t\t\twords = brest\n";
+    s += "\t\t\tend\n";
+    s += "\t\telseif string.match(words, \"^@follow%s\") then\n";
+    s += "\t\t\tlocal fsoul, frest = string.match(words, \"^@follow%s+(%S+)%s*(.*)$\")\n";
+    s += "\t\t\tif fsoul == nil then return words end\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE command follow \" .. fsoul)\n";
+    s += "\t\t\twords = frest\n";
+    s += "\t\telseif string.match(words, \"^@travel%s\") then\n";
+    s += "\t\t\tlocal tplace, trest = string.match(words, \"^@travel%s+(%S+)%s*(.*)$\")\n";
+    s += "\t\t\tif tplace == nil then return words end\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE command travel \" .. tplace)\n";
+    s += "\t\t\twords = trest\n";
     s += "\t\telseif words == \"@end\" or string.match(words, \"^@end%s\") then\n";
     // @end: these are the last words; the conversation closes once they are read (Heard).
     s += "\t\t\t" + g + ".ending = true\n";
@@ -18521,6 +18838,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // the time the app reads the begin line it already holds everything it needs to plan
     // the conversation. Under pcall, as a fault in the store is not a reason not to talk.
     s += "\tpcall(function() " + g + ".StateBegin(EntityUtils.GetName(npc), scene) end)\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" and " + g + ".state.locate.soul == EntityUtils.GetName(npc) then\n";
+    s += "\t\tpcall(" + g + ".ClearLocate, \"talked\")\n";
+    s += "\tend\n";
     s += "\t" + g + ".Log(\"BRIDGE begin npc=\" .. EntityUtils.GetName(npc)\n";
     s += "\t\t.. \" doing=\" .. (" + g + ".lastAnim[EntityUtils.GetName(npc)] or \"none\")\n";
     s += "\t\t.. scene)\n";

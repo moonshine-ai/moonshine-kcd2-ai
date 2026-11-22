@@ -1,0 +1,45 @@
+{
+  "total_examples": 3397,
+  "dropped_validation": 17,
+  "dropped_homonym_oracle": 86,
+  "elapsed_seconds": 55.08,
+  "generator_model": "claude-haiku-5-5",
+  "unique_circles_per_split": {
+    "dev": 38,
+    "test": 54,
+    "train": 150
+  },
+  "counts_by_split": {
+    "dev": 519,
+    "test": 746,
+    "train": 2132
+  },
+  "counts_by_action": {
+    "follow_npc": 237,
+    "locate_npc": 1885,
+    "no_action": 1043,
+    "travel_to": 232
+  },
+  "counts_by_status": {
+    "no_action": 1043,
+    "resolved_place": 232,
+    "resolved_soul": 1581,
+    "unknown_to_npc": 229,
+    "unmeetable_absentee": 312
+  },
+  "counts_by_category": {
+    "abstain_absentee": 312,
+    "abstain_stranger": 229,
+    "cmd_follow_npc": 237,
+    "cmd_travel_to": 232,
+    "locate_coref_multiturn": 320,
+    "locate_homonym_salience": 116,
+    "locate_hop1_direct": 450,
+    "locate_hop2_adjacent": 237,
+    "locate_relational_trade": 221,
+    "neg_idiom_rhetorical": 227,
+    "neg_kb_biographical_where": 283,
+    "neg_opinion_gossip": 277,
+    "neg_quest_offer_chat": 256
+  }
+}

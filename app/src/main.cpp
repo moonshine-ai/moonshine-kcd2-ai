@@ -288,6 +288,9 @@ struct Args {
     // Empty means look in the models folder for the file the conversion writes.
     std::string embed_gguf;
     bool knowledge = true;
+    // Sidecar GGUF + Stage-1 gate JSON for freeform player commands (@locate, @follow, @travel).
+    std::string command_gguf;
+    std::string command_gate = "tools/command_bench/stage1_gate_weights.json";
     // Kokoro, through Moonshine Voice. On unless --no-voice, and only when this binary
     // was linked against the library. The default is the imported Newcastle man.
     bool voice_off = false;
@@ -700,6 +703,8 @@ Args parse(int argc, char** argv, bool* stop) {
         else if (arg == "--serve") args.serve_port = std::stoi(value());
         else if (arg == "--gguf") args.gguf = value();
         else if (arg == "--embed-gguf") args.embed_gguf = value();
+        else if (arg == "--command-gguf") args.command_gguf = value();
+        else if (arg == "--command-gate") args.command_gate = value();
         else if (arg == "--no-knowledge") args.knowledge = false;
         else if (arg == "--ask") args.ask = value();
         else if (arg == "--standing") {
@@ -848,6 +853,69 @@ Knowing open_knowledge(const Args& args) {
     std::cout << "knowledge:  built without the llama.cpp backend, so there is no embedder and"
                  " the model answers from the sheet alone\n";
     out.base.reset();
+#endif
+    return out;
+}
+
+struct Commanding {
+    std::unique_ptr<CommandGraph> graph;
+    std::unique_ptr<Llm> sidecar;
+    std::unique_ptr<CommandDirector> director;
+};
+
+Commanding open_commands(const Args& args, Embedder* embedder) {
+    Commanding out;
+#ifdef MOONSHINE_HAS_LLAMA
+    std::filesystem::path gguf = args.command_gguf;
+    if (gguf.empty()) {
+        for (const char* candidate : {
+                 "models/qwen3-0.6b-sft-Q4_K_M.gguf",
+                 "build/command_bench/gguf/qwen3-0.6b-sft-Q4_K_M.gguf",
+             }) {
+            if (std::filesystem::exists(candidate)) {
+                gguf = candidate;
+                break;
+            }
+        }
+    }
+    if (gguf.empty()) return out;
+    out.graph = std::make_unique<CommandGraph>(args.personas_path);
+    if (!out.graph->ok()) {
+        std::cout << "commands:   cannot read " << args.personas_path << " (" << out.graph->trouble()
+                  << ")\n";
+        out.graph.reset();
+        return out;
+    }
+    Options side_opts;
+    side_opts.context_tokens = 1024;
+    side_opts.reply_tokens = 32;
+    side_opts.temperature = 0.0;
+    side_opts.cpu_only = args.options.cpu_only;
+    side_opts.repack_weights = false;
+    side_opts.disable_thinking = true;
+    side_opts.grammar = kCompactCommandGrammar;
+    try {
+        out.sidecar = std::make_unique<LlamaLlm>(gguf, side_opts);
+        Options warm = side_opts;
+        warm.reply_tokens = 1;
+        warm.grammar.clear();
+        out.sidecar->chat({{"system", kCompactCommandSystemPrompt}, {"user", "Player: Hello"}},
+                          warm, [](std::string_view) {});
+    } catch (const std::exception& why) {
+        std::cout << "commands:   " << why.what() << "\n";
+        out.sidecar.reset();
+        out.graph.reset();
+        return out;
+    }
+    Stage1Gate gate;
+    if (const auto loaded = Stage1Gate::load_json(args.command_gate)) gate = *loaded;
+    out.director = std::make_unique<CommandDirector>(embedder, out.sidecar.get(), *out.graph,
+                                                     std::move(gate), side_opts);
+    std::cout << "commands:   sidecar " << out.sidecar->describe()
+              << " + salience social-graph linker ready\n";
+#else
+    (void)args;
+    (void)embedder;
 #endif
     return out;
 }
@@ -1112,12 +1180,14 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
 
     // Loaded after the world, which is the long wait, and before the session that uses it.
     Knowing knowing = open_knowledge(args);
+    Commanding commanding = open_commands(args, knowing.embedder.get());
 
     Session session(llm, writer, prefiller, args.options);
     session.set_world(world);
     session.set_menu(args.menu);
     session.set_speculation(args.speculate);
     if (knowing.director) session.set_knowledge(knowing.director.get());
+    if (commanding.director) session.set_commands(commanding.director.get());
     session.set_persona_source([&](std::string_view soul, const Approach& approach,
                                   std::string_view anim, const SoulRecord& record) {
         // What the save knows and the begin line does not: whether they have met, where the
@@ -1235,6 +1305,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         for (const Event& event : tailer.buffered()) {
             if (event.marker == Marker::Voice) voice_ahead = true;
             if (event.marker == Marker::SkippedLine && !voice_ahead) ++lines;
+            if (event.marker == Marker::Left) ++lefts;
             if (event.marker != Marker::Skipped) continue;
             ++seen;
             if (event.turn >= turn) of_turn = true;
@@ -1311,6 +1382,12 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
             std::cerr << "ear: " << why.what() << "\n";
             return false;
         }
+    };
+    listener.on_keyterms = [&ear](std::string_view csv) {
+        if (ear) ear->set_keyterms(csv);
+    };
+    listener.on_retranscribe = [&ear](std::string_view csv) -> std::string {
+        return ear ? ear->retranscribe_last(csv) : std::string();
     };
     listener.on_timing = [&args, rate, metered](const Timing& timing) {
         note_status([](Status& status) { status.error.clear(); });

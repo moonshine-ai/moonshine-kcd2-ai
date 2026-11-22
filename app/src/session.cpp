@@ -147,9 +147,11 @@ void Session::handle(const Event& event) {
             if (!talking_) break;
             if (event.said == "typed") {
                 // The row picked: the mod has the keyboard and wants nothing from here.
+                last_said_voiced_ = false;
                 status("the say row is live for typing");
                 break;
             }
+            last_said_voiced_ = true;
             set_listening(true, "the talk button is down");
             break;
         case Marker::SayStop:
@@ -909,6 +911,13 @@ void Session::set_listening(bool on, std::string_view why) {
         hook("Moonshine.SayDeaf()", "no ear");
         return;
     }
+    if (commands_ && listener_.on_keyterms) {
+        std::string terms = commands_->pass1_keyterms(soul_, history_, record_);
+        if (!persona_.name.empty()) {
+            terms = terms.empty() ? persona_.name : (persona_.name + ", " + terms);
+        }
+        if (!terms.empty()) listener_.on_keyterms(terms);
+    }
     listening_ = true;
     status("listening: " + std::string(why));
 }
@@ -1236,6 +1245,27 @@ void Session::answer(std::string_view said, bool remember) {
             status("knowledge: " + advice.note);
         }
     }
+    // Freeform player commands ("Where is Margaret?", "Follow me", "Travel to Trosky"):
+    // runs after KnowledgeDirector so biographical questions stay untouched, while resolved
+    // location/follow/travel commands ride on the reply's turn file (`@locate`, `@follow`,
+    // `@travel`) and add a brief in-character direction without mutating Qwen3-4B's KV prefix.
+    if (commands_ && judged.empty() && picked_intent_.empty() && !offering) {
+        const auto retx =
+            (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
+        CommandOutcome cmd = commands_->resolve(
+            soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx);
+        if (cmd.action != CommandAction::None) {
+            if (!cmd.directive.empty()) pending_.push_back(cmd.directive);
+            if (!cmd.heard_token.empty() &&
+                std::find(heard_.begin(), heard_.end(), cmd.heard_token) == heard_.end()) {
+                heard_.push_back(cmd.heard_token);
+                pending_.push_back("@heard " + cmd.heard_token);
+            }
+            if (!cmd.direction.empty()) heard += " " + cmd.direction;
+            if (!cmd.note.empty()) status("command: " + cmd.note);
+        }
+    }
+    last_said_voiced_ = false;
     // A seed the model answers is spent like one answered from the database, so the list
     // after does not offer it again -- and so a giver's offer made in the model's own words
     // is followed by the accepting row, which written_fill lays once help has been asked.

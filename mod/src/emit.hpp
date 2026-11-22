@@ -252,6 +252,24 @@ constexpr const char* kSearchObjective = "search";
 constexpr const char* kSearchMarkClass = "86f47744-0555-564b-a32d-56ce873bb67c";
 constexpr const char* kSearchMarkName = "moonshine_sucked_egg";
 
+// Freeform NPC locate command (@locate <soul> <len>:<spots>): one per-level micro quest
+// (q_locate_<level>.xml) tracking an invisible ground pin (kLocatePinClass) laid at the
+// located soul's live position or time-of-day routine spot, switched Shown and Hidden by
+// pocket tokens so any of the 3,000+ souls can be marked on the map and compass HUD.
+constexpr const char* kLocatePinClass = "6d6f6f6e-7368-6c70-8000-000000000001";
+constexpr const char* kLocatePinName = "locate_pin";
+constexpr const char* kLocateShownClass = "6d6f6f6e-7368-6c73-8000-000000000001";
+constexpr const char* kLocateShownName = "locate_shown";
+constexpr const char* kLocateHiddenClass = "6d6f6f6e-7368-6c68-8000-000000000001";
+constexpr const char* kLocateHiddenName = "locate_hidden";
+constexpr double kLocateReachMetres = 6.0;
+constexpr double kLocateMoveMetres = 15.0;
+
+std::string locate_node(const std::string& level);
+std::string emit_locate_quest(const std::string& modid, const std::string& level);
+std::vector<std::pair<std::string, std::string>> locate_localization(const std::string& modid,
+                                                                     const std::string& level);
+
 // A giver's hail as the game's own bark (notes.md 14 Oct 2026, In the Stocks: Benesh's
 // words over his head, not on the dialogue's caption). q_<id>_hail.xml is a one-line
 // `ingame monolog` dialogue on the giver -- the shape ambient-design/plan.md section 1.1

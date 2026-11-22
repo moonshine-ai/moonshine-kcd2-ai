@@ -200,6 +200,7 @@ add_library(moonshine_core STATIC
     src/menu.cpp
     src/scripted.cpp
     src/knowledge.cpp
+    src/command.cpp
     src/console.cpp
     src/lipsync.cpp
     src/word_align.cpp
@@ -479,6 +480,7 @@ add_executable(moonshine_tests
     tests/test_menu.cpp
     tests/test_scripted.cpp
     tests/test_knowledge.cpp
+    tests/test_command.cpp
     tests/test_console.cpp
     tests/test_voice.cpp
     tests/test_phrase_cache.cpp
@@ -505,3 +507,31 @@ set(MOONSHINE_SCHEMA_SQL "${CMAKE_CURRENT_SOURCE_DIR}/../data/schema.sql" CACHE 
     "data/schema.sql, the shipped database's schema")
 target_compile_definitions(moonshine_tests PRIVATE MOONSHINE_SCHEMA_SQL="${MOONSHINE_SCHEMA_SQL}")
 add_test(NAME unit COMMAND moonshine_tests)
+
+if(MOONSHINE_LLAMA AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/command_bench/cpp_probe.cpp")
+    add_executable(moonshine_cmd_probe EXCLUDE_FROM_ALL
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tools/command_bench/cpp_probe.cpp
+        src/voice.cpp)
+    target_include_directories(moonshine_cmd_probe PRIVATE ${LLAMA_DIR}/include ${LLAMA_DIR}/ggml/include)
+    target_link_libraries(moonshine_cmd_probe PRIVATE moonshine_core llama)
+endif()
+
+if(_moonshine_found AND MOONSHINE_PHONON AND MOONSHINE_STT
+   AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/command_bench/stt_probe.cpp")
+    add_executable(moonshine_stt_probe EXCLUDE_FROM_ALL
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tools/command_bench/stt_probe.cpp
+        src/phonon.cpp
+        src/listen.cpp
+        src/voice.cpp)
+    target_compile_definitions(moonshine_stt_probe PRIVATE
+        MOONSHINE_HAS_PHONON=1 MOONSHINE_HAS_STT=1)
+    target_include_directories(moonshine_stt_probe PRIVATE "${MOONSHINE_ROOT}/include")
+    target_link_libraries(moonshine_stt_probe PRIVATE moonshine_core ${_moonshine_libs})
+    if(APPLE)
+        target_link_libraries(moonshine_stt_probe PRIVATE
+            "-framework AudioToolbox" "-framework CoreFoundation" "-framework Foundation")
+        target_link_options(moonshine_stt_probe PRIVATE -Wl,-w)
+    elseif(WIN32)
+        target_link_libraries(moonshine_stt_probe PRIVATE winmm)
+    endif()
+endif()

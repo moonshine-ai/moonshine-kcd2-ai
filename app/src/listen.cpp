@@ -154,6 +154,11 @@ struct Ear::Impl {
     std::mutex audio_lock;
     std::condition_variable audio_ready;
     std::deque<std::vector<float>> chunks;
+    // Retained 16 kHz float32 PCM of the most recent push-to-talk utterance (capped at 12s = 768 KB)
+    // so conditional Pass-2 STT (`retranscribe_last`) can replay it with expanded Hop-1+Hop-2 keyterms.
+    mutable std::mutex pcm_lock;
+    std::vector<float> last_pcm;
+    static constexpr std::size_t kMaxBufferedSamples = static_cast<std::size_t>(kRate * 12);
     std::thread worker;
     std::atomic<bool> running{false};
 
@@ -236,6 +241,15 @@ struct Ear::Impl {
                 chunks.pop_front();
             }
             if (!running.load()) return;
+            {
+                std::lock_guard<std::mutex> held_pcm(pcm_lock);
+                if (last_pcm.size() < kMaxBufferedSamples) {
+                    const std::size_t room = kMaxBufferedSamples - last_pcm.size();
+                    const std::size_t take = std::min(room, chunk.size());
+                    last_pcm.insert(last_pcm.end(), chunk.begin(),
+                                    chunk.begin() + static_cast<std::ptrdiff_t>(take));
+                }
+            }
             try {
                 stream->addAudio(chunk, kRate);
                 fed += static_cast<double>(chunk.size()) / kRate;
@@ -408,6 +422,10 @@ void Ear::start() {
         std::lock_guard<std::mutex> held(impl_->audio_lock);
         impl_->chunks.clear();
     }
+    {
+        std::lock_guard<std::mutex> held_pcm(impl_->pcm_lock);
+        impl_->last_pcm.clear();
+    }
     impl_->stream = std::make_unique<Stream>(impl_->transcriber.createStream(1.0e9, 0));
     impl_->stream->start();
     impl_->running.store(true);
@@ -461,6 +479,42 @@ void Ear::set_context(std::string_view passage) {
     }
 }
 
+void Ear::set_keyterms(std::string_view csv) {
+    if (impl_->context_refused) return;
+    const std::string terms(csv);
+    const int32_t error =
+        moonshine_transcriber_set_keyterms(impl_->transcriber.getHandle(), terms.c_str());
+    if (error != MOONSHINE_ERROR_NONE) {
+        impl_->context_refused = true;
+    }
+}
+
+std::string Ear::retranscribe_last(std::string_view keyterms_csv) {
+    std::vector<float> pcm;
+    {
+        std::lock_guard<std::mutex> held_pcm(impl_->pcm_lock);
+        pcm = impl_->last_pcm;
+    }
+    if (pcm.empty()) return {};
+    try {
+        set_keyterms(keyterms_csv);
+        Stream replay = impl_->transcriber.createStream(1.0e9, 0);
+        replay.start();
+        for (std::size_t off = 0; off < pcm.size(); off += static_cast<std::size_t>(kChunkFrames)) {
+            const std::size_t n =
+                std::min(static_cast<std::size_t>(kChunkFrames), pcm.size() - off);
+            std::vector<float> slice(pcm.begin() + static_cast<std::ptrdiff_t>(off),
+                                     pcm.begin() + static_cast<std::ptrdiff_t>(off + n));
+            replay.addAudio(slice, kRate);
+        }
+        replay.close();
+        return Impl::flatten(replay.updateTranscription(0)).text;
+    } catch (const std::exception& why) {
+        std::fprintf(stderr, "ear: Pass-2 re-transcription failed: %s\n", why.what());
+        return {};
+    }
+}
+
 #else  // !MOONSHINE_CAN_LISTEN
 
 bool listen_built() { return false; }
@@ -477,6 +531,8 @@ void Ear::stop() {}
 bool Ear::listening() const { return false; }
 Heard Ear::heard() const { return {}; }
 void Ear::set_context(std::string_view) {}
+void Ear::set_keyterms(std::string_view) {}
+std::string Ear::retranscribe_last(std::string_view) { return {}; }
 
 #endif
 

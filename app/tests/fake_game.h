@@ -292,6 +292,16 @@ private:
                 whole += " " + token();
                 whole += " " + token();
                 directives_.push_back(whole);
+            } else if (head == "@locate") {
+                std::string whole = token();
+                whole += " " + token();
+                const std::string payload = counted();
+                whole += " " + std::to_string(payload.size()) + ":" + payload;
+                directives_.push_back(whole);
+            } else if (head == "@follow" || head == "@travel") {
+                std::string whole = token();
+                whole += " " + token();
+                directives_.push_back(whole);
             } else if (head == "@end" || head == "@beat" || head == "@voiced") {
                 directives_.push_back(token());
             } else {

@@ -429,6 +429,12 @@ int main(int argc, char** argv) {
                     data_pak.add(level_dir + kcd2::thanks_node(female) + ".xml",
                                  kcd2::emit_thanks_dialogue(o.modid, level, female));
                 }
+                // Freeform @locate <soul> map and compass marker quest for this level.
+                data_pak.add(level_dir + kcd2::locate_node(level) + ".xml",
+                             kcd2::emit_locate_quest(o.modid, level));
+                for (auto& row : kcd2::locate_localization(o.modid, level)) {
+                    loc_extras.push_back(std::move(row));
+                }
             }
             // One file per quest beside its level's dialogue, and its journal rows in the
             // same table as everything else the mod says.

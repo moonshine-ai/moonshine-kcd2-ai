@@ -88,6 +88,16 @@ public:
     // the streaming models apply it; on another the call is nothing.
     void set_context(std::string_view passage);
 
+    // Explicit comma-separated keyterms (e.g. Hop-1/Hop-2 NPC names) for Moonshine's
+    // contextual biasing (`moonshine_transcriber_set_keyterms`).
+    void set_keyterms(std::string_view csv);
+
+    // Replays the most recently captured push-to-talk utterance (up to 12 seconds of 16 kHz
+    // float32 PCM retained across `stop()`) through a fresh stream biased with `keyterms_csv`.
+    // Used for conditional Pass-2 STT recovery when Stage-3 entity linking fails on a spoken
+    // person/place command. Empty when no buffered audio is held.
+    std::string retranscribe_last(std::string_view keyterms_csv);
+
     // The words heard so far on this stream, every line joined with a space, as the
     // transcriber has them now, and whether the transcriber has finished every line it
     // has. Safe from any thread. Empty and not complete when not listening.

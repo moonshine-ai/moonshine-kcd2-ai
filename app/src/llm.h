@@ -83,6 +83,9 @@ struct Options {
     // it there is nothing to give back.
     bool repack_weights = false;
 
+    // Optional GBNF grammar (root rule "root") applied during llama.cpp sampling.
+    std::string grammar;
+
     // How long the backend should keep the model and its caches resident. This is
     // not a tuning knob but the thing the whole prefill strategy rests on: once
     // this expires the world prefix is gone and the next conversation pays 6s of
