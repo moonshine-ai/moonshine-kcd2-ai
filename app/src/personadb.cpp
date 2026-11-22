@@ -1039,39 +1039,130 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
             // nothing.
             bind(row, std::string_view(quest.id));
             if (giver) sqlite3_bind_text(row, 2, quest.id.c_str(), -1, SQLITE_TRANSIENT);
+            struct LineSlot {
+                std::string_view field;
+                std::string Quest::* member;
+            };
+            // Direct string fields on Quest, tabled rather than chained with `else if` so
+            // MSVC does not hit its C1061 nesting limit (~128 branches).
+            static constexpr LineSlot kStringSlots[] = {
+                {"onward_soul", &Quest::onward_soul},
+                {"onward_name", &Quest::onward_name},
+                {"greet_onward", &Quest::greet_onward},
+                {"plea_yes", &Quest::plea_yes},
+                {"plea_yes_reply", &Quest::plea_yes_reply},
+                {"plea_no", &Quest::plea_no},
+                {"plea_no_reply", &Quest::plea_no_reply},
+                {"plea_threat", &Quest::plea_threat},
+                {"plea_threat_reply", &Quest::plea_threat_reply},
+                {"beg", &Quest::beg},
+                {"spare", &Quest::spare},
+                {"spare_reply", &Quest::spare_reply},
+                {"arrange_reply", &Quest::arrange_reply},
+                {"greet_arranged", &Quest::greet_arranged},
+                {"greet_fallen", &Quest::greet_fallen},
+                {"fallen", &Quest::fallen},
+                {"fallen_reply", &Quest::fallen_reply},
+                {"keepsake_name", &Quest::keepsake_name},
+                {"thanks_keepsake", &Quest::thanks_keepsake},
+                {"thanks_exposed", &Quest::thanks_exposed},
+                {"fast_travel", &Quest::fast_travel_row},
+                {"fast_travel_reply", &Quest::fast_travel_reply},
+                {"fast_travel_later", &Quest::fast_travel_later_row},
+                {"fast_travel_later_reply", &Quest::fast_travel_later_reply},
+                {"fast_travel_wait", &Quest::fast_travel_wait_row},
+                {"fast_travel_wait_reply", &Quest::fast_travel_wait_reply},
+                {"offer_threat", &Quest::offer_threat},
+                {"offer_threat_reply", &Quest::offer_threat_reply},
+                {"offer_no", &Quest::offer_no},
+                {"offer_no_reply", &Quest::offer_no_reply},
+                {"apologise", &Quest::apologise},
+                {"apologise_yes", &Quest::apologise_yes},
+                {"apologise_no", &Quest::apologise_no},
+                {"report", &Quest::report},
+                {"keep", &Quest::keep},
+                {"kept_reply", &Quest::kept_reply},
+                {"pry", &Quest::pry},
+                {"pry_yes", &Quest::pry_yes},
+                {"pry_no", &Quest::pry_no},
+                {"pry_press", &Quest::pry_press},
+                {"pry_press_no", &Quest::pry_press_no},
+                {"opinion", &Quest::opinion},
+                {"paper_ask", &Quest::paper_ask},
+                {"paper_ask_reply", &Quest::paper_ask_reply},
+                {"greet_handed", &Quest::greet_handed},
+                {"told", &Quest::told},
+                {"told_reply", &Quest::told_reply},
+                {"lie_soft", &Quest::lie_soft},
+                {"lie_soft_reply", &Quest::lie_soft_reply},
+                {"lie_big", &Quest::lie_big},
+                {"lie_big_reply", &Quest::lie_big_reply},
+                {"lie_caught", &Quest::lie_caught},
+                {"tell", &Quest::tell},
+                {"lie", &Quest::lie},
+                {"quiet", &Quest::quiet},
+                {"lie_reply", &Quest::lie_reply},
+                {"quiet_reply", &Quest::quiet_reply},
+                {"news", &Quest::news},
+                {"fought", &Quest::fought},
+                {"fought_reply", &Quest::fought_reply},
+                {"confess", &Quest::confess},
+                {"dead_reply", &Quest::dead_reply},
+                {"spot_text", &Quest::spot_text},
+                {"greet_owed", &Quest::greet_owed},
+                {"greet_settle_unasked", &Quest::greet_settle_unasked},
+                {"greet_offer", &Quest::greet_offer},
+                {"thanks_onward", &Quest::thanks_onward},
+                {"offer_2", &Quest::offer_2},
+                {"agreed", &Quest::agreed},
+                {"more", &Quest::more},
+                {"more_reply", &Quest::more_reply},
+                {"opener", &Quest::opener},
+                {"accept", &Quest::accept},
+                {"item_kind", &Quest::item_kind},
+                {"give", &Quest::give},
+                {"give_exposed", &Quest::give_exposed},
+                {"lie_have", &Quest::lie_have},
+                {"lie_have_reply", &Quest::lie_have_reply},
+                {"lie_have_caught", &Quest::lie_have_caught},
+                {"more_2", &Quest::more_2},
+                {"more_2_reply", &Quest::more_2_reply},
+                {"helper_name", &Quest::helper_name},
+                {"seen_with_name", &Quest::seen_with_name},
+                {"item_of", &Quest::item_of},
+                {"greet_rebuffed", &Quest::greet_rebuffed},
+                {"greet_rebuffed_ask", &Quest::greet_rebuffed_ask},
+                {"rebuffed_row", &Quest::rebuffed_row},
+                {"decline_row", &Quest::decline_row},
+                {"decline_reply", &Quest::decline_reply},
+                {"named_more", &Quest::named_more},
+                {"named_more_reply", &Quest::named_more_reply},
+                {"named_row", &Quest::named_row},
+                {"named_reply", &Quest::named_reply},
+                {"give_up_reply", &Quest::give_up_reply},
+                {"wed_soul", &Quest::wed_soul},
+                {"greet_gone_target", &Quest::greet_gone_target},
+                {"greet_wed_target", &Quest::greet_wed_target},
+                {"greet_wed", &Quest::greet_wed},
+                {"wed_more_target", &Quest::wed_more_target},
+                {"wed_more_target_reply", &Quest::wed_more_target_reply},
+                {"wed_more", &Quest::wed_more},
+                {"wed_more_reply", &Quest::wed_more_reply},
+                {"wed_name", &Quest::wed_name},
+            };
             while (sqlite3_step(row) == SQLITE_ROW) {
                 const std::string field = text_at(row, 0);
-                if (field == "onward_soul") quest.onward_soul = text_at(row, 1);
-                else if (field == "onward_name") quest.onward_name = text_at(row, 1);
-                else if (field == "greet_onward") quest.greet_onward = text_at(row, 1);
-                else if (field == "plea_yes") quest.plea_yes = text_at(row, 1);
-                else if (field == "plea_yes_reply") quest.plea_yes_reply = text_at(row, 1);
-                else if (field == "plea_no") quest.plea_no = text_at(row, 1);
-                else if (field == "plea_no_reply") quest.plea_no_reply = text_at(row, 1);
-                else if (field == "plea_threat") quest.plea_threat = text_at(row, 1);
-                else if (field == "plea_threat_reply") quest.plea_threat_reply = text_at(row, 1);
-                else if (field == "beg") quest.beg = text_at(row, 1);
-                else if (field == "spare") quest.spare = text_at(row, 1);
-                else if (field == "spare_reply") quest.spare_reply = text_at(row, 1);
-                else if (field == "arrange_reply") quest.arrange_reply = text_at(row, 1);
-                else if (field == "greet_arranged") quest.greet_arranged = text_at(row, 1);
-                else if (field == "greet_fallen") quest.greet_fallen = text_at(row, 1);
-                else if (field == "fallen") quest.fallen = text_at(row, 1);
-                else if (field == "fallen_reply") quest.fallen_reply = text_at(row, 1);
-                else if (field == "keepsake_name") quest.keepsake_name = text_at(row, 1);
-                else if (field == "thanks_keepsake") quest.thanks_keepsake = text_at(row, 1);
-                else if (field == "thanks_exposed") quest.thanks_exposed = text_at(row, 1);
-                else if (field == "fast_travel") quest.fast_travel_row = text_at(row, 1);
-                else if (field == "fast_travel_reply") quest.fast_travel_reply = text_at(row, 1);
-                else if (field == "fast_travel_later") quest.fast_travel_later_row = text_at(row, 1);
-                else if (field == "fast_travel_later_reply") quest.fast_travel_later_reply = text_at(row, 1);
-                else if (field == "fast_travel_wait") quest.fast_travel_wait_row = text_at(row, 1);
-                else if (field == "fast_travel_wait_reply") quest.fast_travel_wait_reply = text_at(row, 1);
-                else if (field == "offer_threat") quest.offer_threat = text_at(row, 1);
-                else if (field == "offer_threat_reply") quest.offer_threat_reply = text_at(row, 1);
-                else if (field == "offer_no") quest.offer_no = text_at(row, 1);
-                else if (field == "offer_no_reply") quest.offer_no_reply = text_at(row, 1);
-                else if (field == "truth_settles") quest.truth_settles = std::atoi(text_at(row, 1).c_str()) != 0;
+                bool matched = false;
+                for (const LineSlot& slot : kStringSlots) {
+                    if (field == slot.field) {
+                        quest.*(slot.member) = text_at(row, 1);
+                        matched = true;
+                        break;
+                    }
+                }
+                if (matched) continue;
+
+                if (field == "truth_settles") quest.truth_settles = std::atoi(text_at(row, 1).c_str()) != 0;
                 else if (field == "fast_travel_hours") {
                     // "from-to", hours of the day; the written default stands over a bad one.
                     double from = 0, to = 0;
@@ -1080,78 +1171,14 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                         quest.fast_travel_to = to;
                     }
                 }
-                else if (field == "apologise") quest.apologise = text_at(row, 1);
-                else if (field == "apologise_yes") quest.apologise_yes = text_at(row, 1);
-                else if (field == "apologise_no") quest.apologise_no = text_at(row, 1);
-                else if (field == "report") quest.report = text_at(row, 1);
-                else if (field == "keep") quest.keep = text_at(row, 1);
-                else if (field == "kept_reply") quest.kept_reply = text_at(row, 1);
-                else if (field == "pry") quest.pry = text_at(row, 1);
-                else if (field == "pry_yes") quest.pry_yes = text_at(row, 1);
-                else if (field == "pry_no") quest.pry_no = text_at(row, 1);
-                else if (field == "pry_press") quest.pry_press = text_at(row, 1);
-                else if (field == "pry_press_no") quest.pry_press_no = text_at(row, 1);
-                else if (field == "opinion") quest.opinion = text_at(row, 1);
                 else if (field == "opinion_1") quest.opinion_row[0] = text_at(row, 1);
                 else if (field == "opinion_2") quest.opinion_row[1] = text_at(row, 1);
                 else if (field == "opinion_3") quest.opinion_row[2] = text_at(row, 1);
                 else if (field == "opinion_1_reply") quest.opinion_reply[0] = text_at(row, 1);
                 else if (field == "opinion_2_reply") quest.opinion_reply[1] = text_at(row, 1);
                 else if (field == "opinion_3_reply") quest.opinion_reply[2] = text_at(row, 1);
-                else if (field == "paper_ask") quest.paper_ask = text_at(row, 1);
-                else if (field == "paper_ask_reply") quest.paper_ask_reply = text_at(row, 1);
-                else if (field == "greet_handed") quest.greet_handed = text_at(row, 1);
-                else if (field == "told") quest.told = text_at(row, 1);
-                else if (field == "told_reply") quest.told_reply = text_at(row, 1);
-                else if (field == "lie_soft") quest.lie_soft = text_at(row, 1);
-                else if (field == "lie_soft_reply") quest.lie_soft_reply = text_at(row, 1);
-                else if (field == "lie_big") quest.lie_big = text_at(row, 1);
-                else if (field == "lie_big_reply") quest.lie_big_reply = text_at(row, 1);
-                else if (field == "lie_caught") quest.lie_caught = text_at(row, 1);
                 else if (field == "count") quest.count = std::max(1, std::atoi(text_at(row, 1).c_str()));
-                else if (field == "tell") quest.tell = text_at(row, 1);
-                else if (field == "lie") quest.lie = text_at(row, 1);
-                else if (field == "quiet") quest.quiet = text_at(row, 1);
-                else if (field == "lie_reply") quest.lie_reply = text_at(row, 1);
-                else if (field == "quiet_reply") quest.quiet_reply = text_at(row, 1);
-                else if (field == "news") quest.news = text_at(row, 1);
-                else if (field == "fought") quest.fought = text_at(row, 1);
-                else if (field == "fought_reply") quest.fought_reply = text_at(row, 1);
-                else if (field == "confess") quest.confess = text_at(row, 1);
-                else if (field == "dead_reply") quest.dead_reply = text_at(row, 1);
-                else if (field == "spot_text") quest.spot_text = text_at(row, 1);
-                else if (field == "greet_owed") quest.greet_owed = text_at(row, 1);
-                else if (field == "greet_settle_unasked") quest.greet_settle_unasked = text_at(row, 1);
-                else if (field == "greet_offer") quest.greet_offer = text_at(row, 1);
-                else if (field == "thanks_onward") quest.thanks_onward = text_at(row, 1);
-                else if (field == "offer_2") quest.offer_2 = text_at(row, 1);
-                else if (field == "agreed") quest.agreed = text_at(row, 1);
-                else if (field == "more") quest.more = text_at(row, 1);
-                else if (field == "more_reply") quest.more_reply = text_at(row, 1);
-                else if (field == "opener") quest.opener = text_at(row, 1);
-                else if (field == "accept") quest.accept = text_at(row, 1);
-                else if (field == "item_kind") quest.item_kind = text_at(row, 1);
-                else if (field == "give") quest.give = text_at(row, 1);
-                else if (field == "give_exposed") quest.give_exposed = text_at(row, 1);
-                else if (field == "lie_have") quest.lie_have = text_at(row, 1);
-                else if (field == "lie_have_reply") quest.lie_have_reply = text_at(row, 1);
-                else if (field == "lie_have_caught") quest.lie_have_caught = text_at(row, 1);
-                else if (field == "more_2") quest.more_2 = text_at(row, 1);
-                else if (field == "more_2_reply") quest.more_2_reply = text_at(row, 1);
                 else if (field == "unyielding") quest.unyielding = std::atoi(text_at(row, 1).c_str()) != 0;
-                else if (field == "helper_name") quest.helper_name = text_at(row, 1);
-                else if (field == "seen_with_name") quest.seen_with_name = text_at(row, 1);
-                else if (field == "item_of") quest.item_of = text_at(row, 1);
-                else if (field == "greet_rebuffed") quest.greet_rebuffed = text_at(row, 1);
-                else if (field == "greet_rebuffed_ask") quest.greet_rebuffed_ask = text_at(row, 1);
-                else if (field == "rebuffed_row") quest.rebuffed_row = text_at(row, 1);
-                else if (field == "decline_row") quest.decline_row = text_at(row, 1);
-                else if (field == "decline_reply") quest.decline_reply = text_at(row, 1);
-                else if (field == "named_more") quest.named_more = text_at(row, 1);
-                else if (field == "named_more_reply") quest.named_more_reply = text_at(row, 1);
-                else if (field == "named_row") quest.named_row = text_at(row, 1);
-                else if (field == "named_reply") quest.named_reply = text_at(row, 1);
-                else if (field == "give_up_reply") quest.give_up_reply = text_at(row, 1);
                 else if (field == "greet_unwritten") quest.dictation.greet_unwritten = text_at(row, 1);
                 else if (field == "dictate_begin") quest.dictation.begin = text_at(row, 1);
                 else if (field == "dictate_done") quest.dictation.done = text_at(row, 1);
@@ -1181,15 +1208,6 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                         (reply ? choice.reply : choice.row) = text_at(row, 1);
                     }
                 }
-                else if (field == "wed_soul") quest.wed_soul = text_at(row, 1);
-                else if (field == "greet_gone_target") quest.greet_gone_target = text_at(row, 1);
-                else if (field == "greet_wed_target") quest.greet_wed_target = text_at(row, 1);
-                else if (field == "greet_wed") quest.greet_wed = text_at(row, 1);
-                else if (field == "wed_more_target") quest.wed_more_target = text_at(row, 1);
-                else if (field == "wed_more_target_reply") quest.wed_more_target_reply = text_at(row, 1);
-                else if (field == "wed_more") quest.wed_more = text_at(row, 1);
-                else if (field == "wed_more_reply") quest.wed_more_reply = text_at(row, 1);
-                else if (field == "wed_name") quest.wed_name = text_at(row, 1);
                 else if (field.compare(0, 5, "since") == 0) {
                     // since / since_<how> are the giver's; since_target / since_target_<how>
                     // the other party's; since_wed / since_wed_<how> the wed soul's. Each
