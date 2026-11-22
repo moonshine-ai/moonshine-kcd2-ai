@@ -1510,9 +1510,20 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     }
     const std::string start = (ambush || duel) ? "ambushed.OnAcquire" : "seen.OnMatch";
     const std::string victim = (ambush || duel) ? "player" : "target";
+    // A duel's side is the man and the friends the Lua makes behind Henry (the `brawlers`
+    // asset, their souls; a SoulAsset binds to a soul spawned after the module started,
+    // spawn_fight_probe.lua 2 Oct 2026), joined as `duelSide` -- so the relation, the
+    // contexts and the first-blow message reach the made men through the graph rather than
+    // trusting their faction to turn them on Henry. Without friends to make, the man alone.
+    const bool sided = duel && !quest.brawl_guids.empty();
     const std::string brawlers = duel ? "target" : "brawlers";
     const int seconds = duel ? kDuelSeconds : ambush ? kAmbushSeconds : kBrawlSeconds;
     auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    // The attacking side as a node's input: the asset by alias, or the duel's joined array.
+    auto side_in = [&](const std::string& port) {
+        if (sided) return t(5) + "<Edge From=\"duelSide.Array\" To=\"" + port + "\" />\r\n";
+        return t(5) + "<Asset Name=\"" + port + "\" Alias=\"" + brawlers + "\" />\r\n";
+    };
     std::string s;
     s += t(4) + "<State Name=\"brawl\" TypeT=\"bool\">\r\n";
     s += t(5) + "<Edge From=\"" + start + "\" To=\"SetTrue\" />\r\n";
@@ -1526,15 +1537,22 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     s += t(5) + "<Constant Name=\"TimeType\" Value=\"GameTime\" />\r\n";
     s += t(5) + "<Edge From=\"" + start + "\" To=\"SetRunning\" />\r\n";
     s += t(4) + "</Timer>\r\n";
+    if (sided) {
+        s += t(4) + "<Function Name=\"duelSide\" TypeT=\"wh::rpgmodule::Souls\" "
+                    "MethodName=\"utilities::array::JoinArrays\" DeclaringType=\"utilities::array\">\r\n";
+        s += t(5) + "<Asset Name=\"A\" Alias=\"target\" />\r\n";
+        s += t(5) + "<Asset Name=\"B\" Alias=\"brawlers\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+    }
     // Everybody in the fight, for the contexts, the knock-out trigger and the stop.
     s += t(4) + "<Function Name=\"brawlAll\" TypeT=\"wh::rpgmodule::Souls\" "
                 "MethodName=\"utilities::array::JoinArrays\" DeclaringType=\"utilities::array\">\r\n";
-    s += t(5) + "<Asset Name=\"A\" Alias=\"" + brawlers + "\" />\r\n";
+    s += side_in("A");
     s += t(5) + "<Asset Name=\"B\" Alias=\"" + victim + "\" />\r\n";
     s += t(4) + "</Function>\r\n";
     s += t(4) + "<AddFactionRelationBetweenArrays Name=\"brawlHostile\">\r\n";
     s += t(5) + "<Constant Name=\"RelationValue\" Value=\"-1\" />\r\n";
-    s += t(5) + "<Asset Name=\"SoulArray0\" Alias=\"" + brawlers + "\" />\r\n";
+    s += side_in("SoulArray0");
     s += t(5) + "<Asset Name=\"SoulArray1\" Alias=\"" + victim + "\" />\r\n";
     s += t(5) + "<Edge From=\"brawl.State\" To=\"IsActive\" />\r\n";
     s += t(4) + "</AddFactionRelationBetweenArrays>\r\n";
@@ -1542,7 +1560,7 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     // not take the occasion.
     s += t(4) + "<AddFactionRelationWithinArray Name=\"brawlFriends\">\r\n";
     s += t(5) + "<Constant Name=\"RelationValue\" Value=\"1\" />\r\n";
-    s += t(5) + "<Asset Name=\"SoulArray\" Alias=\"" + brawlers + "\" />\r\n";
+    s += side_in("SoulArray");
     s += t(5) + "<Edge From=\"brawl.State\" To=\"IsActive\" />\r\n";
     s += t(4) + "</AddFactionRelationWithinArray>\r\n";
     int n = 0;
@@ -1552,7 +1570,7 @@ std::string emit_brawl(const Quest& quest, bool seen) {
         if (std::string(souls) == "brawlAll") {
             s += t(5) + "<Edge From=\"brawlAll.Array\" To=\"Souls\" />\r\n";
         } else {
-            s += t(5) + "<Asset Name=\"Souls\" Alias=\"" + std::string(souls) + "\" />\r\n";
+            s += side_in("Souls");
         }
         s += t(5) + "<Edge From=\"brawl.State\" To=\"IsActive\" />\r\n";
         s += t(4) + "</SetEntityContext>\r\n";
@@ -1574,7 +1592,7 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     s += t(5) + "<Edge From=\"" + start + "\" To=\"SetRunning\" />\r\n";
     s += t(4) + "</Timer>\r\n";
     s += t(4) + "<ForEach Name=\"brawlEach\" TypeT=\"wh::rpgmodule::Souls\">\r\n";
-    s += t(5) + "<Asset Name=\"Array\" Alias=\"" + brawlers + "\" />\r\n";
+    s += side_in("Array");
     s += t(5) + "<Edge From=\"brawlKick.OnFinished\" To=\"Begin\" />\r\n";
     s += t(4) + "</ForEach>\r\n";
     s += t(4) + "<FirstElement Name=\"brawlVictim\" TypeT=\"wh::rpgmodule::Souls\">\r\n";
@@ -1586,9 +1604,16 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     s += t(5) + "<Constant Name=\"Content_priorityTarget\" Value=\"true\" />\r\n";
     s += t(5) + "<Edge From=\"brawlEach.OnValue\" To=\"Exec\" />\r\n";
     s += t(4) + "</InstantSendMessage>\r\n";
-    // The end: the first one down on either side, or the clock.
+    // The end: the first one down on either side, or the clock. A duel ends on Henry's
+    // knock-out only: a made man going down is the fight going Henry's way (WatchDuel
+    // counts them, and cows the challenger when the last is down), and the challenger's
+    // death has its own edge above.
     s += t(4) + "<SoulUnconsciousTrigger Name=\"brawlKo\">\r\n";
-    s += t(5) + "<Edge From=\"brawlAll.Array\" To=\"Souls\" />\r\n";
+    if (duel) {
+        s += t(5) + "<Asset Name=\"Souls\" Alias=\"" + victim + "\" />\r\n";
+    } else {
+        s += t(5) + "<Edge From=\"brawlAll.Array\" To=\"Souls\" />\r\n";
+    }
     s += t(5) + "<Edge From=\"brawl.State\" To=\"IsActive\" />\r\n";
     s += t(4) + "</SoulUnconsciousTrigger>\r\n";
     s += t(4) + "<Function Name=\"brawlStopFight\" MethodName=\"wh::rpgmodule::StopFight\" "
@@ -1611,7 +1636,7 @@ std::string emit_brawl(const Quest& quest, bool seen) {
     s += t(4) + "<SetEntityContext Name=\"brawlWaking\">\r\n";
     s += t(5) + "<Constant Name=\"Context\" Value=\"crime_suppressReactionAfterGainingConsciousness\" />\r\n";
     if (ambush || duel) {
-        s += t(5) + "<Asset Name=\"Souls\" Alias=\"" + brawlers + "\" />\r\n";
+        s += side_in("Souls");
     } else {
         s += t(5) + "<Edge From=\"brawlAll.Array\" To=\"Souls\" />\r\n";
     }
@@ -2386,7 +2411,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (duel) {
         // The yard: the Lua's token as Henry lands there (DuelSpring, with the man set
         // down facing him and the two made at his back), the ambush's trigger, and the brawl
-        // module with the man alone on the player; then the cowed token (WatchDuel: the two
+        // module with the man and the two on the player; then the cowed token (WatchDuel: the two
         // down), which stops the brawl. Each live until it fires. The note on his body is
         // seeded as a retrieve's thing is (AddSoulDefaultItem), when one is written.
         if (ambushed) {
@@ -3547,9 +3572,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     out.assets_a = s;
     out.wants_player = seen || prayed || left || found || ambushed || gathered || named || written || caught;
     s.clear();
-    // (A duel's brawl_with are the Lua's to make, not the graph's brawlers: emit_brawl sets
-    // the target on the player.)
-    if (quest.has_brawl() && (seen || ambushed) && !duel) {
+    // (A duel's brawl_with are the Lua's to make (DuelSpring); the asset is the same, and
+    // emit_brawl joins them to the target as the side set on the player.)
+    if (quest.has_brawl() && (seen || ambushed)) {
         std::string guids;
         for (const std::string& g : quest.brawl_guids) {
             if (!guids.empty()) guids += ' ';
@@ -11256,14 +11281,17 @@ std::string emit_conversation_lua(const std::string& modid,
     // lands at the yard the man who challenged him is set down on the quest's holder spot
     // facing him (SetWorldPos, as FastTravelHolder does, and turned to the landing rather
     // than from it), the two in brawl_with are made kDuelBehindMetres behind Henry, a pace
-    // apart, out of their own souls (XGenAIModule.SpawnEntity, the shipped CombatDebug.lua's
-    // call: random-encounter bandits of the eventNPCs_enemies_hostile faction, who come at
-    // the player by nature and at the game's own scaling), each given a sword in hand so the
-    // first blow is a blow, and the ambush token goes in Henry's pocket for the graph's
-    // trigger, which sets the man on him (emit_brawl). Their names are kept in the store
-    // (spawned), for WatchDuel to count them down and DuelSweep to take the bodies away. A
-    // soul that will not spawn is logged and the duel goes on with those that did, or with
-    // the man alone.
+    // apart, out of their own souls (random-encounter bandits, at the game's own scaling),
+    // each given a sword in hand so the first blow is a blow, and the ambush token goes in
+    // Henry's pocket for the graph's trigger, which sets the man and them on him
+    // (emit_brawl: the `brawlers` asset is their souls). The spawn is the engine's own
+    // System.SpawnEntity with class NPC and guidSharedSoulId (spawn_probe.lua, 2 Oct 2026:
+    // the soul binds -- faction, class, name); the shipped CombatDebug.lua's
+    // XGenAIModule.SpawnEntity is nil in the retail build, which is how the first duel went
+    // (kcd.log 21 Nov 2026: both "could not be made", and with nobody to count down the
+    // man was cowed in the same tick). Their names are kept in the store (spawned), for
+    // WatchDuel to count them down and DuelSweep to take the bodies away. A soul that will
+    // not spawn is logged and the duel goes on with those that did, or with the man alone.
     s += g + ".duelBehindMetres = " + health_text(kDuelBehindMetres) + "\n";
     s += g + ".duelSword = \"" + std::string(kDuelSwordPreset) + "\"\n";
     s += "function " + g + ".DuelSpring(id, q, me, to)\n";
@@ -11302,8 +11330,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tlocal name = \"mn_duel_\" .. id .. \"_\" .. k\n";
     s += "\t\tlocal made = nil\n";
     s += "\t\tlocal okSpawn, err = pcall(function()\n";
-    s += "\t\t\tlocal eid = XGenAIModule.SpawnEntity{ Name = name, ClassName = \"NPC\", SharedSoulGuid = guid, Pos = { x, y, z } }\n";
-    s += "\t\t\tif eid ~= nil then made = System.GetEntity(eid) end\n";
+    s += "\t\t\tmade = System.SpawnEntity({ class = \"NPC\", name = name, position = { x = x, y = y, z = z },\n";
+    s += "\t\t\t\torientation = { x = -bx, y = -by, z = 0 }, properties = { guidSharedSoulId = guid } })\n";
     s += "\t\t\tif made == nil then made = System.GetEntityByName(name) end\n";
     s += "\t\tend)\n";
     s += "\t\tif made == nil then\n";
@@ -11339,7 +11367,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // The duel's watch: the man dead -> the `killed` ending (the graph's own death trigger
     // completes the quest; the store learns it here); his made friends all down and him
     // alive -> the cowed token (the brawl stops, the objective's line, and he begs through
-    // the app). The friends left unconscious are taken away then, so nobody wakes into a
+    // the app). Where none could be made he fought alone, and it is his own knock-out that
+    // cows him -- not an empty list, which would cow him as he drew (the first duel).
+    // The friends left unconscious are taken away then, so nobody wakes into a
     // second fight; the dead lie where they fell until DuelSweep (Henry gone off, or the
     // duel over) takes them. Past done: the sweep, and a spared man kept out of the world
     // (DuelGone) after each load.
@@ -11364,7 +11394,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif not down then standing = standing + 1 end\n";
     s += "\tend\n";
     s += "\tif standing > 0 then return end\n";
-    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \"'s friends are down; he is cowed\")\n";
+    s += "\tif f.spawned == nil or #f.spawned == 0 then\n";
+    s += "\t\tif not " + g + ".DuelDown(q.target) then return end\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" fought alone and is down; he is cowed\")\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \"'s friends are down; he is cowed\")\n";
+    s += "\tend\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"cowed\")\n";
     s += "\tif q.cowedToken ~= nil then " + g + ".Token(q, q.cowedToken) end\n";
     s += "\t" + g + ".DuelSweep(id, q, pp, true)\n";

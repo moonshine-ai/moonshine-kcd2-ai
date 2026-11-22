@@ -5512,7 +5512,8 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     local made = {}
     for k, name in ipairs(f.spawned) do
         local e = System.GetEntityByName(name)
-        check(e ~= nil and e.spec ~= nil and e.spec.SharedSoulGuid == q.spawn[k], name .. " made from the soul pool")
+        check(e ~= nil and e.spec ~= nil and e.spec.class == "NPC" and e.spec.properties ~= nil and e.spec.properties.guidSharedSoulId == q.spawn[k],
+              name .. " made from the soul pool by the engine's spawn (class NPC, guidSharedSoulId)")
         if e ~= nil then
             local mp = e:GetWorldPos()
             local behind = (mp.x - ft.x) * (spot.x - ft.x) + (mp.y - ft.y) * (spot.y - ft.y)
@@ -5572,6 +5573,31 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(f.done == true and f.dead == true and f.how == "dead", "the man dead is the dead way: " .. tostring(f.how))
     check(player.inventory:GetMoney() == before, "nothing paid for a dead man")
     man.alive = true
+    -- Nobody made (the game will not spawn): the man fights alone, and is not cowed by an
+    -- empty list -- the first duel's fault -- but by his own knock-out.
+    M.state.quests[id] = { accepted = true }
+    M.duelGoneDone[id] = nil
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    for k = 1, 2 do
+        local e = System.GetEntityByName("mn_duel_" .. id .. "_" .. k)
+        if e ~= nil then System.RemoveEntity(e.id) end
+    end
+    local spawn = System.SpawnEntity
+    System.SpawnEntity = function() return nil end
+    mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    System.SpawnEntity = spawn
+    f = M.state.quests[id]
+    check(f.ambushed == true and #(f.spawned or {}) == 0 and E.count("could not be made", mark) == 2, "sprung with nobody made, said in the log")
+    E.advance(2100)
+    check(M.state.quests[id].cowed ~= true, "not cowed for want of friends")
+    man.down = true
+    mark = E.mark()
+    E.advance(2100)
+    f = M.state.quests[id]
+    check(f.cowed == true and E.find("fought alone and is down; he is cowed", mark), "his own knock-out cows him")
+    man.down = nil
 end)
 
 case("Fall: the telling arranges the morning (the letter A, nothing paid, the clock set to the next fall hour); at the hour the one asked is gone from the world and the store says fallen (F, x, how fallen); the giver's complete pays nothing and is the fallen beat; he is kept gone after a load", function(E, M, check)

@@ -1399,16 +1399,17 @@ QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach&
         return plan;
     }
     if (facts.accepted) {
-        const bool evening = approach.hour != kUnread && approach.hour >= quest.fast_travel_from &&
-                             approach.hour < quest.fast_travel_to;
+        // The carry's hours are the dark ones (fast_travel_hours; bugs.txt 21 Nov 2026).
+        const bool dark = approach.hour != kUnread && approach.hour >= quest.fast_travel_from &&
+                          approach.hour < quest.fast_travel_to;
         plan.block = "This person came to you knowing the church's cup came out of your chest, and "
                      "threatened you with the bailiff over it. You did not give an inch: you offered "
                      "them a fight, man to man, in " + yard + ", and they "
                      "took you up on it. You have two men who will be waiting there to see it goes "
                      "your way, which this person does not know. " +
-                     (evening ? "It is evening and you are ready to go now, this moment, if they are; you say so."
-                              : "It is not evening yet; you tell them to find you in the evening, and you "
-                                "will take them there yourself.") +
+                     (dark ? "It is dark and you are ready to go now, this moment, if they are; you say so."
+                           : "It is not dark yet; you tell them to find you here after dark, and you "
+                             "will take them there yourself.") +
                      " You are easy and a little mocking about it. You do not speak of the cup or of "
                      "the bell-ringer unasked, and you admit nothing.";
         return plan;
