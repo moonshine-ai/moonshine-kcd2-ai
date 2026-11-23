@@ -70,6 +70,13 @@ struct CommandCandidate {
     bool is_absentee = false;
     std::string why_unmeetable;
     std::string person_token;
+    std::string via_name;
+    std::vector<std::string> quest_ids;
+};
+
+struct SoulWhereabouts {
+    std::string home_fact;
+    std::string self_intro;
 };
 
 struct ExtractedCommand {
@@ -82,6 +89,7 @@ struct ExtractedCommand {
 struct CommandOutcome {
     CommandAction action = CommandAction::None;
     CommandStatus status = CommandStatus::NoAction;
+    std::string target_mention;
     std::string soul_name;
     std::string display_name;
     std::string settlement;
@@ -153,10 +161,12 @@ public:
 
     std::vector<CommandCandidate> candidates_for(std::string_view speaker_soul);
     std::vector<RoutineSpot> spots_of(std::string_view target_soul);
+    SoulWhereabouts whereabouts_of(std::string_view target_soul);
 
 private:
     std::vector<CommandCandidate> query_db_candidates(std::string_view speaker_soul) const;
     std::vector<RoutineSpot> query_db_spots(std::string_view target_soul) const;
+    SoulWhereabouts query_db_whereabouts(std::string_view target_soul) const;
 
     std::filesystem::path path_;
     sqlite3* db_ = nullptr;
@@ -179,7 +189,7 @@ public:
     std::string pass1_keyterms(std::string_view speaker_soul,
                                const std::vector<Message>& history,
                                const SoulRecord& record,
-                               std::size_t max_terms = 30);
+                               std::size_t max_terms = 45);
 
     // Expanded Hop-1 + Hop-2 + canonical settlement keyterms for conditional Pass-2 replay.
     std::string pass2_keyterms(std::string_view speaker_soul,

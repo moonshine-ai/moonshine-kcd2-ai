@@ -870,6 +870,7 @@ Commanding open_commands(const Args& args, Embedder* embedder) {
     if (gguf.empty()) {
         for (const char* candidate : {
                  "models/qwen3-0.6b-sft-Q4_K_M.gguf",
+                 "tools/command_bench/gguf_models/qwen3-0.6b-sft-Q4_K_M.gguf",
                  "build/command_bench/gguf/qwen3-0.6b-sft-Q4_K_M.gguf",
              }) {
             if (std::filesystem::exists(candidate)) {
@@ -908,7 +909,19 @@ Commanding open_commands(const Args& args, Embedder* embedder) {
         return out;
     }
     Stage1Gate gate;
-    if (const auto loaded = Stage1Gate::load_json(args.command_gate)) gate = *loaded;
+    for (const std::filesystem::path& gate_cand : {
+             std::filesystem::path(args.command_gate),
+             std::filesystem::path("models/stage1_gate_weights.json"),
+             std::filesystem::path("tools/command_bench/models/stage1_gate_weights.json"),
+             std::filesystem::path("tools/command_bench/stage1_gate_weights.json"),
+         }) {
+        if (!gate_cand.empty() && std::filesystem::exists(gate_cand)) {
+            if (const auto loaded = Stage1Gate::load_json(gate_cand)) {
+                gate = *loaded;
+                break;
+            }
+        }
+    }
     out.director = std::make_unique<CommandDirector>(embedder, out.sidecar.get(), *out.graph,
                                                      std::move(gate), side_opts);
     std::cout << "commands:   sidecar " << out.sidecar->describe()

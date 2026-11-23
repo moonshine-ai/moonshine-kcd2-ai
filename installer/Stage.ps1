@@ -306,6 +306,16 @@ Step 'models'
 $models = Join-Path $Repo 'models'
 $modelsOut = Join-Path $pkg 'models'
 Copy-Same (Join-Path $models 'embeddinggemma-300m-q8_0.gguf') (Join-Path $modelsOut 'embeddinggemma-300m-q8_0.gguf')
+# Optional command-understanding sidecar + Stage-1 gate weights when present in models\.
+if (Test-Path -LiteralPath (Join-Path $models 'qwen3-0.6b-sft-Q4_K_M.gguf')) {
+    Copy-Same (Join-Path $models 'qwen3-0.6b-sft-Q4_K_M.gguf') (Join-Path $modelsOut 'qwen3-0.6b-sft-Q4_K_M.gguf')
+}
+foreach ($gatePath in @((Join-Path $models 'stage1_gate_weights.json'), (Join-Path $Repo 'tools\command_bench\stage1_gate_weights.json'))) {
+    if (Test-Path -LiteralPath $gatePath) {
+        Copy-Same $gatePath (Join-Path $modelsOut 'stage1_gate_weights.json')
+        break
+    }
+}
 # The voice: the Moonshine framework's Phonon bundle (scripts\fetch_models.ps1), the graphs
 # and tokenizer with the souls' voices in voices\. The folder keeps the name "phonon": the
 # engine reads <models>\phonon\... An earlier stage's phonon-31m-en (the xn-ptts GGUF
@@ -464,7 +474,7 @@ foreach ($top in @('data', 'mod', 'models')) {
     $files = Get-ChildItem -LiteralPath (Join-Path $pkg $top) -Recurse -File -Force | Where-Object { $_.Name -notlike '*.from' -and $_.Name -notlike '*.part' } | Sort-Object FullName
     foreach ($file in $files) {
         $rel = $file.FullName.Substring($pkg.Length + 1) -replace '\\', '/'
-        if ($top -eq 'models') {
+        if ($top -eq 'models' -and $rel -notin @('models/qwen3-0.6b-sft-Q4_K_M.gguf', 'models/stage1_gate_weights.json')) {
             # Only what models.tsv pins can be downloaded; a model folder cloned from the Hub
             # brings a README and .gitattributes the app never reads, and they go.
             $pin = $pins[$rel]
@@ -473,6 +483,11 @@ foreach ($top in @('data', 'mod', 'models')) {
                 Remove-Item -LiteralPath $file.FullName -Force
                 continue
             }
+            $sha = Sha256-Cached $file.FullName $rel
+            if ($pin.bytes -ne $file.Length -or $pin.sha256 -ne $sha) { Fail "$rel differs from its pin in scripts\models.tsv (run scripts\fetch_models.ps1)" }
+            $url = $pin.url
+        } elseif ($top -eq 'models' -and $pins.ContainsKey($rel)) {
+            $pin = $pins[$rel]
             $sha = Sha256-Cached $file.FullName $rel
             if ($pin.bytes -ne $file.Length -or $pin.sha256 -ne $sha) { Fail "$rel differs from its pin in scripts\models.tsv (run scripts\fetch_models.ps1)" }
             $url = $pin.url

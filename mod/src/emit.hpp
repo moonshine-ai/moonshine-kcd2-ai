@@ -252,23 +252,48 @@ constexpr const char* kSearchObjective = "search";
 constexpr const char* kSearchMarkClass = "86f47744-0555-564b-a32d-56ce873bb67c";
 constexpr const char* kSearchMarkName = "moonshine_sucked_egg";
 
-// Freeform NPC locate command (@locate <soul> <len>:<spots>): one per-level micro quest
-// (q_locate_<level>.xml) tracking an invisible ground pin (kLocatePinClass) laid at the
-// located soul's live position or time-of-day routine spot, switched Shown and Hidden by
-// pocket tokens so any of the 3,000+ souls can be marked on the map and compass HUD.
+// Freeform NPC locate command (@locate <soul> <len>:<spots>): sharded per-level micro
+// quests (q_locate_<level>_<shard>.xml, up to kLocateShardSize souls each) where each
+// soul has its own SoulAsset marker and named objective ("Find <full_name>"). A 2D
+// shard x slot token mux (1 shard-open token + 1 of 64 shared slot tokens) opens the
+// target soul's objective, and kLocateClearClass resets both the objective and questState
+// to None (SetNone) when Henry reaches/talks to the soul, asks for new directions, or
+// after kLocateExpireHours in-game hours -- ensuring at most one directions quest and
+// marker exists at any time, with zero ground items ever placed.
+// Legacy kLocatePinClass / kLocateShownClass / kLocateHiddenClass and q_locate_<level>.xml
+// remain as inert save-compatibility shims for saves made before sharding.
 constexpr const char* kLocatePinClass = "6d6f6f6e-7368-6c70-8000-000000000001";
 constexpr const char* kLocatePinName = "locate_pin";
 constexpr const char* kLocateShownClass = "6d6f6f6e-7368-6c73-8000-000000000001";
 constexpr const char* kLocateShownName = "locate_shown";
 constexpr const char* kLocateHiddenClass = "6d6f6f6e-7368-6c68-8000-000000000001";
 constexpr const char* kLocateHiddenName = "locate_hidden";
+constexpr const char* kLocateClearClass = "6d6f6f6e-7368-6c63-8000-000000000001";
+constexpr const char* kLocateClearName = "locate_clear";
+constexpr std::size_t kLocateShardSize = 64;
 constexpr double kLocateReachMetres = 6.0;
-constexpr double kLocateMoveMetres = 15.0;
+constexpr double kLocateExpireHours = 24.0;
+
+int locate_level_code(const std::string& level);
+std::string locate_slot_class(std::size_t slot);
+std::string locate_slot_name(std::size_t slot);
+std::string locate_shard_class(const std::string& level, std::size_t shard);
+std::string locate_shard_name(const std::string& level, std::size_t shard);
+std::string locate_shard_node(const std::string& level, std::size_t shard);
+std::vector<const LocateSoul*> locate_souls_in_level(const std::vector<LocateSoul>& locate_souls,
+                                                     const std::string& level);
+std::size_t locate_shard_count(const std::vector<LocateSoul>& locate_souls, const std::string& level);
 
 std::string locate_node(const std::string& level);
 std::string emit_locate_quest(const std::string& modid, const std::string& level);
+std::string emit_locate_shard_quest(const std::string& modid,
+                                    const std::string& level,
+                                    std::size_t shard,
+                                    const std::vector<const LocateSoul*>& shard_souls);
 std::vector<std::pair<std::string, std::string>> locate_localization(const std::string& modid,
                                                                      const std::string& level);
+std::vector<std::pair<std::string, std::string>> locate_souls_localization(
+    const std::string& modid, const std::vector<LocateSoul>& locate_souls);
 
 // A giver's hail as the game's own bark (notes.md 14 Oct 2026, In the Stocks: Benesh's
 // words over his head, not on the dialogue's caption). q_<id>_hail.xml is a one-line
@@ -438,7 +463,8 @@ std::string link_open_name(const Quest& quest);
 // one per beggar among `personas`, no quest's). Empty when there is nothing to write. The
 // rows the inventory shows for them go in the same localization table as everything else.
 std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests,
-                            const std::vector<Persona>& personas);
+                            const std::vector<Persona>& personas,
+                            const std::vector<LocateSoul>& locate_souls = {});
 std::vector<std::pair<std::string, std::string>> item_localization(const std::string& modid,
                                                                    const std::vector<Quest>& quests);
 
@@ -495,7 +521,8 @@ std::string emit_quest_level(const std::string& modid,
                              const std::string& level,
                              const std::string& dialogue_name,
                              const std::vector<Persona>& personas,
-                             const std::vector<Quest>& quests);
+                             const std::vector<Quest>& quests,
+                             const std::vector<LocateSoul>& locate_souls = {});
 
 // Data/Quests/<modid>/q_<id>.xml -- one Micro quest in the shipped shape: a
 // QuestProgress state driven by two In ports, one objective whose journal logs are
@@ -1161,7 +1188,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const std::string& leave_hint,
                                   const ScreenText& screen,
                                   const std::vector<std::string>& inboxes,
-                                  const std::vector<Quest>& quests);
+                                  const std::vector<Quest>& quests,
+                                  const std::vector<LocateSoul>& locate_souls = {});
 
 // Data/Libs/Config/<modid>_typing.xml -- a keyboard, as two actionmaps, which the
 // conversation Lua loads at runtime with ActionMapManager.LoadFromXML rather than by

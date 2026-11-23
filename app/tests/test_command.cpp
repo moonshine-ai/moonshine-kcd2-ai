@@ -241,3 +241,64 @@ TEST_CASE("Session emits @locate on command turns while preserving KnowledgeDire
     CHECK(turn3.find("@heard soul_margaret") != std::string::npos);
     CHECK(dialogue_llm.calls.back().messages.front().content == sys_turn2);
 }
+
+TEST_CASE("real npcs.sqlite: Father Ernest resolves Benesh via co-located parish priest Father Adam and suppresses KB ignorance fallback") {
+    if (!std::filesystem::exists("data/kcd2/npcs.sqlite")) return;
+
+    CommandGraph graph("data/kcd2/npcs.sqlite");
+    REQUIRE(graph.ok());
+
+    const auto cands = graph.candidates_for("kkut_additive_man_138");
+    CHECK(!cands.empty());
+    bool has_father_adam = false;
+    bool has_benesh = false;
+    for (const auto& c : cands) {
+        if (c.soul_name == "kkut_additive_man_135") has_father_adam = true;
+        if (c.soul_name == "kkut_additive_man_52") has_benesh = true;
+    }
+    CHECK(has_father_adam);
+    CHECK(has_benesh);
+
+    StubLlm sidecar;
+    CommandDirector dir(nullptr, &sidecar, graph);
+    SoulRecord rec;
+    rec.quests.emplace_back("979c4fccd41b", "accepted");  // In the Stocks
+
+    const CommandOutcome out = dir.link(
+        "kkut_additive_man_138", "Father Ernest", parse_extracted_command("LOCATE: Benesh"), {}, rec);
+    CHECK(out.status == CommandStatus::ResolvedSoul);
+    CHECK(out.soul_name == "kkut_additive_man_52");
+    CHECK(out.directive.find("@locate kkut_additive_man_52 ") == 0);
+    CHECK(out.direction.find("through Father Adam") != std::string::npos);
+    CHECK(out.direction.find("do not say you do not know them") != std::string::npos);
+
+    // Father Clement + STT mishearing "Banash Bell" -> grounded Benesh Bell (parish clerk, right by the smithy)
+    const std::string clement_p1 = dir.pass1_keyterms("kkut_additive_man_137", {}, {});
+    CHECK(clement_p1.find("Benesh Bell") != std::string::npos);
+
+    const CommandOutcome clem = dir.link(
+        "kkut_additive_man_137", "Father Clement", parse_extracted_command("LOCATE: Banash Bell"), {}, {});
+    CHECK(clem.status == CommandStatus::ResolvedSoul);
+    CHECK(clem.soul_name == "kkut_additive_man_17");
+    CHECK(clem.direction.find("You know of Benesh Bell through Father Dominic") != std::string::npos);
+    CHECK(clem.direction.find("parish clerk") != std::string::npos);
+    CHECK(clem.direction.find("right by the smithy") != std::string::npos);
+    CHECK(clem.direction.find("do not invent any other trade, shop, market, forge, street or rumour") !=
+          std::string::npos);
+
+    // Father Dominic (KbGate::Shut because his chain quest awaits Holy Jest) still locates Benesh Bell
+    const CommandOutcome dom = dir.link("kkut_additive_man_136", "Father Dominic",
+                                        parse_extracted_command("LOCATE: Benesh Bell"), {}, {}, KbGate::Shut);
+    CHECK(dom.status == CommandStatus::ResolvedSoul);
+    CHECK(dom.soul_name == "kkut_additive_man_17");
+
+    // Stranger unknown to Father Clement gets explicit anti-hallucination abstention
+    const CommandOutcome unk = dir.link(
+        "kkut_additive_man_137", "Father Clement", parse_extracted_command("LOCATE: Ulrich Potter"), {}, {});
+    CHECK(unk.status == CommandStatus::UnknownToNpc);
+    CHECK(unk.directive.empty());
+    CHECK(unk.direction.find("do not guess, suggest a market, tavern or street, or invent any rumour") !=
+          std::string::npos);
+}
+
+

@@ -38,6 +38,18 @@ struct Filter {
 // failure, including a database with no generated_name table.
 std::vector<Persona> read_personas(const std::string& db_path, const Filter& filter);
 
+// Every human soul on a game level (kutnohorsko, trosecko, klaster) with a SoulAsset
+// GUID and a display/generated name, so @locate can point an objective ("Find <name>")
+// directly at the soul rather than dropping ground items.
+struct LocateSoul {
+    std::string soul_name;
+    std::string full_name;
+    std::string soul_guid;
+    std::string level;
+};
+
+std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filter& filter);
+
 // One small quest the bio generator dealt between two souls and wrote journal text
 // for: the giver wants an item back from the target and pays for it. The guids are
 // the souls' soul_id, which is what a Skald SoulAsset names in SharedSoulGuids; the

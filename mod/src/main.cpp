@@ -325,6 +325,8 @@ int main(int argc, char** argv) {
         if (personas.empty()) {
             throw std::runtime_error("no personas matched; nothing to build");
         }
+        std::vector<kcd2::LocateSoul> locate_souls =
+            o.dialogue ? kcd2::read_locate_souls(o.db, filter) : std::vector<kcd2::LocateSoul>{};
 
         // Two souls sharing a soul_name would mean two rules fighting over one
         // <hasName> selector, so refuse rather than ship an ambiguous mod.
@@ -421,7 +423,7 @@ int main(int argc, char** argv) {
                 // journal's region comes from it), and its folder, where their files go.
                 const std::string level_dir = "Quests/" + o.modid + "/" + level + "/";
                 data_pak.add("Quests/" + o.modid + "/" + level + ".xml",
-                             kcd2::emit_quest_level(o.modid, level, dialogue_name, personas, quests));
+                             kcd2::emit_quest_level(o.modid, level, dialogue_name, personas, quests, locate_souls));
                 data_pak.add(level_dir + dialogue_name + ".xml", dialogue);
                 // And a beggar's thanks for a garment, a man's and a woman's, stood in the
                 // Level (thanks_class).
@@ -429,12 +431,25 @@ int main(int argc, char** argv) {
                     data_pak.add(level_dir + kcd2::thanks_node(female) + ".xml",
                                  kcd2::emit_thanks_dialogue(o.modid, level, female));
                 }
-                // Freeform @locate <soul> map and compass marker quest for this level.
+                // Legacy @locate save-compatibility shim + sharded per-soul SoulAsset quests.
                 data_pak.add(level_dir + kcd2::locate_node(level) + ".xml",
                              kcd2::emit_locate_quest(o.modid, level));
                 for (auto& row : kcd2::locate_localization(o.modid, level)) {
                     loc_extras.push_back(std::move(row));
                 }
+                const std::vector<const kcd2::LocateSoul*> lvl_souls =
+                    kcd2::locate_souls_in_level(locate_souls, level);
+                for (std::size_t sh = 0; sh * kcd2::kLocateShardSize < lvl_souls.size(); ++sh) {
+                    const std::size_t from = sh * kcd2::kLocateShardSize;
+                    const std::size_t to = std::min(from + kcd2::kLocateShardSize, lvl_souls.size());
+                    std::vector<const kcd2::LocateSoul*> slice(lvl_souls.begin() + from,
+                                                               lvl_souls.begin() + to);
+                    data_pak.add(level_dir + kcd2::locate_shard_node(level, sh) + ".xml",
+                                 kcd2::emit_locate_shard_quest(o.modid, level, sh, slice));
+                }
+            }
+            for (auto& row : kcd2::locate_souls_localization(o.modid, locate_souls)) {
+                loc_extras.push_back(std::move(row));
             }
             // One file per quest beside its level's dialogue, and its journal rows in the
             // same table as everything else the mod says.
@@ -502,7 +517,7 @@ int main(int argc, char** argv) {
             }
             // The mod's own item rows, when a favour is about a thing the shipped tables
             // cannot put in a pocket, and their names for the inventory.
-            if (const std::string items = kcd2::emit_item_table(o.modid, quests, personas); !items.empty()) {
+            if (const std::string items = kcd2::emit_item_table(o.modid, quests, personas, locate_souls); !items.empty()) {
                 data_pak.add("Libs/Tables/item/item__" + o.modid + ".xml", items);
                 for (auto& row : kcd2::item_localization(o.modid, quests)) {
                     loc_extras.push_back(std::move(row));
@@ -567,7 +582,7 @@ int main(int argc, char** argv) {
         data_pak.add("Scripts/mods/" + o.modid + ".lua",
                      kcd2::emit_conversation_lua(o.modid, personas, o.dialogue_role,
                                                  o.dialogue_metarole, o.leave_hint, o.screen,
-                                                 inboxes, quests));
+                                                 inboxes, quests, locate_souls));
         data_pak.write(o.out + "/Data/" + o.modid + ".pak");
 
         kcd2::Pak loc_pak;

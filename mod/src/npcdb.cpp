@@ -123,6 +123,97 @@ std::string level_for_region(const std::string& region) {
     return "";
 }
 
+std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filter& filter) {
+    sqlite3* raw_db = nullptr;
+    if (sqlite3_open_v2(db_path.c_str(), &raw_db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+        DbHandle doomed(raw_db, &sqlite3_close);
+        throw std::runtime_error("cannot open " + db_path + ": " +
+                                 (raw_db ? sqlite3_errmsg(raw_db) : "out of memory"));
+    }
+    DbHandle db(raw_db, &sqlite3_close);
+
+    const bool has_skald =
+        sqlite3_table_column_metadata(db.get(), nullptr, "skald_character", "skald_character_name",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_kind =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "kind",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_display =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "display_name",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    std::string name_expr = "g.full_name";
+    if (has_skald && has_display) {
+        name_expr = "COALESCE(g.full_name, s.full_name, s.ui_name, n.display_name)";
+    } else if (has_display) {
+        name_expr = "COALESCE(g.full_name, n.display_name)";
+    }
+
+    std::string sql =
+        "SELECT n.soul_name, " + name_expr + ", COALESCE(n.soul_id, ''), COALESCE(n.region, '') "
+        "FROM npc n "
+        "LEFT JOIN generated_name g USING (soul_id) ";
+    if (has_skald) {
+        sql += "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name ";
+    }
+
+    std::vector<std::string> bound;
+    std::string where_prefix = "WHERE ";
+    if (has_kind) {
+        sql += "WHERE COALESCE(n.kind, 'human') = 'human' ";
+        where_prefix = "AND ";
+    }
+    const struct {
+        const char* column;
+        const std::vector<std::string>* values;
+    } clauses[] = {
+        {"n.settlement", &filter.settlements},
+        {"g.household_key", &filter.households},
+        {"n.soul_name", &filter.souls},
+    };
+    for (const auto& c : clauses) {
+        if (c.values->empty()) continue;
+        sql += where_prefix;
+        where_prefix = "AND ";
+        sql += std::string(c.column) + " IN (" + placeholders(c.values->size()) + ") ";
+        bound.insert(bound.end(), c.values->begin(), c.values->end());
+    }
+    sql += "ORDER BY n.soul_name";
+
+    sqlite3_stmt* raw_stmt = nullptr;
+    if (sqlite3_prepare_v2(db.get(), sql.c_str(), -1, &raw_stmt, nullptr) != SQLITE_OK) {
+        fail(db.get(), "preparing locate souls query failed");
+    }
+    StmtHandle stmt(raw_stmt, &sqlite3_finalize);
+
+    for (std::size_t i = 0; i < bound.size(); ++i) {
+        sqlite3_bind_text(stmt.get(), static_cast<int>(i + 1), bound[i].c_str(), -1,
+                          SQLITE_TRANSIENT);
+    }
+
+    auto text = [&](int col) {
+        const unsigned char* p = sqlite3_column_text(stmt.get(), col);
+        return p ? std::string(reinterpret_cast<const char*>(p)) : std::string();
+    };
+
+    std::vector<LocateSoul> out;
+    int rc;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+        LocateSoul s;
+        s.soul_name = text(0);
+        s.full_name = text(1);
+        s.soul_guid = text(2);
+        s.level = level_for_region(text(3));
+        if (!s.soul_name.empty() && !s.full_name.empty() && !s.soul_guid.empty() && !s.level.empty()) {
+            out.push_back(std::move(s));
+        }
+    }
+    if (rc != SQLITE_DONE) {
+        fail(db.get(), "reading locate souls failed");
+    }
+    return out;
+}
+
 std::vector<Quest> read_quests(const std::string& db_path, const std::vector<Persona>& personas) {
     sqlite3* raw_db = nullptr;
     if (sqlite3_open_v2(db_path.c_str(), &raw_db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {

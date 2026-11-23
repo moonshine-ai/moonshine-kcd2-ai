@@ -1237,33 +1237,71 @@ void Session::answer(std::string_view said, bool remember) {
     // just heard a yes: the words were an acceptance, and the direction for that is the
     // quest's. Only for words typed or spoken, or the one pick (`help`) that asks for the
     // favour: the other picks are the app's own rows, written with their answers.
+    // Freeform player commands ("Where is Margaret?", "Follow me", "Travel to Trosky"):
+    // runs alongside KnowledgeDirector so real KB facts (e.g. "banned from the church grounds")
+    // stay intact, while KnowledgeDirector's generic "you know nothing of it" fallback is
+    // suppressed whenever a command resolves or abstains with its own grounded direction.
+    CommandOutcome cmd;
+    std::string kb_query(said);
+    if (commands_ && judged.empty() && picked_intent_.empty() && !offering) {
+        const auto retx =
+            (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
+        cmd = commands_->resolve(
+            soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx);
+        // If Henry already accepted this giver's errand and asks where the quest's own target
+        // is, let the giver direct him there rather than putting him off behind KbGate::Owed.
+        if (cmd.action == CommandAction::LocateNpc &&
+            cmd.status == CommandStatus::GatedByTrust &&
+            persona_.scripted.kb_gate == KbGate::Owed &&
+            persona_.quest_of.exists() &&
+            !persona_.quest_of.target_soul.empty() &&
+            cmd.soul_name == persona_.quest_of.target_soul) {
+            cmd = commands_->resolve(soul_, persona_.name, "", said, history_, record_, KbGate::Open, nullptr);
+        }
+        // When phonetic/fuzzy entity linking corrected an STT name typo ("Banash" -> "Benesh"),
+        // substitute the canonical spelling for KB retrieval so KnowledgeDirector hits too.
+        if (!cmd.target_mention.empty() && !cmd.display_name.empty() &&
+            (cmd.status == CommandStatus::ResolvedSoul || cmd.status == CommandStatus::ResolvedPlace)) {
+            std::string low_q = kb_query;
+            std::string low_m = cmd.target_mention;
+            for (char& ch : low_q) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            for (char& ch : low_m) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            const std::size_t pos = low_q.find(low_m);
+            if (pos != std::string::npos) {
+                kb_query.replace(pos, cmd.target_mention.size(), cmd.display_name);
+            }
+        }
+    }
     Advice advice;
     if (judged.empty() && (picked_intent_.empty() || picked_intent_ == "help")) {
-        advice = advise(said, offering || picked_intent_ == "help");
-        if (!advice.direction.empty()) {
+        advice = advise(kb_query, offering || picked_intent_ == "help");
+        if (cmd.status == CommandStatus::GatedByTrust && !advice.knows) {
+            const Quest& quest = persona_.quest_of;
+            const bool giver = quest.exists() && quest.role == QuestRole::Giver;
+            Advice synth;
+            synth.knows = true;
+            synth.note = cmd.note;
+            advice = gate_knowledge(std::move(synth), persona_.scripted.kb_gate,
+                                    giver ? quest.id : std::string(),
+                                    giver ? quest.offer : std::string(),
+                                    ask_state() == AskState::Again,
+                                    persona_.scripted.remind);
+        }
+        const bool suppress_fallback = (!cmd.direction.empty() && advice.item_id.empty());
+        if (!advice.direction.empty() && !suppress_fallback) {
             heard += " " + advice.direction;
             status("knowledge: " + advice.note);
         }
     }
-    // Freeform player commands ("Where is Margaret?", "Follow me", "Travel to Trosky"):
-    // runs after KnowledgeDirector so biographical questions stay untouched, while resolved
-    // location/follow/travel commands ride on the reply's turn file (`@locate`, `@follow`,
-    // `@travel`) and add a brief in-character direction without mutating Qwen3-4B's KV prefix.
-    if (commands_ && judged.empty() && picked_intent_.empty() && !offering) {
-        const auto retx =
-            (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
-        CommandOutcome cmd = commands_->resolve(
-            soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx);
-        if (cmd.action != CommandAction::None) {
-            if (!cmd.directive.empty()) pending_.push_back(cmd.directive);
-            if (!cmd.heard_token.empty() &&
-                std::find(heard_.begin(), heard_.end(), cmd.heard_token) == heard_.end()) {
-                heard_.push_back(cmd.heard_token);
-                pending_.push_back("@heard " + cmd.heard_token);
-            }
-            if (!cmd.direction.empty()) heard += " " + cmd.direction;
-            if (!cmd.note.empty()) status("command: " + cmd.note);
+    if (cmd.action != CommandAction::None) {
+        if (!cmd.directive.empty()) pending_.push_back(cmd.directive);
+        if (!cmd.heard_token.empty() &&
+            std::find(heard_.begin(), heard_.end(), cmd.heard_token) == heard_.end()) {
+            heard_.push_back(cmd.heard_token);
+            pending_.push_back("@heard " + cmd.heard_token);
         }
+        if (!cmd.direction.empty()) heard += " " + cmd.direction;
+        if (!cmd.note.empty()) status("command: " + cmd.note);
     }
     last_said_voiced_ = false;
     // A seed the model answers is spent like one answered from the database, so the list

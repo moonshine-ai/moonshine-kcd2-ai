@@ -266,19 +266,25 @@ double salience_bonus_for(const CommandCandidate& cand,
         }
     }
 
-    // 2. Active/recorded quest participant (+0.03)
-    if (!cand.soul_name.empty()) {
+    // 2. Active/recorded quest participant (+0.08 when active, +0.04 when done)
+    if (!cand.quest_ids.empty()) {
         for (const auto& [qid, qstage] : record.quests) {
-            (void)qid;
-            if (qstage == "accepted" || qstage == "handed") {
-                bonus += 0.03;
-                break;
+            if (std::find(cand.quest_ids.begin(), cand.quest_ids.end(), qid) != cand.quest_ids.end()) {
+                if (qstage == "accepted" || qstage == "handed") {
+                    bonus += 0.08;
+                    break;
+                }
+                if (qstage == "done") {
+                    bonus += 0.04;
+                    break;
+                }
             }
         }
     }
 
     // 3. Previously met or `@heard` by Henry (+0.05)
-    if (!cand.person_token.empty() && record.knows(cand.person_token)) {
+    if ((!cand.person_token.empty() && record.knows(cand.person_token)) ||
+        (!cand.soul_name.empty() && record.knows(cand.soul_name))) {
         bonus += 0.05;
     }
 
@@ -647,14 +653,47 @@ std::vector<RoutineSpot> CommandGraph::spots_of(std::string_view target_soul) {
     return query_db_spots(target_soul);
 }
 
+SoulWhereabouts CommandGraph::whereabouts_of(std::string_view target_soul) {
+    std::lock_guard<std::mutex> g(lock_);
+    if (!db_ || target_soul.empty()) return {};
+    return query_db_whereabouts(target_soul);
+}
+
+namespace {
+
+std::string take_sentences(std::string_view text, std::size_t max_sentences) {
+    const std::string s = trim_ws(text);
+    if (s.empty() || max_sentences == 0) return {};
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char ch = s[i];
+        if ((ch == '.' || ch == '!' || ch == '?') &&
+            (i + 1 == s.size() || std::isspace(static_cast<unsigned char>(s[i + 1])))) {
+            ++count;
+            if (count >= max_sentences) {
+                return trim_ws(std::string_view(s).substr(0, i + 1));
+            }
+        }
+    }
+    return s;
+}
+
+}  // namespace
+
 std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view speaker_soul) const {
     std::unordered_map<std::string, CommandCandidate> by_soul;
     std::vector<CommandCandidate> absentees;
 
-    auto fetch_soul_meta = [&](const std::string& soul, int hop, double closeness) -> CommandCandidate& {
+    auto fetch_soul_meta = [&](const std::string& soul, int hop, double closeness,
+                               const std::string& via_name = {}) -> CommandCandidate& {
         auto it = by_soul.find(soul);
         if (it != by_soul.end()) {
-            it->second.hop = std::min(it->second.hop, hop);
+            if (hop < it->second.hop) {
+                it->second.hop = hop;
+                it->second.via_name = (hop <= 1) ? std::string() : via_name;
+            } else if (it->second.hop > 1 && it->second.via_name.empty() && !via_name.empty()) {
+                it->second.via_name = via_name;
+            }
             it->second.closeness = std::max(it->second.closeness, closeness);
             return it->second;
         }
@@ -662,16 +701,18 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
         c.soul_name = soul;
         c.hop = hop;
         c.closeness = closeness;
+        if (hop > 1) c.via_name = via_name;
         c.person_token = make_person_token(soul);
 
         sqlite3_stmt* st = nullptr;
         const char* sql =
-            "SELECT COALESCE(g.full_name, s.ui_name, n.soul_name), COALESCE(g.given, ''), "
-            "COALESCE(g.title, ''), COALESCE(g.byname, ''), COALESCE(s.ui_name, ''), "
-            "LOWER(COALESCE(n.gender, '')), COALESCE(n.settlement, ''), COALESCE(t.trade, n.occupation, '') "
+            "SELECT COALESCE(g.full_name, s.full_name, s.ui_name, n.display_name, n.soul_name), "
+            "COALESCE(g.given, ''), COALESCE(g.title, ''), COALESCE(g.byname, ''), "
+            "COALESCE(s.ui_name, n.display_name, ''), LOWER(COALESCE(n.gender, '')), "
+            "COALESCE(n.settlement, ''), COALESCE(t.trade, n.occupation, '') "
             "FROM npc n "
-            "LEFT JOIN generated_name g ON g.soul_name = n.soul_name "
-            "LEFT JOIN skald_character s ON s.soul_name = n.soul_name "
+            "LEFT JOIN generated_name g ON g.soul_id = n.soul_id "
+            "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name "
             "LEFT JOIN npc_trade t ON t.soul_name = n.soul_name "
             "WHERE n.soul_name = ?1";
         if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
@@ -685,6 +726,16 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
                 c.gender = col_str(st, 5);
                 c.settlement = col_str(st, 6);
                 c.trade = col_str(st, 7);
+            }
+            sqlite3_finalize(st);
+        }
+        if (sqlite3_prepare_v2(
+                db_, "SELECT quest_id FROM npc_quest WHERE giver_soul = ?1 OR target_soul = ?1",
+                -1, &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, soul.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string qid = col_str(st, 0);
+                if (!qid.empty()) c.quest_ids.push_back(qid);
             }
             sqlite3_finalize(st);
         }
@@ -722,10 +773,10 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
             sqlite3_finalize(st);
         }
 
-        // Circle absentees
+        // Circle absentees (`npc_absentee`: circle_id, name, station, why_unmeetable)
         if (sqlite3_prepare_v2(
                 db_,
-                "SELECT name, COALESCE(role, ''), LOWER(COALESCE(gender, '')), COALESCE(why_unmeetable, '') "
+                "SELECT name, COALESCE(station, ''), COALESCE(why_unmeetable, '') "
                 "FROM npc_absentee WHERE circle_id = ?1",
                 -1, &st, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(st, 1, cid.c_str(), -1, SQLITE_TRANSIENT);
@@ -734,10 +785,9 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
                 ab.full_name = col_str(st, 0);
                 const std::vector<std::string> w = split_words(ab.full_name);
                 ab.given_name = w.empty() ? ab.full_name : w.front();
-                const std::string r = col_str(st, 1);
-                if (!r.empty()) ab.roles.push_back(r);
-                ab.gender = col_str(st, 2);
-                ab.why_unmeetable = col_str(st, 3);
+                const std::string stn = col_str(st, 1);
+                if (!stn.empty()) ab.roles.push_back(stn);
+                ab.why_unmeetable = col_str(st, 2);
                 ab.hop = 1;
                 ab.closeness = 0.80;
                 ab.is_absentee = true;
@@ -748,24 +798,48 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
         }
     }
 
-    // 2. Hop-1 direct relationships (`npc_relationship` is symmetric across soul_a / soul_b)
+    // 2. Hop-1 direct relationships (`npc_relationship`: soul_name, other_soul_name, relationship)
     std::vector<std::string> hop1_peers;
     {
         sqlite3_stmt* st = nullptr;
         const char* sql =
-            "SELECT CASE WHEN soul_a = ?1 THEN soul_b ELSE soul_a END, COALESCE(kind, '') "
-            "FROM npc_relationship WHERE soul_a = ?1 OR soul_b = ?1";
+            "SELECT CASE WHEN soul_name = ?1 THEN other_soul_name ELSE soul_name END, "
+            "COALESCE(relationship, '') "
+            "FROM npc_relationship WHERE soul_name = ?1 OR other_soul_name = ?1";
         if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(st, 1, speaker_soul.data(), static_cast<int>(speaker_soul.size()), SQLITE_TRANSIENT);
             while (sqlite3_step(st) == SQLITE_ROW) {
                 const std::string peer = col_str(st, 0);
-                const std::string kind = col_str(st, 1);
+                const std::string rel = col_str(st, 1);
                 if (peer.empty() || peer == speaker_soul) continue;
                 CommandCandidate& c = fetch_soul_meta(peer, 1, 0.95);
-                if (!kind.empty() && std::find(c.roles.begin(), c.roles.end(), kind) == c.roles.end()) {
-                    c.roles.push_back(kind);
+                if (!rel.empty() && std::find(c.roles.begin(), c.roles.end(), rel) == c.roles.end()) {
+                    c.roles.push_back(rel);
                 }
                 hop1_peers.push_back(peer);
+            }
+            sqlite3_finalize(st);
+        }
+    }
+
+    // 2b. Co-located workplace/parish hub peers (`npc_routine.place_id` for intimate hubs <= 15 souls,
+    // e.g. Father Ernest & Father Adam sharing the same Kuttenberg church hub).
+    {
+        sqlite3_stmt* st = nullptr;
+        const char* sql =
+            "SELECT DISTINCT r2.soul_name "
+            "FROM npc_routine r1 "
+            "JOIN npc_routine r2 ON r2.place_id = r1.place_id "
+            "WHERE r1.soul_name = ?1 AND r1.place_id IS NOT NULL AND r1.place_id != '' "
+            "AND r1.place_id NOT LIKE 'crowd:%' AND r1.place_id NOT LIKE 'tavern:%' "
+            "AND (SELECT COUNT(DISTINCT r3.soul_name) FROM npc_routine r3 WHERE r3.place_id = r1.place_id) <= 15";
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, speaker_soul.data(), static_cast<int>(speaker_soul.size()), SQLITE_TRANSIENT);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string peer = col_str(st, 0);
+                if (!peer.empty() && peer != speaker_soul) {
+                    fetch_soul_meta(peer, 1, 0.82);
+                }
             }
             sqlite3_finalize(st);
         }
@@ -778,18 +852,31 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
         }
     }
 
-    // 3. Hop-2 bridges JSON (`[{"soul_name": "..."}]` or `[{"to_circle": "..."}]`)
+    // 3. Hop-2 bridges JSON (`["soul_a", ...]` or `[{"soul_name": "..."}]`)
     for (const std::string& bj : bridge_jsons) {
         if (bj.empty() || bj == "[]") continue;
         try {
             json arr = json::parse(bj);
             if (!arr.is_array()) continue;
             for (const auto& item : arr) {
-                if (item.is_object()) {
+                if (item.is_string()) {
+                    const std::string s = item.get<std::string>();
+                    if (!s.empty() && s != speaker_soul) {
+                        fetch_soul_meta(s, 2, 0.55);
+                        if (std::find(hop1_peers.begin(), hop1_peers.end(), s) == hop1_peers.end()) {
+                            hop1_peers.push_back(s);
+                        }
+                    }
+                } else if (item.is_object()) {
                     for (const char* k : {"soul_name", "soul", "target_soul", "other_soul"}) {
                         if (item.contains(k) && item[k].is_string()) {
                             const std::string s = item[k].get<std::string>();
-                            if (!s.empty() && s != speaker_soul) fetch_soul_meta(s, 2, 0.50);
+                            if (!s.empty() && s != speaker_soul) {
+                                fetch_soul_meta(s, 2, 0.55);
+                                if (std::find(hop1_peers.begin(), hop1_peers.end(), s) == hop1_peers.end()) {
+                                    hop1_peers.push_back(s);
+                                }
+                            }
                         }
                     }
                 }
@@ -798,17 +885,31 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
         }
     }
 
-    // 4. Hop-2 cross-circle relationships of Hop-1 peers
+    // 4. Hop-2 adjacent circles + cross-circle relationships of Hop-1/bridge peers
     for (const std::string& h1 : hop1_peers) {
+        std::string via;
+        if (auto it = by_soul.find(h1); it != by_soul.end()) via = it->second.full_name;
         sqlite3_stmt* st = nullptr;
-        const char* sql =
-            "SELECT CASE WHEN soul_a = ?1 THEN soul_b ELSE soul_a END "
-            "FROM npc_relationship WHERE soul_a = ?1 OR soul_b = ?1";
-        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
+        const char* rel_sql =
+            "SELECT CASE WHEN soul_name = ?1 THEN other_soul_name ELSE soul_name END "
+            "FROM npc_relationship WHERE soul_name = ?1 OR other_soul_name = ?1";
+        if (sqlite3_prepare_v2(db_, rel_sql, -1, &st, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(st, 1, h1.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(st) == SQLITE_ROW) {
                 const std::string p2 = col_str(st, 0);
-                if (!p2.empty() && p2 != speaker_soul) fetch_soul_meta(p2, 2, 0.45);
+                if (!p2.empty() && p2 != speaker_soul) fetch_soul_meta(p2, 2, 0.45, via);
+            }
+            sqlite3_finalize(st);
+        }
+        const char* circ_sql =
+            "SELECT cm2.soul_name FROM npc_circle_member cm1 "
+            "JOIN npc_circle_member cm2 ON cm2.circle_id = cm1.circle_id "
+            "WHERE cm1.soul_name = ?1";
+        if (sqlite3_prepare_v2(db_, circ_sql, -1, &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, h1.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string p2 = col_str(st, 0);
+                if (!p2.empty() && p2 != speaker_soul) fetch_soul_meta(p2, 2, 0.50, via);
             }
             sqlite3_finalize(st);
         }
@@ -864,6 +965,31 @@ std::vector<RoutineSpot> CommandGraph::query_db_spots(std::string_view target_so
     return spots;
 }
 
+SoulWhereabouts CommandGraph::query_db_whereabouts(std::string_view target_soul) const {
+    SoulWhereabouts out;
+    sqlite3_stmt* st = nullptr;
+    const char* home_sql =
+        "SELECT fact FROM npc_kb_item WHERE owner = ?1 AND item_id = 'life:home' AND trust = 'open'";
+    if (sqlite3_prepare_v2(db_, home_sql, -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, target_soul.data(), static_cast<int>(target_soul.size()),
+                          SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            out.home_fact = take_sentences(col_str(st, 0), 2);
+        }
+        sqlite3_finalize(st);
+    }
+    const char* person_sql = "SELECT self_account FROM npc_person WHERE soul_name = ?1";
+    if (sqlite3_prepare_v2(db_, person_sql, -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, target_soul.data(), static_cast<int>(target_soul.size()),
+                          SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            out.self_intro = take_sentences(col_str(st, 0), 1);
+        }
+        sqlite3_finalize(st);
+    }
+    return out;
+}
+
 CommandDirector::CommandDirector(Embedder* embedder,
                                  Llm* extractor_llm,
                                  CommandGraph& graph,
@@ -894,8 +1020,9 @@ std::string CommandDirector::pass1_keyterms(std::string_view speaker_soul,
 
     std::vector<std::pair<double, const CommandCandidate*>> ranked;
     for (const CommandCandidate& c : cands) {
-        if (c.hop > 1) continue;
-        ranked.push_back({salience_bonus_for(c, recent, record), &c});
+        const double hop_prior = (c.hop <= 1) ? 1.0 : 0.0;
+        const double quest_prior = c.quest_ids.empty() ? 0.0 : 0.02;
+        ranked.push_back({hop_prior + quest_prior + salience_bonus_for(c, recent, record), &c});
     }
     std::sort(ranked.begin(), ranked.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
@@ -904,16 +1031,13 @@ std::string CommandDirector::pass1_keyterms(std::string_view speaker_soul,
     std::set<std::string> seen;
     for (const auto& [sc, c] : ranked) {
         (void)sc;
-        for (const std::string& t : {c->full_name, c->given_name}) {
-            const std::string clean = trim_ws(t);
-            if (clean.size() < 3) continue;
-            const std::string low = command_normalize(clean);
-            if (seen.insert(low).second) {
-                terms.push_back(clean);
-                if (terms.size() >= max_terms) break;
-            }
+        const std::string clean = trim_ws(c->full_name);
+        if (clean.size() < 3) continue;
+        const std::string low = command_normalize(clean);
+        if (seen.insert(low).second) {
+            terms.push_back(clean);
+            if (terms.size() >= max_terms) break;
         }
-        if (terms.size() >= max_terms) break;
     }
     std::string csv;
     for (std::size_t i = 0; i < terms.size(); ++i) {
@@ -982,6 +1106,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
     if (extracted.action == CommandAction::None) return out;
 
     const std::string mention = trim_ws(extracted.target_mention);
+    out.target_mention = mention;
     const std::string q_det = strip_determiners(mention);
     const std::string q_norm = command_normalize(mention);
 
@@ -1022,7 +1147,8 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         }
         out.status = CommandStatus::UnknownToNpc;
         out.direction = "[Henry names a place ('" + mention +
-                        "') you cannot travel to right now; say so plainly in character.]";
+                        "') you cannot travel to right now; say so plainly and briefly in "
+                        "character, without inventing directions, roads or landmarks.]";
         out.note = "travel_to unresolved ('" + mention + "')";
         return out;
     }
@@ -1070,7 +1196,8 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         if (!winner) {
             out.status = CommandStatus::UnknownToNpc;
             out.direction = "[Henry asks after '" + mention +
-                            "', and you are not sure whom he means; ask him plainly whom he is looking for.]";
+                            "', and you are not sure whom he means; ask him plainly whom he is "
+                            "looking for, without guessing or inventing any name or place.]";
             out.note = "pronoun coreference unresolved";
             return out;
         }
@@ -1152,8 +1279,11 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
 
         if (scored.empty()) {
             out.status = CommandStatus::UnknownToNpc;
-            out.direction = "[Henry asks after '" + mention +
-                            "', whom you do not know around here; tell him plainly in character that you do not know where to find them.]";
+            out.direction =
+                "[Henry asks where to find '" + mention +
+                "'. You do not know anyone of that name or where they might be: say so plainly "
+                "and briefly in your own voice, and do not guess, suggest a market, tavern or "
+                "street, or invent any rumour, trade or place.]";
             out.note = "unknown_to_npc ('" + mention + "')";
             return out;
         }
@@ -1178,7 +1308,11 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         return out;
     }
 
-    if (kb_gate != KbGate::Open) {
+    const bool gated =
+        (extracted.action == CommandAction::LocateNpc)
+            ? (kb_gate == KbGate::Asking || kb_gate == KbGate::Owed)
+            : (kb_gate != KbGate::Open);
+    if (gated) {
         out.status = CommandStatus::GatedByTrust;
         out.soul_name = winner->soul_name;
         out.note = "command gated by trust (" + winner->soul_name + ")";
@@ -1194,13 +1328,38 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
     if (extracted.action == CommandAction::LocateNpc) {
         const std::vector<RoutineSpot> spots = graph_.spots_of(winner->soul_name);
         out.directive = format_locate_directive(winner->soul_name, spots);
-        std::string where_clause = winner->full_name;
-        if (!winner->trade.empty()) where_clause += " (" + winner->trade + ")";
-        if (!winner->settlement.empty()) where_clause += " in " + winner->settlement;
-        out.direction = "[Henry asks where to find " + where_clause +
-                        ". Tell him naturally in your own voice where they usually keep around " +
-                        (winner->settlement.empty() ? std::string("here") : winner->settlement) +
-                        " — their spot is now marked for him.]";
+        const SoulWhereabouts wb = graph_.whereabouts_of(winner->soul_name);
+
+        const std::string how_known =
+            (winner->hop > 1 && !winner->via_name.empty())
+                ? ("You know of " + winner->full_name + " through " + winner->via_name +
+                   " — do not say you do not know them.")
+                : ("You know " + winner->full_name + " — do not say you do not know them.");
+
+        std::string facts;
+        if (!wb.self_intro.empty()) {
+            facts += winner->full_name + " says of themselves: \"" + wb.self_intro + "\"";
+        }
+        if (!wb.home_fact.empty()) {
+            if (!facts.empty()) facts += " ";
+            facts += wb.home_fact;
+        }
+        if (facts.empty()) {
+            facts = winner->full_name;
+            if (!winner->trade.empty()) facts += " is a " + winner->trade;
+            if (!winner->settlement.empty()) {
+                facts += (winner->trade.empty() ? " keeps in " : " in ") + winner->settlement;
+            } else if (winner->trade.empty()) {
+                facts += " keeps nearby";
+            }
+            facts += ".";
+        }
+
+        out.direction =
+            "[Henry asks where to find " + winner->full_name + ". " + how_known +
+            " What you know of who they are and where to find them: " + facts +
+            " Answer in your own voice in a sentence or two using only these particulars; "
+            "do not invent any other trade, shop, market, forge, street or rumour.]";
         out.note = "locate_npc -> " + winner->soul_name + " (" + winner->full_name + ")";
     } else if (extracted.action == CommandAction::FollowNpc) {
         out.directive = "@follow " + winner->soul_name;

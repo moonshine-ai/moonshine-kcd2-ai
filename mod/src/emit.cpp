@@ -1673,7 +1673,8 @@ std::string emit_quest_level(const std::string& modid,
                              const std::string& level,
                              const std::string& dialogue_name,
                              const std::vector<Persona>& personas,
-                             const std::vector<Quest>& all_quests) {
+                             const std::vector<Quest>& all_quests,
+                             const std::vector<LocateSoul>& locate_souls) {
     require_identifier(level, "level");
     // This level's quests only (Quest::level): a quest's graph belongs in the Level that is
     // awake where its parties live, and a link's before is looked for among these alone,
@@ -1708,11 +1709,19 @@ std::string emit_quest_level(const std::string& modid,
     for (const bool female : {false, true}) {
         s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + thanks_node(female) + ".xml") + "\" />\r\n";
     }
+    const std::size_t loc_shards = locate_shard_count(locate_souls, level);
     s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + locate_node(level) + ".xml") + "\" />\r\n";
+    for (std::size_t sh = 0; sh < loc_shards; ++sh) {
+        s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + locate_shard_node(level, sh) + ".xml") + "\" />\r\n";
+    }
     s += "\t\t\t</Definitions>\r\n";
     s += "\t\t\t<Nodes>\r\n";
     s += "\t\t\t\t<" + dialogue_name + " Name=\"" + dialogue_name + "\" />\r\n";
     s += "\t\t\t\t<" + locate_node(level) + " Name=\"" + locate_node(level) + "\" />\r\n";
+    for (std::size_t sh = 0; sh < loc_shards; ++sh) {
+        const std::string sh_node = locate_shard_node(level, sh);
+        s += "\t\t\t\t<" + sh_node + " Name=\"" + sh_node + "\" />\r\n";
+    }
     // A beggar's thanks for a garment, in his own mouth (emit.hpp, thanks_class): the
     // hail's nodes in the Level, since a beggar is in no quest's graph, once for each
     // beggar who lives here -- his token's class, the trigger on it in Henry's pocket and
@@ -4412,11 +4421,63 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     return s;
 }
 
+int locate_level_code(const std::string& level) {
+    if (level == "trosecko") return 1;
+    if (level == "kutnohorsko") return 2;
+    if (level == "klaster") return 3;
+    throw std::runtime_error("unknown level for locate quest: " + level);
+}
+
+std::string locate_slot_class(std::size_t slot) {
+    if (slot >= kLocateShardSize) throw std::runtime_error("locate slot out of range");
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "6d6f6f6e-7368-6c74-8000-%012zx", slot);
+    return buf;
+}
+
+std::string locate_slot_name(std::size_t slot) {
+    return "locate_slot_" + std::to_string(slot);
+}
+
+std::string locate_shard_class(const std::string& level, std::size_t shard) {
+    const int lvl = locate_level_code(level);
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "6d6f6f6e-7368-6c6f-80%02x-%012zx", lvl, shard);
+    return buf;
+}
+
+std::string locate_shard_name(const std::string& level, std::size_t shard) {
+    require_identifier(level, "level");
+    return "locate_open_" + level + "_" + std::to_string(shard);
+}
+
+std::string locate_shard_node(const std::string& level, std::size_t shard) {
+    require_identifier(level, "level");
+    return "q_locate_" + level + "_" + std::to_string(shard);
+}
+
+std::vector<const LocateSoul*> locate_souls_in_level(const std::vector<LocateSoul>& locate_souls,
+                                                     const std::string& level) {
+    std::vector<const LocateSoul*> out;
+    for (const LocateSoul& s : locate_souls) {
+        if (s.level == level) out.push_back(&s);
+    }
+    return out;
+}
+
+std::size_t locate_shard_count(const std::vector<LocateSoul>& locate_souls, const std::string& level) {
+    const std::size_t n = locate_souls_in_level(locate_souls, level).size();
+    return (n + kLocateShardSize - 1) / kLocateShardSize;
+}
+
 std::string locate_node(const std::string& level) {
     require_identifier(level, "level");
     return "q_locate_" + level;
 }
 
+// Legacy save-compatibility shim for q_locate_<level>.xml: carries no ItemOnGroundAsset and no
+// Marker, and resets to None when kLocateClearClass is pulsed so a save made before sharding
+// loses its old ground-pin markers and closes the retired task cleanly.
 std::string emit_locate_quest(const std::string& modid, const std::string& level) {
     require_identifier(modid, "modid");
     require_identifier(level, "level");
@@ -4437,40 +4498,23 @@ std::string emit_locate_quest(const std::string& modid, const std::string& level
     s += t(3) + "<Ports />\r\n";
     s += t(3) + "<Nodes>\r\n";
     s += t(4) + "<State Name=\"questState\"" + rfo + " TypeT=\"wh::questmodule::QuestProgress\">\r\n";
-    s += t(5) + "<Edge From=\"locateOpen.OnAcquire\" To=\"SetActive\" />\r\n";
+    s += t(5) + "<Edge From=\"locateClear.OnAcquire\" To=\"SetNone\" />\r\n";
     s += t(4) + "</State>\r\n";
     s += t(4) + "<ObjectProperties Name=\"playerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
     s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
     s += t(4) + "</ObjectProperties>\r\n";
-    s += t(4) + "<Function Name=\"locateShownClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+    s += t(4) + "<Function Name=\"locateClearClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
                 "DeclaringType=\"wh::entitymodule\">\r\n";
-    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateShownClass) + "\" />\r\n";
+    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateClearClass) + "\" />\r\n";
     s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
     s += t(4) + "</Function>\r\n";
-    s += t(4) + "<ItemDescriptorTrigger Name=\"locateOpen\">\r\n";
-    s += t(5) + "<Edge From=\"locateShownClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
-    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
-    s += t(5) + "<Edge From=\"questState.None\" To=\"IsActive\" />\r\n";
-    s += t(4) + "</ItemDescriptorTrigger>\r\n";
-    s += t(4) + "<ItemDescriptorTrigger Name=\"locateShown\">\r\n";
-    s += t(5) + "<Edge From=\"locateShownClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
-    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
-    s += t(5) + "<Edge From=\"questState.Active\" To=\"IsActive\" />\r\n";
-    s += t(4) + "</ItemDescriptorTrigger>\r\n";
-    s += t(4) + "<Function Name=\"locateHiddenClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
-                "DeclaringType=\"wh::entitymodule\">\r\n";
-    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateHiddenClass) + "\" />\r\n";
-    s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
-    s += t(4) + "</Function>\r\n";
-    s += t(4) + "<ItemDescriptorTrigger Name=\"locateHidden\">\r\n";
-    s += t(5) + "<Edge From=\"locateHiddenClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"locateClear\">\r\n";
+    s += t(5) + "<Edge From=\"locateClearClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
     s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
     s += t(5) + "<Edge From=\"questState.Active\" To=\"IsActive\" />\r\n";
     s += t(4) + "</ItemDescriptorTrigger>\r\n";
     s += t(4) + "<State Name=\"locateState\"" + rfo + " TypeT=\"" + type_name + "\">\r\n";
-    s += t(5) + "<Edge From=\"locateOpen.OnAcquire\" To=\"SetActive\" />\r\n";
-    s += t(5) + "<Edge From=\"locateShown.OnAcquire\" To=\"SetShown\" />\r\n";
-    s += t(5) + "<Edge From=\"locateHidden.OnAcquire\" To=\"SetHidden\" />\r\n";
+    s += t(5) + "<Edge From=\"locateClear.OnAcquire\" To=\"SetNone\" />\r\n";
     s += t(4) + "</State>\r\n";
     s += t(4) + "<locate Name=\"objectiveVisualLocate\"" + rfo + ">\r\n";
     s += t(5) + "<Edge From=\"locateState.State\" To=\"Progress\" />\r\n";
@@ -4491,8 +4535,6 @@ std::string emit_locate_quest(const std::string& modid, const std::string& level
     s += t(3) + "</Types>\r\n";
     s += t(3) + "<Assets>\r\n";
     s += t(4) + "<SoulAsset Name=\"player\" SharedSoulGuids=\"" + std::string(kPlayerSoulGuid) + "\" />\r\n";
-    s += t(4) + "<ItemOnGroundAsset Name=\"locatemark\" ItemClassGuids=\"" + std::string(kLocatePinClass) +
-         "\" />\r\n";
     s += t(3) + "</Assets>\r\n";
     s += t(3) + "<Text StringName=\"" + key("title") + "\" Text=\"Directions\" />\r\n";
     s += t(3) + "<QuestName StringName=\"" + key("name") + "\" Text=\"Directions\" />\r\n";
@@ -4503,13 +4545,133 @@ std::string emit_locate_quest(const std::string& modid, const std::string& level
     s += t(5) + "<LocalizedName StringName=\"" + key("objective") + "\" Text=\"Follow the directions given\" />\r\n";
     s += t(5) + "<Logs>\r\n";
     s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
-    s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"locatemark\" />\r\n";
-    s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Shown\" IsTracked=\"true\" Marker=\"locatemark\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" />\r\n";
+    s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Shown\" />\r\n";
     s += t(6) + "<EnumLog Type=\"Updated\" Name=\"Hidden\" />\r\n";
     s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
     s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
     s += t(5) + "</Logs>\r\n";
     s += t(4) + "</Objective>\r\n";
+    s += t(3) + "</Objectives>\r\n";
+    s += t(2) + "</Quest>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return s;
+}
+
+std::string emit_locate_shard_quest(const std::string& modid,
+                                    const std::string& level,
+                                    std::size_t shard,
+                                    const std::vector<const LocateSoul*>& shard_souls) {
+    require_identifier(modid, "modid");
+    require_identifier(level, "level");
+    if (shard_souls.empty() || shard_souls.size() > kLocateShardSize) {
+        throw std::runtime_error("invalid locate shard size");
+    }
+    const std::string node = locate_shard_node(level, shard);
+    const std::string rfo = " RequiredForOutput=\"" + xml_escape(level) + "\"";
+    auto shared_key = [&](const char* part) { return modid + "_q_locate_shared_" + part; };
+    auto soul_key = [&](const LocateSoul& ls, const char* part) {
+        require_identifier(ls.soul_name, "locate soul_name");
+        return modid + "_q_locate_soul_" + ls.soul_name + "_" + part;
+    };
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+
+    std::string s = skald_header(modid);
+    s += t(2) + "<Quest Name=\"" + node + "\" Type=\"Micro\">\r\n";
+    s += t(3) + "<Ports />\r\n";
+    s += t(3) + "<Nodes>\r\n";
+    s += t(4) + "<ObjectProperties Name=\"playerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+    s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+    s += t(4) + "</ObjectProperties>\r\n";
+    s += t(4) + "<Function Name=\"alwaysTrue\" MethodName=\"math::boolean::Or\" DeclaringType=\"math::boolean\">\r\n";
+    s += t(5) + "<Constant Name=\"A\" Value=\"true\" />\r\n";
+    s += t(5) + "<Constant Name=\"B\" Value=\"true\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<Function Name=\"shardOpenClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                "DeclaringType=\"wh::entitymodule\">\r\n";
+    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + locate_shard_class(level, shard) + "\" />\r\n";
+    s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"shardOpen\">\r\n";
+    s += t(5) + "<Edge From=\"shardOpenClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+    s += t(5) + "<Edge From=\"alwaysTrue.bool\" To=\"IsActive\" />\r\n";
+    s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    s += t(4) + "<Function Name=\"locateClearClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                "DeclaringType=\"wh::entitymodule\">\r\n";
+    s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + std::string(kLocateClearClass) + "\" />\r\n";
+    s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+    s += t(4) + "</Function>\r\n";
+    s += t(4) + "<ItemDescriptorTrigger Name=\"locateClear\">\r\n";
+    s += t(5) + "<Edge From=\"locateClearClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+    s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+    s += t(5) + "<Edge From=\"questState.Active\" To=\"IsActive\" />\r\n";
+    s += t(4) + "</ItemDescriptorTrigger>\r\n";
+    s += t(4) + "<State Name=\"questState\"" + rfo + " TypeT=\"wh::questmodule::QuestProgress\">\r\n";
+    s += t(5) + "<Edge From=\"shardOpen.OnAcquire\" To=\"SetActive\" />\r\n";
+    s += t(5) + "<Edge From=\"locateClear.OnAcquire\" To=\"SetNone\" />\r\n";
+    s += t(4) + "</State>\r\n";
+    s += t(4) + "<State Name=\"armSlots\" TypeT=\"bool\">\r\n";
+    s += t(5) + "<Edge From=\"shardOpen.OnAcquire\" To=\"SetTrue\" />\r\n";
+    s += t(5) + "<Edge From=\"locateClear.OnAcquire\" To=\"SetFalse\" />\r\n";
+    for (std::size_t i = 0; i < shard_souls.size(); ++i) {
+        s += t(5) + "<Edge From=\"slot_" + std::to_string(i) + ".OnAcquire\" To=\"SetFalse\" />\r\n";
+    }
+    s += t(4) + "</State>\r\n";
+    for (std::size_t i = 0; i < shard_souls.size(); ++i) {
+        const std::string idx = std::to_string(i);
+        s += t(4) + "<Function Name=\"slotClass_" + idx +
+             "\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + locate_slot_class(i) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"slot_" + idx + "\">\r\n";
+        s += t(5) + "<Edge From=\"slotClass_" + idx + ".ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"armSlots.State\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
+        s += t(4) + "<State Name=\"objState_" + idx + "\"" + rfo + " TypeT=\"Progress\">\r\n";
+        s += t(5) + "<Edge From=\"slot_" + idx + ".OnAcquire\" To=\"SetActive\" />\r\n";
+        s += t(5) + "<Edge From=\"locateClear.OnAcquire\" To=\"SetNone\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<obj_" + idx + " Name=\"objVis_" + idx + "\"" + rfo + ">\r\n";
+        s += t(5) + "<Edge From=\"objState_" + idx + ".State\" To=\"Progress\" />\r\n";
+        s += t(4) + "</obj_" + idx + ">\r\n";
+    }
+    s += t(4) + "<Output Name=\"Output\">\r\n";
+    s += t(5) + "<Edge From=\"questState.State\" To=\"Progress\" />\r\n";
+    s += t(4) + "</Output>\r\n";
+    s += t(3) + "</Nodes>\r\n";
+    s += t(3) + "<Assets>\r\n";
+    s += t(4) + "<SoulAsset Name=\"player\" SharedSoulGuids=\"" + std::string(kPlayerSoulGuid) + "\" />\r\n";
+    for (std::size_t i = 0; i < shard_souls.size(); ++i) {
+        s += t(4) + "<SoulAsset Name=\"soul_" + std::to_string(i) + "\" SharedSoulGuids=\"" +
+             xml_escape(shard_souls[i]->soul_guid) + "\" />\r\n";
+    }
+    s += t(3) + "</Assets>\r\n";
+    s += t(3) + "<Text StringName=\"" + shared_key("title") + "\" Text=\"Directions\" />\r\n";
+    s += t(3) + "<QuestName StringName=\"" + shared_key("name") + "\" Text=\"Directions\" />\r\n";
+    s += t(3) + "<QuestDescription StringName=\"" + shared_key("description") +
+         "\" Text=\"Someone pointed me the way.\" />\r\n";
+    s += t(3) + "<Objectives>\r\n";
+    for (std::size_t i = 0; i < shard_souls.size(); ++i) {
+        const LocateSoul& ls = *shard_souls[i];
+        const std::string idx = std::to_string(i);
+        const std::string obj_text = "Find " + ls.full_name;
+        const std::string log_text = "I asked the way to " + ls.full_name + " and had it pointed out to me.";
+        s += t(4) + "<Objective TypeT=\"Progress\" Name=\"obj_" + idx + "\">\r\n";
+        s += t(5) + "<LocalizedName StringName=\"" + soul_key(ls, "obj") + "\" Text=\"" +
+             xml_escape(obj_text) + "\" />\r\n";
+        s += t(5) + "<Logs>\r\n";
+        s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"soul_" + idx + "\">\r\n";
+        s += t(7) + "<Log StringName=\"" + soul_key(ls, "log") + "\" Text=\"" + xml_escape(log_text) + "\" />\r\n";
+        s += t(6) + "</EnumLog>\r\n";
+        s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
+        s += t(5) + "</Logs>\r\n";
+        s += t(4) + "</Objective>\r\n";
+    }
     s += t(3) + "</Objectives>\r\n";
     s += t(2) + "</Quest>\r\n";
     s += "\t</Skald>\r\n";
@@ -4527,6 +4689,24 @@ std::vector<std::pair<std::string, std::string>> locate_localization(const std::
         {key("description"), "Someone pointed Henry the way."},
         {key("objective"), "Follow the directions given"},
     };
+}
+
+std::vector<std::pair<std::string, std::string>> locate_souls_localization(
+    const std::string& modid, const std::vector<LocateSoul>& locate_souls) {
+    std::vector<std::pair<std::string, std::string>> rows;
+    if (locate_souls.empty()) return rows;
+    auto shared_key = [&](const char* part) { return modid + "_q_locate_shared_" + part; };
+    rows.emplace_back(shared_key("title"), "Directions");
+    rows.emplace_back(shared_key("name"), "Directions");
+    rows.emplace_back(shared_key("description"), "Someone pointed me the way.");
+    rows.reserve(3 + locate_souls.size() * 2);
+    for (const LocateSoul& ls : locate_souls) {
+        require_identifier(ls.soul_name, "locate soul_name");
+        const std::string prefix = modid + "_q_locate_soul_" + ls.soul_name + "_";
+        rows.emplace_back(prefix + "obj", "Find " + ls.full_name);
+        rows.emplace_back(prefix + "log", "I asked the way to " + ls.full_name + " and had it pointed out to me.");
+    }
+    return rows;
 }
 
 
@@ -6746,7 +6926,8 @@ std::string letter_page(const Quest& quest) {
 }
 
 std::string emit_item_table(const std::string& modid, const std::vector<Quest>& quests,
-                            const std::vector<Persona>& personas) {
+                            const std::vector<Persona>& personas,
+                            const std::vector<LocateSoul>& locate_souls) {
     const std::vector<const CustomItem*> used = custom_items_used(quests);
     const std::vector<const RepricedItem*> repriced = repriced_items_used(quests);
     std::vector<const Quest*> letters, tokens, keys, papers, hails, follows, heads, clued, counsels;
@@ -6766,7 +6947,7 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
     // beggar's thanks is a token of his own, no quest's: thanks_class).
     const bool beggars = std::any_of(personas.begin(), personas.end(), [](const Persona& p) { return p.beggar; });
     if (used.empty() && repriced.empty() && letters.empty() && tokens.empty() && keys.empty() && hails.empty() &&
-        follows.empty() && heads.empty() && clued.empty() && counsels.empty() && !beggars) {
+        follows.empty() && heads.empty() && clued.empty() && counsels.empty() && !beggars && locate_souls.empty()) {
         return {};
     }
     // The shape of item__aux.xml and the other shipped fragments: the same root as
@@ -6999,20 +7180,35 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         s += "\t\t\t<DocumentContent Parts=\"" + xml_escape(paper_page_key(modid, *q)) + "\" />\r\n";
         s += "\t\t</Document>\r\n";
     }
-    // Freeform @locate ground pin (invisible, VisibilityCoef 0) and its shown/hidden pocket tokens.
+    // Legacy @locate ground pin / shown / hidden rows (kept for save compatibility) plus
+    // the sharded SoulAsset 2D mux pocket tokens (locate_clear, 64 slots, per-level shards).
     s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"egg\" UIInfo=\"" +
          xml_escape(item_info_key(modid, kLocatePinName)) + "\" UIName=\"" +
          xml_escape(item_ui_key(modid, kLocatePinName)) +
          "\" PickpocketInPouch=\"true\" Model=\"manmade/food/food/egg.cgf\" Weight=\"0\" Price=\"0\" "
          "FadeCoef=\"1\" VisibilityCoef=\"0\" Id=\"" + std::string(kLocatePinClass) + "\" Name=\"" +
          xml_escape(modid + "_" + kLocatePinName) + "\" />\r\n";
-    for (const auto& [lname, lcls] : {std::pair{kLocateShownName, kLocateShownClass},
-                                      std::pair{kLocateHiddenName, kLocateHiddenClass}}) {
+    auto emit_locate_token_row = [&](const std::string& lname, const std::string& lcls, const char* ui_key_stem) {
         s += "\t\t<MiscItem Type=\"5\" SubType=\"0\" IconId=\"rutina_rustyAxe\" UIInfo=\"" +
-             xml_escape(item_info_key(modid, lname)) + "\" UIName=\"" + xml_escape(item_ui_key(modid, lname)) +
+             xml_escape(item_info_key(modid, ui_key_stem)) + "\" UIName=\"" +
+             xml_escape(item_ui_key(modid, ui_key_stem)) +
              "\" PickpocketInPouch=\"true\" Model=\"manmade/task_specific_props/wood_industry/carpentry/saw.cgf\" "
-             "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" + std::string(lcls) +
+             "Weight=\"0\" Price=\"0\" FadeCoef=\"3.174603\" VisibilityCoef=\"1\" Id=\"" + xml_escape(lcls) +
              "\" Name=\"" + xml_escape(modid + "_" + lname) + "\" />\r\n";
+    };
+    emit_locate_token_row(kLocateShownName, kLocateShownClass, kLocateShownName);
+    emit_locate_token_row(kLocateHiddenName, kLocateHiddenClass, kLocateHiddenName);
+    emit_locate_token_row(kLocateClearName, kLocateClearClass, kLocateHiddenName);
+    if (!locate_souls.empty()) {
+        for (std::size_t sl = 0; sl < kLocateShardSize; ++sl) {
+            emit_locate_token_row(locate_slot_name(sl), locate_slot_class(sl), kLocateShownName);
+        }
+        for (const char* lvl : kLevels) {
+            const std::size_t n_shards = locate_shard_count(locate_souls, lvl);
+            for (std::size_t sh = 0; sh < n_shards; ++sh) {
+                emit_locate_token_row(locate_shard_name(lvl, sh), locate_shard_class(lvl, sh), kLocateShownName);
+            }
+        }
     }
     s += "\t</ItemClasses>\r\n";
     s += "</database>\r\n";
@@ -7945,7 +8141,10 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tf.laid = nil\n";
     s += "\t\tend\n";
     s += "\tend\n";
-    s += "\tif type(" + g + ".state.locate) == \"table\" then " + g + ".state.locate.laid = nil end\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" then\n";
+    s += "\t\t" + g + ".state.locate.opening = nil\n";
+    s += "\t\tif " + g + ".state.locate.shard == nil then " + g + ".state.locate.legacy = true end\n";
+    s += "\tend\n";
     s += "end\n";
     s += "\n";
     // The store's contents (plan.md section 3). Per soul: met, first, last, rev, memory,
@@ -9239,7 +9438,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const std::string& leave_hint,
                                   const ScreenText& screen,
                                   const std::vector<std::string>& inboxes,
-                                  const std::vector<Quest>& quests) {
+                                  const std::vector<Quest>& quests,
+                                  const std::vector<LocateSoul>& locate_souls) {
     if (inboxes.empty()) throw std::runtime_error("nowhere to read a turn's words from");
     if (screen.mode != "draw" && screen.mode != "info" && screen.mode != "caption") {
         throw std::runtime_error(
@@ -16650,32 +16850,93 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "\n";
 
-    // Freeform @locate <soul> <len>:<spots>: places an invisible ground pin at the target
-    // NPC's live entity position (or time-of-day routine spot when unloaded), pulses the
-    // level's q_locate_<level> Shown token to put the marker on the map and compass HUD,
-    // follows the NPC if they walk > locateMoveMetres, and clears the marker when Henry
-    // reaches them or begins speaking to them.
-    s += g + ".locatePinClass = \"" + std::string(kLocatePinClass) + "\"\n";
-    s += g + ".locateShownClass = \"" + std::string(kLocateShownClass) + "\"\n";
-    s += g + ".locateHiddenClass = \"" + std::string(kLocateHiddenClass) + "\"\n";
+    // Freeform @locate <soul> [<len>:<spots>]: opens the target soul's SoulAsset objective
+    // ("Find <full_name>") inside its sharded q_locate_<level>_<shard> micro-quest via a
+    // 2D (shardClass, slotClass) pocket-token mux, with zero ground items ever placed.
+    // Resets cleanly via locateClearClass (SetNone) when Henry reaches/talks to the NPC,
+    // asks for new directions (so at most one directions quest & marker exists at a time),
+    // or after locateExpireHours in-game hours.
+    s += g + ".locateClearClass = \"" + std::string(kLocateClearClass) + "\"\n";
     s += g + ".locateReachMetres = " + health_text(kLocateReachMetres) + "\n";
-    s += g + ".locateMoveMetres = " + health_text(kLocateMoveMetres) + "\n";
-    s += "function " + g + ".LocateToken(class)\n";
-    s += "\tif class == nil then return end\n";
+    s += g + ".locateExpireHours = " + health_text(kLocateExpireHours) + "\n";
+    s += g + ".locateSeq = 0\n";
+    s += "function " + g + ".LocateSlotClass(slot)\n";
+    s += "\treturn string.format(\"6d6f6f6e-7368-6c74-8000-%012x\", slot)\n";
+    s += "end\n";
+    s += "function " + g + ".LocateShardClass(lvl, shard)\n";
+    s += "\treturn string.format(\"6d6f6f6e-7368-6c6f-80%02x-%012x\", lvl, shard)\n";
+    s += "end\n";
+    {
+        std::string tsv;
+        for (const char* lvl_name : kLevels) {
+            const int lvl_code = locate_level_code(lvl_name);
+            const std::vector<const LocateSoul*> in_lvl = locate_souls_in_level(locate_souls, lvl_name);
+            for (std::size_t idx = 0; idx < in_lvl.size(); ++idx) {
+                const LocateSoul& ls = *in_lvl[idx];
+                const std::size_t sh = idx / kLocateShardSize;
+                const std::size_t sl = idx % kLocateShardSize;
+                std::string clean_name = ls.full_name;
+                for (char& ch : clean_name) {
+                    if (ch == '\t' || ch == '\r' || ch == '\n') ch = ' ';
+                }
+                tsv += ls.soul_name + "\t" + std::to_string(lvl_code) + "\t" + std::to_string(sh) + "\t" +
+                       std::to_string(sl) + "\t" + clean_name + "\n";
+            }
+        }
+        s += g + ".locateSouls = {}\n";
+        s += "for line in string.gmatch(\"" + lua_escape(tsv) + "\", \"[^\\n]+\") do\n";
+        s += "\tlocal sn, lv, sh, sl, nm = string.match(line, \"^([^\\t]+)\\t(%d+)\\t(%d+)\\t(%d+)\\t(.+)$\")\n";
+        s += "\tif sn ~= nil then\n";
+        s += "\t\t" + g + ".locateSouls[sn] = { lvl = tonumber(lv), shard = tonumber(sh), slot = tonumber(sl), name = nm }\n";
+        s += "\tend\n";
+        s += "end\n";
+    }
+    s += "function " + g + ".CreateLocateToken(class)\n";
+    s += "\tif class == nil then return false end\n";
     s += "\tlocal p = " + g + ".Player()\n";
-    s += "\tif p == nil then return end\n";
+    s += "\tif p == nil then return false end\n";
     s += "\tlocal ok, err = pcall(function() p.inventory:CreateItem(class, 100, 1) end)\n";
     s += "\tif not ok then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE locate token could not be made: \" .. tostring(err))\n";
-    s += "\t\treturn\n";
+    s += "\t\treturn false\n";
     s += "\tend\n";
-    s += "\t" + g + ".Log(\"BRIDGE locate token made, have=\" .. " + g + ".Count(p, class))\n";
-    s += "\tScript.SetTimer(1500, function()\n";
-    s += "\t\tlocal pl = " + g + ".Player()\n";
-    s += "\t\tif pl == nil then return end\n";
-    s += "\t\tlocal have = " + g + ".Count(pl, class)\n";
-    s += "\t\tif have > 0 then pcall(function() pl.inventory:DeleteItemOfClass(class, have) end) end\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE locate token gone, have=\" .. " + g + ".Count(pl, class))\n";
+    s += "\t" + g + ".Log(\"BRIDGE locate token made \" .. class .. \", have=\" .. " + g + ".Count(p, class))\n";
+    s += "\treturn true\n";
+    s += "end\n";
+    s += "function " + g + ".DeleteLocateToken(class)\n";
+    s += "\tif class == nil then return end\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tif p == nil then return end\n";
+    s += "\tlocal have = " + g + ".Count(p, class)\n";
+    s += "\tif have > 0 then\n";
+    s += "\t\tpcall(function() p.inventory:DeleteItemOfClass(class, have) end)\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate token gone \" .. class .. \", have=\" .. " + g + ".Count(p, class))\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "function " + g + ".ScrubLocateTokens(a, b)\n";
+    s += "\t" + g + ".DeleteLocateToken(" + g + ".locateClearClass)\n";
+    s += "\tif type(a) == \"table\" then\n";
+    s += "\t\t" + g + ".DeleteLocateToken(a.shardClass)\n";
+    s += "\t\t" + g + ".DeleteLocateToken(a.slotClass)\n";
+    s += "\tend\n";
+    s += "\tif type(b) == \"table\" then\n";
+    s += "\t\t" + g + ".DeleteLocateToken(b.shardClass)\n";
+    s += "\t\t" + g + ".DeleteLocateToken(b.slotClass)\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "function " + g + ".OpenLocateTokens(loc, seq)\n";
+    s += "\tif type(loc) ~= \"table\" then return end\n";
+    s += "\tloc.opening = true\n";
+    s += "\t" + g + ".CreateLocateToken(loc.shardClass)\n";
+    s += "\tScript.SetTimer(250, function()\n";
+    s += "\t\t" + g + ".DeleteLocateToken(loc.shardClass)\n";
+    s += "\t\tif " + g + ".locateSeq ~= seq or " + g + ".state.locate ~= loc then return end\n";
+    s += "\t\t" + g + ".CreateLocateToken(loc.slotClass)\n";
+    s += "\t\tloc.opened = true\n";
+    s += "\t\tloc.opening = nil\n";
+    s += "\t\tScript.SetTimer(350, function()\n";
+    s += "\t\t\t" + g + ".DeleteLocateToken(loc.slotClass)\n";
+    s += "\t\tend)\n";
     s += "\tend)\n";
     s += "end\n";
     s += "function " + g + ".ParseSpots(raw)\n";
@@ -16716,84 +16977,84 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\treturn nil\n";
     s += "end\n";
-    s += "function " + g + ".RemoveLocatePin(loc)\n";
-    s += "\tif type(loc) == \"table\" and loc.x ~= nil and loc.pinZ ~= nil then\n";
-    s += "\t\tpcall(function()\n";
-    s += "\t\t\tfor _, e in ipairs(System.GetEntitiesInSphere({ x = loc.x, y = loc.y, z = loc.pinZ }, 2.5) or {}) do\n";
-    s += "\t\t\t\tif e.class ~= \"AudioTriggerSpot\" and e.soul == nil and e.actor == nil then\n";
-    s += "\t\t\t\t\tSystem.RemoveEntity(e.id)\n";
-    s += "\t\t\t\tend\n";
-    s += "\t\t\tend\n";
-    s += "\t\tend)\n";
-    s += "\tend\n";
-    s += "\tpcall(function()\n";
-    s += "\t\tlocal sp = System.GetEntityByName(\"moonshine_locate_spot\")\n";
-    s += "\t\tif sp ~= nil then System.RemoveEntity(sp.id) end\n";
-    s += "\tend)\n";
-    s += "end\n";
-    s += "function " + g + ".LayLocatePin(x, y, z)\n";
-    s += "\tlocal p = " + g + ".Player()\n";
-    s += "\tif p == nil then return false, z, z - 2.0 end\n";
-    s += "\tlocal gz = " + g + ".Ground(x, y, z)\n";
-    s += "\tlocal pinZ = gz - 2.0\n";
-    s += "\tlocal spot = " + g + ".SpotEntity(\"moonshine_locate_spot\", x, y, pinZ)\n";
-    s += "\tif spot == nil then return false, gz, pinZ end\n";
-    s += "\tlocal ok, err = pcall(function()\n";
-    s += "\t\tif " + g + ".Count(p, " + g + ".locatePinClass) <= 0 then p.inventory:CreateItem(" + g + ".locatePinClass, 100, 1) end\n";
-    s += "\t\tlocal wuid = p.inventory:FindItem(" + g + ".locatePinClass)\n";
-    s += "\t\tif wuid == nil then error(\"the locate pin could not be made\") end\n";
-    s += "\t\tp.human:PlaceItem(wuid, spot.id, false)\n";
-    s += "\tend)\n";
-    s += "\tif not ok or " + g + ".Count(p, " + g + ".locatePinClass) > 0 then\n";
-    s += "\t\tpcall(function() p.inventory:DeleteItemOfClass(" + g + ".locatePinClass, " + g + ".Count(p, " + g + ".locatePinClass)) end)\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE locate pin not laid: \" .. tostring(err))\n";
-    s += "\t\treturn false, gz, pinZ\n";
-    s += "\tend\n";
-    s += "\treturn true, gz, pinZ\n";
-    s += "end\n";
     s += "function " + g + ".Locate(soul, rawSpots)\n";
     s += "\tif type(soul) ~= \"string\" or soul == \"\" then return false end\n";
-    s += "\tif type(" + g + ".state.locate) == \"table\" then " + g + ".RemoveLocatePin(" + g + ".state.locate) end\n";
-    s += "\tlocal spots = " + g + ".ParseSpots(rawSpots)\n";
-    s += "\tlocal x, y, z, source = " + g + ".ResolveLocatePos(soul, spots)\n";
-    s += "\tif x == nil then\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" unresolved (not loaded, no spots)\")\n";
+    s += "\tlocal entry = " + g + ".locateSouls[soul]\n";
+    s += "\tif entry == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" has no level SoulAsset\")\n";
     s += "\t\treturn false\n";
     s += "\tend\n";
-    s += "\tlocal ok, gz, pinZ = " + g + ".LayLocatePin(x, y, z)\n";
-    s += "\t" + g + ".state.locate = { soul = soul, spots = spots, x = x, y = y, z = gz, pinZ = pinZ, laid = ok, source = source }\n";
-    s += "\t" + g + ".LocateToken(" + g + ".locateShownClass)\n";
+    s += "\tlocal prev = " + g + ".state.locate\n";
+    s += "\tlocal spots = " + g + ".ParseSpots(rawSpots)\n";
+    s += "\tlocal x, y, z, source = " + g + ".ResolveLocatePos(soul, spots)\n";
+    s += "\tlocal shardClass = " + g + ".LocateShardClass(entry.lvl, entry.shard)\n";
+    s += "\tlocal slotClass = " + g + ".LocateSlotClass(entry.slot)\n";
+    s += "\tlocal loc = {\n";
+    s += "\t\tsoul = soul, name = entry.name, lvl = entry.lvl, shard = entry.shard, slot = entry.slot,\n";
+    s += "\t\tshardClass = shardClass, slotClass = slotClass, askedAt = " + g + ".WorldTime(),\n";
+    s += "\t\tspots = spots, x = x, y = y, z = z, source = source or \"soul\", opened = false,\n";
+    s += "\t}\n";
+    s += "\t" + g + ".locateSeq = (" + g + ".locateSeq or 0) + 1\n";
+    s += "\tlocal seq = " + g + ".locateSeq\n";
+    s += "\t" + g + ".ScrubLocateTokens(prev, loc)\n";
+    s += "\t" + g + ".state.locate = loc\n";
+    s += "\tif type(prev) == \"table\" then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE locate cleared \" .. tostring(prev.soul or \"\") .. \" (replaced)\")\n";
+    s += "\t\t" + g + ".CreateLocateToken(" + g + ".locateClearClass)\n";
+    s += "\t\tScript.SetTimer(250, function()\n";
+    s += "\t\t\t" + g + ".DeleteLocateToken(" + g + ".locateClearClass)\n";
+    s += "\t\t\tif " + g + ".locateSeq ~= seq or " + g + ".state.locate ~= loc then return end\n";
+    s += "\t\t\tScript.SetTimer(100, function()\n";
+    s += "\t\t\t\tif " + g + ".locateSeq ~= seq or " + g + ".state.locate ~= loc then return end\n";
+    s += "\t\t\t\t" + g + ".OpenLocateTokens(loc, seq)\n";
+    s += "\t\t\tend)\n";
+    s += "\t\tend)\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".OpenLocateTokens(loc, seq)\n";
+    s += "\tend\n";
     s += "\tpcall(" + g + ".WatchArm, \"locate\")\n";
-    s += "\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" at \" .. string.format(\"%.1f,%.1f,%.1f\", x, y, gz) .. \" (\" .. tostring(source) .. \")\")\n";
+    s += "\tlocal where = (x ~= nil and y ~= nil) and string.format(\" at %.1f,%.1f,%.1f (%s)\", x, y, z or 0, tostring(source)) or \" (soul)\"\n";
+    s += "\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" -> Find \" .. entry.name .. where)\n";
     s += "\treturn true\n";
     s += "end\n";
     s += "function " + g + ".ClearLocate(why)\n";
     s += "\tlocal loc = " + g + ".state.locate\n";
     s += "\tif type(loc) ~= \"table\" then return false end\n";
-    s += "\t" + g + ".RemoveLocatePin(loc)\n";
     s += "\tlocal soul = tostring(loc.soul or \"\")\n";
+    s += "\t" + g + ".locateSeq = (" + g + ".locateSeq or 0) + 1\n";
+    s += "\tlocal seq = " + g + ".locateSeq\n";
+    s += "\t" + g + ".ScrubLocateTokens(loc, nil)\n";
     s += "\t" + g + ".state.locate = nil\n";
-    s += "\t" + g + ".LocateToken(" + g + ".locateHiddenClass)\n";
+    s += "\t" + g + ".CreateLocateToken(" + g + ".locateClearClass)\n";
+    s += "\tScript.SetTimer(350, function()\n";
+    s += "\t\tif " + g + ".locateSeq == seq then " + g + ".DeleteLocateToken(" + g + ".locateClearClass) end\n";
+    s += "\tend)\n";
     s += "\t" + g + ".Log(\"BRIDGE locate cleared \" .. soul .. \" (\" .. tostring(why) .. \")\")\n";
     s += "\treturn true\n";
     s += "end\n";
     s += "function " + g + ".WatchLocate(pp)\n";
     s += "\tlocal loc = " + g + ".state.locate\n";
     s += "\tif type(loc) ~= \"table\" or pp == nil then return end\n";
-    s += "\tlocal tx, ty, tz, source = " + g + ".ResolveLocatePos(loc.soul, loc.spots)\n";
-    s += "\tif tx == nil then tx, ty, tz, source = loc.x, loc.y, loc.z, loc.source end\n";
-    s += "\tif tx == nil or ty == nil then return end\n";
-    s += "\tlocal dx, dy = pp.x - tx, pp.y - ty\n";
-    s += "\tif dx * dx + dy * dy <= " + g + ".locateReachMetres * " + g + ".locateReachMetres then\n";
-    s += "\t\t" + g + ".ClearLocate(\"reached\")\n";
+    s += "\tif loc.legacy then\n";
+    s += "\t\t" + g + ".ClearLocate(\"legacy\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tlocal mdx, mdy = tx - (loc.x or tx), ty - (loc.y or ty)\n";
-    s += "\tif not loc.laid or mdx * mdx + mdy * mdy >= " + g + ".locateMoveMetres * " + g + ".locateMoveMetres then\n";
-    s += "\t\t" + g + ".RemoveLocatePin(loc)\n";
-    s += "\t\tlocal ok, gz, pinZ = " + g + ".LayLocatePin(tx, ty, tz)\n";
-    s += "\t\tloc.x, loc.y, loc.z, loc.pinZ, loc.laid, loc.source = tx, ty, gz, pinZ, ok, source\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE locate moved \" .. tostring(loc.soul) .. \" to \" .. string.format(\"%.1f,%.1f,%.1f\", tx, ty, gz) .. \" (\" .. tostring(source) .. \")\")\n";
+    s += "\tif loc.opened ~= true and not loc.opening and loc.shardClass ~= nil and loc.slotClass ~= nil then\n";
+    s += "\t\t" + g + ".locateSeq = (" + g + ".locateSeq or 0) + 1\n";
+    s += "\t\t" + g + ".OpenLocateTokens(loc, " + g + ".locateSeq)\n";
+    s += "\tend\n";
+    s += "\tlocal now = " + g + ".WorldTime()\n";
+    s += "\tif type(now) == \"number\" and type(loc.askedAt) == \"number\" and (now - loc.askedAt) >= " + g + ".locateExpireHours * 3600 then\n";
+    s += "\t\t" + g + ".ClearLocate(\"expired\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal tx, ty, tz, source = " + g + ".ResolveLocatePos(loc.soul, loc.spots)\n";
+    s += "\tif source == \"loaded\" and tx ~= nil and ty ~= nil then\n";
+    s += "\t\tlocal dx, dy = pp.x - tx, pp.y - ty\n";
+    s += "\t\tif dx * dx + dy * dy <= " + g + ".locateReachMetres * " + g + ".locateReachMetres then\n";
+    s += "\t\t\t" + g + ".ClearLocate(\"reached\")\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
     s += "\tend\n";
     s += "end\n";
     s += "\n";
