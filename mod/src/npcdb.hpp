@@ -50,6 +50,22 @@ struct LocateSoul {
 
 std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filter& filter);
 
+struct Quest;
+
+// A friendly town, village, castle, camp, or monastery guard who offers the
+// "Can you help me find someone?" dialogue option and knows everyone inside their
+// Burgher (`SettlementLocation`) population center.
+struct GuardSoul {
+    std::string soul_name;
+    std::string display_name;
+    std::string gender;
+    std::string default_pop_center;  // fallback Burgher location id when live pos is unread
+};
+
+std::vector<GuardSoul> read_guard_souls(const std::string& db_path,
+                                        const Filter& filter,
+                                        const std::vector<Quest>& quests = {});
+
 // One small quest the bio generator dealt between two souls and wrote journal text
 // for: the giver wants an item back from the target and pays for it. The guids are
 // the souls' soul_id, which is what a Skald SoulAsset names in SharedSoulGuids; the

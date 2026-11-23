@@ -267,6 +267,8 @@ void Session::open(std::string_view soul, const Approach& approach,
     alms_ = approach.alms;
     approach_ = approach;
     anim_ = std::string(anim);
+    guard_location_ = approach.guard_location;
+    awaiting_guard_subject_ = (approach.mode == "guard_find");
 
     // The look-ahead still waiting on its dwell is spent: greet() makes the greeting now.
     // And a press on somebody other than the one looked at leaves that one's greeting
@@ -385,6 +387,15 @@ void Session::open(std::string_view soul, const Approach& approach,
         }
     }
     status(opened);
+
+    if (awaiting_guard_subject_) {
+        persona_.greeting = "Who are you looking for?";
+        status("the player asked the guard to find someone" +
+               (guard_location_.empty() ? std::string() : (" in " + guard_location_)) +
+               ", so the guard asks who they are looking for");
+        greet();
+        return;
+    }
 
     // The NPC speaks first either way: a player who pressed the button should not have to
     // open the conversation themselves.
@@ -773,6 +784,8 @@ void Session::close() {
     picked_intent_.clear();
     drew_.clear();
     put_off_.clear();
+    guard_location_.clear();
+    awaiting_guard_subject_ = false;
     status("conversation over");
     // Planned now, with the player walking away, and done between looks at the log rather
     // than here, where it would hold the next begin. The record it judges is the one
@@ -912,7 +925,10 @@ void Session::set_listening(bool on, std::string_view why) {
         return;
     }
     if (commands_ && listener_.on_keyterms) {
-        std::string terms = commands_->pass1_keyterms(soul_, history_, record_);
+        std::string terms =
+            !guard_location_.empty()
+                ? commands_->location_keyterms(guard_location_, 60)
+                : commands_->pass1_keyterms(soul_, history_, record_);
         if (!persona_.name.empty()) {
             terms = terms.empty() ? persona_.name : (persona_.name + ", " + terms);
         }
@@ -1182,6 +1198,13 @@ Advice Session::advise(std::string_view said, bool offering) {
 }
 
 void Session::answer(std::string_view said, bool remember) {
+    if (picked_intent_ == "guard_find_again") {
+        picked_intent_.clear();
+        awaiting_guard_subject_ = true;
+        status("the player asked the guard to find someone else");
+        if (say_written(said, "Who are you looking for?", remember)) offer();
+        return;
+    }
     // A typed line that offers help is the menu's own `help` row in other words, and is
     // answered as that row would be: from the written offer where there is one, with the
     // accepting row laid after it, so the errand is taken on a pick. Where nothing is
@@ -1197,7 +1220,7 @@ void Session::answer(std::string_view said, bool remember) {
         if (say_written(said, std::string(line), remember)) offer();
         return;
     }
-    const bool offering = picked_intent_.empty() && offers_help(said);
+    const bool offering = !awaiting_guard_subject_ && picked_intent_.empty() && offers_help(said);
     if (offering && written_answer("help")) picked_intent_ = "help";
 
     // A pick with an answer already written for it is said from the database, at once and
@@ -1243,11 +1266,29 @@ void Session::answer(std::string_view said, bool remember) {
     // suppressed whenever a command resolves or abstains with its own grounded direction.
     CommandOutcome cmd;
     std::string kb_query(said);
-    if (commands_ && judged.empty() && picked_intent_.empty() && !offering) {
+    const bool was_guard_subject_turn = awaiting_guard_subject_ && picked_intent_.empty();
+    if (was_guard_subject_turn) {
+        awaiting_guard_subject_ = false;
+        if (commands_) {
+            const auto retx =
+                (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
+            cmd = commands_->resolve_guard_lookup(
+                soul_, persona_.name, guard_location_, said, history_, record_, retx);
+            if (cmd.status == CommandStatus::AmbiguousSoul) {
+                awaiting_guard_subject_ = true;
+            } else {
+                preset_.push_back({0, "guard_find_again", "I'm looking for someone else."});
+            }
+            if (!cmd.display_name.empty() && cmd.status == CommandStatus::ResolvedSoul) {
+                kb_query = cmd.display_name;
+            }
+        }
+    } else if (commands_ && judged.empty() && picked_intent_.empty() && !offering) {
         const auto retx =
             (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
         cmd = commands_->resolve(
-            soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx);
+            soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx,
+            guard_location_);
         // If Henry already accepted this giver's errand and asks where the quest's own target
         // is, let the giver direct him there rather than putting him off behind KbGate::Owed.
         if (cmd.action == CommandAction::LocateNpc &&
@@ -1256,7 +1297,9 @@ void Session::answer(std::string_view said, bool remember) {
             persona_.quest_of.exists() &&
             !persona_.quest_of.target_soul.empty() &&
             cmd.soul_name == persona_.quest_of.target_soul) {
-            cmd = commands_->resolve(soul_, persona_.name, "", said, history_, record_, KbGate::Open, nullptr);
+            cmd = commands_->resolve(
+                soul_, persona_.name, "", said, history_, record_, KbGate::Open, nullptr,
+                guard_location_);
         }
         // When phonetic/fuzzy entity linking corrected an STT name typo ("Banash" -> "Benesh"),
         // substitute the canonical spelling for KB retrieval so KnowledgeDirector hits too.
@@ -2357,6 +2400,14 @@ void Session::offer() {
         owed_.clear();
         pending_.clear();
     };
+
+    if (awaiting_guard_subject_) {
+        preset_.clear();
+        pending_.push_back("@saylabel 13:(Type a name)");
+        send(/*closed=*/false);
+        status("offered the guard's name-lookup slot (voice or type)");
+        return;
+    }
 
     // A letter being written at dictation: the part just given is the whole of the round,
     // Henry's ways with it and nothing else, so the choice is made with the words in his ear

@@ -122,6 +122,11 @@ double jaro_winkler_similarity(std::string_view a, std::string_view b);
 std::string format_locate_directive(std::string_view soul,
                                     const std::vector<RoutineSpot>& spots);
 
+// Normalizes a spoken or typed reply to "Who are you looking for?" so bare names
+// ("Benesh Bell"), trades ("the blacksmith"), and full sentences ("I'm looking for
+// Benesh Bell") all feed in cleanly as the extracted `locate_npc` subject.
+std::string clean_guard_subject_mention(std::string_view raw);
+
 // Stage-1 768-d linear intent gate trained on `EmbeddingGemma-300M` vectors.
 class Stage1Gate {
 public:
@@ -152,19 +157,25 @@ public:
     CommandGraph(const CommandGraph&) = delete;
     CommandGraph& operator=(const CommandGraph&) = delete;
 
-    bool ok() const { return db_ != nullptr || !held_.empty(); }
+    bool ok() const { return db_ != nullptr || !held_.empty() || !held_locations_.empty(); }
     const std::string& trouble() const { return trouble_; }
 
     void hold(std::string speaker_soul,
               std::vector<CommandCandidate> candidates,
               std::map<std::string, std::vector<RoutineSpot>> spots = {});
 
+    void hold_location(std::string location_id,
+                       std::vector<CommandCandidate> candidates,
+                       std::map<std::string, std::vector<RoutineSpot>> spots = {});
+
     std::vector<CommandCandidate> candidates_for(std::string_view speaker_soul);
+    std::vector<CommandCandidate> candidates_in_location(std::string_view location_id);
     std::vector<RoutineSpot> spots_of(std::string_view target_soul);
     SoulWhereabouts whereabouts_of(std::string_view target_soul);
 
 private:
     std::vector<CommandCandidate> query_db_candidates(std::string_view speaker_soul) const;
+    std::vector<CommandCandidate> query_db_location_candidates(std::string_view location_id) const;
     std::vector<RoutineSpot> query_db_spots(std::string_view target_soul) const;
     SoulWhereabouts query_db_whereabouts(std::string_view target_soul) const;
 
@@ -173,7 +184,9 @@ private:
     std::string trouble_;
     std::mutex lock_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> cache_;
+    std::map<std::string, std::vector<CommandCandidate>, std::less<>> location_cache_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_;
+    std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_locations_;
     std::map<std::string, std::vector<RoutineSpot>, std::less<>> held_spots_;
 };
 
@@ -197,13 +210,32 @@ public:
                                const SoulRecord& record,
                                std::size_t max_terms = 95);
 
+    // Keyterms drawn from everyone inside a Burgher (`SettlementLocation`) population center,
+    // ranked toward `query_hint` when re-transcribing a spoken guard lookup.
+    std::string location_keyterms(std::string_view location_id,
+                                  std::size_t max_terms = 95,
+                                  std::string_view query_hint = {});
+
     // Deterministic entity resolution given an already-extracted `{action, target_mention}`.
     CommandOutcome link(std::string_view speaker_soul,
                         std::string_view speaker_name,
                         const ExtractedCommand& extracted,
                         const std::vector<Message>& history,
                         const SoulRecord& record,
-                        KbGate kb_gate = KbGate::Open);
+                        KbGate kb_gate = KbGate::Open,
+                        std::string_view guard_location = {});
+
+    // Direct subject resolution after "Can you help me find someone?" -> "Who are you looking
+    // for?", treating spoken or typed input directly as the `locate_npc` subject over the
+    // guard's Burgher population center (with optional Pass-2 STT replay).
+    CommandOutcome resolve_guard_lookup(
+        std::string_view guard_soul,
+        std::string_view guard_name,
+        std::string_view guard_location,
+        std::string_view said,
+        const std::vector<Message>& history,
+        const SoulRecord& record,
+        const std::function<std::string(std::string_view)>& retranscribe_fn = {});
 
     // Full Stage-1 -> Stage-2 -> Stage-3 (+ optional conditional STT Pass-2) pipeline.
     CommandOutcome resolve(std::string_view speaker_soul,
@@ -213,7 +245,8 @@ public:
                            const std::vector<Message>& history,
                            const SoulRecord& record,
                            KbGate kb_gate = KbGate::Open,
-                           const std::function<std::string(std::string_view)>& retranscribe_fn = {});
+                           const std::function<std::string(std::string_view)>& retranscribe_fn = {},
+                           std::string_view guard_location = {});
 
 private:
     ExtractedCommand run_extractor(std::string_view speaker_name,

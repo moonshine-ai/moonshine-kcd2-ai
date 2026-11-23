@@ -778,6 +778,24 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
             }
             sqlite3_finalize(row);
         }
+        if (found.name.empty()) {
+            static constexpr char kGameName[] =
+                "SELECT COALESCE(NULLIF(s.full_name, ''), NULLIF(n.display_name, ''), '') "
+                "FROM npc n "
+                "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name "
+                "WHERE n.soul_name = ? LIMIT 1";
+            if (sqlite3_prepare_v2(db_, kGameName, -1, &row, nullptr) == SQLITE_OK) {
+                bind(row, soul);
+                if (sqlite3_step(row) == SQLITE_ROW) found.name = text_at(row, 0);
+                sqlite3_finalize(row);
+            } else if (sqlite3_prepare_v2(db_, "SELECT COALESCE(display_name, '') FROM npc WHERE soul_name = ?",
+                                          -1, &row, nullptr) == SQLITE_OK) {
+                bind(row, soul);
+                if (sqlite3_step(row) == SQLITE_ROW) found.name = text_at(row, 0);
+                sqlite3_finalize(row);
+            }
+            if (found.name.empty() && soul.rfind("extraGuards_", 0) == 0) found.name = "Guard";
+        }
     }
     found.trade = trade_of(soul, found.occupation);
 

@@ -40,6 +40,13 @@ TEST_CASE("the markers the mod prints are recognised in the lines it prints them
     const Event skipped_line = classify("<12:05:03> [moonshine_names] BRIDGE skipped line");
     CHECK(skipped_line.marker == Marker::SkippedLine);
     CHECK(skipped_line.turn == 0);
+
+    const Event guard_begin = classify(
+        "<12:05:10> BRIDGE begin npc=kkut_commander doing=none rch=0.5 hour=11.0 mode=guard_find loc=location_kutnaHora");
+    CHECK(guard_begin.marker == Marker::Begin);
+    CHECK(guard_begin.soul == "kkut_commander");
+    CHECK(guard_begin.approach.mode == "guard_find");
+    CHECK(guard_begin.approach.guard_location == "location_kutnaHora");
 }
 
 TEST_CASE("the say slot going live and stopping are markers, with how and the mod's reason") {

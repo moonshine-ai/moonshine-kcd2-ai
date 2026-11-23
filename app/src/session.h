@@ -619,6 +619,9 @@ private:
     std::vector<GreetingGuess> kept_greetings_;
     void keep_greeting(GreetingGuess&& guess);
     std::optional<GreetingGuess> take_kept_greeting(std::string_view soul, std::string_view sheet);
+
+    std::string guard_location_;
+    bool awaiting_guard_subject_ = false;
 };
 
 }  // namespace moonshine

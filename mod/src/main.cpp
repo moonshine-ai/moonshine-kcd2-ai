@@ -374,6 +374,7 @@ int main(int argc, char** argv) {
                      kcd2::emit_storm_rules(o.modid, personas, o.rule_order));
         std::size_t talkable = 0;
         std::vector<kcd2::Quest> quests;
+        std::vector<kcd2::GuardSoul> guard_souls;
         std::size_t beats = 0;  // one per quest command in the dialogue, for the summary
         if (o.dialogue) {
             std::vector<std::string> only;
@@ -391,8 +392,10 @@ int main(int argc, char** argv) {
                 quests = kcd2::read_quests(o.db, talkers);
                 kcd2::apply_quest_defaults(quests, o.all_quests_on);
             }
+            guard_souls = kcd2::read_guard_souls(o.db, filter, quests);
+            const bool with_guards = !guard_souls.empty();
             std::string roles = kcd2::emit_storm_roles(o.modid, personas, only, o.dialogue_role,
-                                                       quests, &talkable);
+                                                       quests, &talkable, guard_souls);
             if (talkable == 0) {
                 throw std::runtime_error("--dialogue-souls matched none of the renamed souls");
             }
@@ -400,10 +403,10 @@ int main(int argc, char** argv) {
             // from these tables resolves to nothing at every end, and nothing
             // anywhere says so.
             data_pak.add("Libs/Tables/rpg/metarole__" + o.modid + ".xml",
-                         kcd2::emit_metarole_table(o.modid, o.dialogue_metarole, quests));
+                         kcd2::emit_metarole_table(o.modid, o.dialogue_metarole, quests, with_guards));
             data_pak.add("Libs/Tables/rpg/role__" + o.modid + ".xml",
                          kcd2::emit_role_table(o.modid, o.dialogue_role, o.dialogue_metarole,
-                                               quests));
+                                               quests, with_guards));
             data_pak.add("Libs/Storm/roles/" + o.modid + ".xml", roles);
 
             // The project, listing a Level per game level. A definition the project
@@ -418,13 +421,21 @@ int main(int argc, char** argv) {
             beats = all_beats.size();
             const std::string dialogue =
                 kcd2::emit_dialogue(o.modid, dialogue_name, o.dialogue_role, o.beat_seconds, all_beats);
+            const std::string guard_dialogue =
+                with_guards ? kcd2::emit_guard_dialogue(o.modid, kcd2::guard_dialogue_node(),
+                                                        kcd2::guard_role(o.modid), o.beat_seconds)
+                            : std::string();
             for (const char* level : kcd2::kLevels) {
                 // The Level, which is where the dialogue and that level's quests sit (the
                 // journal's region comes from it), and its folder, where their files go.
                 const std::string level_dir = "Quests/" + o.modid + "/" + level + "/";
                 data_pak.add("Quests/" + o.modid + "/" + level + ".xml",
-                             kcd2::emit_quest_level(o.modid, level, dialogue_name, personas, quests, locate_souls));
+                             kcd2::emit_quest_level(o.modid, level, dialogue_name, personas, quests,
+                                                    locate_souls, with_guards));
                 data_pak.add(level_dir + dialogue_name + ".xml", dialogue);
+                if (with_guards) {
+                    data_pak.add(level_dir + kcd2::guard_dialogue_node() + ".xml", guard_dialogue);
+                }
                 // And a beggar's thanks for a garment, a man's and a woman's, stood in the
                 // Level (thanks_class).
                 for (const bool female : {false, true}) {
@@ -543,6 +554,12 @@ int main(int argc, char** argv) {
             // would be a caption and the caption is where our own words go.
             loc_extras.push_back(
                 {kcd2::dialogue_hold_key(o.modid, dialogue_name), "..."});
+            if (with_guards) {
+                loc_extras.push_back(
+                    {kcd2::dialogue_hold_key(o.modid, kcd2::guard_dialogue_node()), "..."});
+                loc_extras.push_back(
+                    {kcd2::guard_find_prompt_key(o.modid), kcd2::guard_find_prompt_text()});
+            }
             // And one per row of the reply menu, the same dots: the rows are drawn over
             // with the words of the moment, and these are what shows if that ever fails.
             for (int row = 1; row <= kcd2::kMenuRows; ++row) {
@@ -590,7 +607,7 @@ int main(int argc, char** argv) {
         data_pak.add("Scripts/mods/" + o.modid + ".lua",
                      kcd2::emit_conversation_lua(o.modid, personas, o.dialogue_role,
                                                  o.dialogue_metarole, o.leave_hint, o.screen,
-                                                 inboxes, quests, locate_souls));
+                                                 inboxes, quests, locate_souls, guard_souls));
         data_pak.write(o.out + "/Data/" + o.modid + ".pak");
 
         kcd2::Pak loc_pak;

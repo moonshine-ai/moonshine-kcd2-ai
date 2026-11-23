@@ -619,7 +619,22 @@ function Engine.holderMenuOpen(soulName)
             if qs ~= nil and qs.state == "active" and qs.onward == "active" and not qs.onwardHanded then return true end
         end
     end
+    if Moonshine.guardSouls ~= nil and Moonshine.guardSouls[soulName] ~= nil and carries(Moonshine.guardMeta) then
+        return true
+    end
     return false
+end
+
+-- Picking "Can you help me find someone?" in guard_talk.xml: the player is already inside
+-- the guard's native FaderDialog, ask_find's ExitScript runs Moonshine.GuardFindStart(),
+-- and EndType="GoTo" GoToDecision="loop" enters the held beat loop.
+function Engine.guardAskFind(npc)
+    Engine.dialog.open = true
+    Engine.dialog.npc = npc
+    Engine.dialog.menu = false
+    Engine.dialog.beats = 0
+    Moonshine.GuardFindStart()
+    Engine.setTimer(300, Engine.boundary)
 end
 
 -- The holder gave in on a row of the game's own menu: the handover port and the

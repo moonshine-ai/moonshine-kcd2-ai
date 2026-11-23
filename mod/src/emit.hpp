@@ -33,7 +33,8 @@ std::string emit_storm_root(const std::string& modid, bool with_roles);
 // created before this mod ran can only be reached through one of these.
 // The quests add a metarole each, for the holder's own dialogue to speak through.
 std::string emit_metarole_table(const std::string& modid, const std::string& metarole,
-                                const std::vector<Quest>& quests);
+                                const std::vector<Quest>& quests,
+                                bool with_guards = false);
 
 // Data/libs/Tables/rpg/role__<modid>.xml -- declares the role before anything
 // grants it or speaks through it. Unlike a setUiName key, a role is not a
@@ -44,7 +45,8 @@ std::string emit_metarole_table(const std::string& modid, const std::string& met
 std::string emit_role_table(const std::string& modid,
                             const std::string& role,
                             const std::string& metarole,
-                            const std::vector<Quest>& quests);
+                            const std::vector<Quest>& quests,
+                            bool with_guards = false);
 
 // Data/libs/Storm/roles/<modid>.xml -- grants each soul the role our dialogue
 // speaks through, which has to be one emit_role_table declared, and each quest's
@@ -54,7 +56,15 @@ std::string emit_storm_roles(const std::string& modid,
                              const std::vector<std::string>& only_souls,
                              const std::string& role,
                              const std::vector<Quest>& quests,
-                             std::size_t* granted);
+                             std::size_t* granted,
+                             const std::vector<GuardSoul>& guards = {});
+
+// Guard town-directory role, metarole, dialogue node, and root menu prompt.
+std::string guard_role(const std::string& modid);
+std::string guard_metarole(const std::string& modid);
+std::string guard_dialogue_node();
+std::string guard_find_prompt_key(const std::string& modid);
+std::string guard_find_prompt_text();
 
 // The role a quest's holder dialogue speaks through, the metarole that role sits
 // under (which is what the Lua can grant at runtime), and the node and file name of
@@ -538,7 +548,8 @@ std::string emit_quest_level(const std::string& modid,
                              const std::string& dialogue_name,
                              const std::vector<Persona>& personas,
                              const std::vector<Quest>& quests,
-                             const std::vector<LocateSoul>& locate_souls = {});
+                             const std::vector<LocateSoul>& locate_souls = {},
+                             bool with_guards = false);
 
 // Data/Quests/<modid>/q_<id>.xml -- one Micro quest in the shipped shape: a
 // QuestProgress state driven by two In ports, one objective whose journal logs are
@@ -1112,6 +1123,15 @@ std::string emit_dialogue(const std::string& modid,
                           double beat_seconds,
                           const std::vector<QuestBeat>& beats);
 
+// Data/Quests/<modid>/<level>/guard_talk.xml -- adds "Can you help me find someone?"
+// as a Priority="General" root option on friendly guards without overriding their
+// existing conversation options (such as "I want to turn in a gang"), then transitions
+// into the held Moonshine loop under Role="MOONSHINE_GUARD".
+std::string emit_guard_dialogue(const std::string& modid,
+                                const std::string& name,
+                                const std::string& role,
+                                double beat_seconds);
+
 // Data/libs/Storm/names/<modid>.xml -- one hasName/setUiName rule per soul.
 // A non-zero rule_order writes an explicit <rule order="..."> so our rules beat
 // the base game's social-class rules regardless of source ordering.
@@ -1224,7 +1244,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const ScreenText& screen,
                                   const std::vector<std::string>& inboxes,
                                   const std::vector<Quest>& quests,
-                                  const std::vector<LocateSoul>& locate_souls = {});
+                                  const std::vector<LocateSoul>& locate_souls = {},
+                                  const std::vector<GuardSoul>& guards = {});
 
 // Data/Libs/Config/<modid>_typing.xml -- a keyboard, as two actionmaps, which the
 // conversation Lua loads at runtime with ActionMapManager.LoadFromXML rather than by

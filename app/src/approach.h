@@ -104,6 +104,12 @@ struct Approach {
     // fingerprint the emitter writes as Moonshine.questSet, for main.cpp to set against
     // PersonaDb::quest_set(). Empty from a mod too old to send it.
     std::string quest_set;
+
+    // Optional dialogue entry mode (`mode=guard_find`) and Burgher (`SettlementLocation`)
+    // population-center id (`loc=location_kutnaHora`) when Henry picks "Can you help me
+    // find someone?" on a guard.
+    std::string mode;
+    std::string guard_location;
 };
 
 // Which part of the day an hour falls in, in the game's own words. Empty when unread.

@@ -6799,4 +6799,74 @@ case("Locate: expires after 24 in-game hours, survives save/load, clears on Begi
     check(M.state.locate == nil and E.find("BRIDGE locate cleared kkut_additive_man_17 (legacy)", mark) ~= nil, "legacy locate state auto-cleared on watch")
 end)
 
+case("Guard find: grants MOONSHINE_GUARD_META without overriding native Talk, resolves Burgher boundaries, and draws (Type a name)", function(E, M, check)
+    -- Verify Burgher (`SettlementLocation`) polygon accuracy across regions:
+    check(M.SettlementAt("kutnohorsko", 3000.0, 750.0, 0) == "location_kutnaHora", "Kuttenberg inside Burgher boundary")
+    check(M.SettlementAt("trosecko", 2300.0, 2020.0, 0) == "location_troskovice", "Troskowitz inside Burgher boundary")
+    check(M.SettlementAt("kutnohorsko", 1700.0, 1050.0, 0) == "location_bylany", "Bylany inside Burgher boundary")
+    check(M.SettlementAt("kutnohorsko", 100.0, 100.0, 0) == "", "wilderness outside all Burgher boundaries")
+
+    -- Pick a real Kuttenberg guard from M.guardSouls (e.g. kkut_commander or any kutnaHora guard)
+    local guardName = "kkut_commander"
+    if M.guardSouls[guardName] == nil then
+        for k, v in pairs(M.guardSouls) do
+            if v == "location_kutnaHora" then guardName = k; break end
+        end
+    end
+    check(M.guardSouls[guardName] ~= nil, "found a Kuttenberg guard in M.guardSouls")
+
+    player:SetWorldPos({ x = 3000, y = 750, z = 40 })
+    local guard = E.soul(guardName, { pos = { x = 3002, y = 750, z = 40 } })
+    check(not M.HasMeta(guard, M.guardMeta), "fresh guard lacks runtime guardMeta before sight")
+
+    -- Looking at a guard grants guardMeta and NEVER appends a duplicate OnConversation prompt
+    -- over the engine's native Talk menu (so "I want to turn in a gang" stays intact).
+    local actions = { { action = M.action, hint = "@ui_hud_talk" } }
+    M.AddConversationAction(guard, player, false, actions)
+    check(M.HasMeta(guard, M.guardMeta), "looking at guard grants MOONSHINE_GUARD_META")
+    check(#actions == 1, "AddConversationAction leaves native guard Talk menu untouched")
+    check(guard.actor:CanTalk(player.id) == true, "guard_talk.xml makes guard CanTalk true")
+
+    -- Selecting "Can you help me find someone?" runs GuardFindStart -> logs mode=guard_find loc=location_kutnaHora
+    local mark = E.mark()
+    E.guardAskFind(guard)
+    local beginLine = E.find("BRIDGE begin npc=" .. guardName, mark)
+    check(beginLine ~= nil, "GuardFindStart logged BRIDGE begin")
+    check(string.find(beginLine, "mode=guard_find", 1, true) ~= nil, "begin carries mode=guard_find: " .. tostring(beginLine))
+    check(string.find(beginLine, "loc=location_kutnaHora", 1, true) ~= nil, "begin carries Burgher loc=location_kutnaHora: " .. tostring(beginLine))
+
+    -- App sends Turn 1: "Who are you looking for?" + Turn 2: "@saylabel 13:(Type a name) @rows 0"
+    turn(E, 1, "Who are you looking for?")
+    turn(E, 2, "@saylabel 13:(Type a name) @rows 0")
+    check(untilMenu(E, 15000), "menu presented for guard prompt")
+    check(M.choosing == true and M.menuSayRow == 1 and M.menuLeaveRow == 2,
+          "0-row guard prompt puts say row at 1 and End dialog at 2")
+    local seq = E.hud.rows
+    check(type(seq) == "table" and seq[1] == "(Type a name)" and seq[6] == "(End dialog)",
+          "SequenceList shows (Type a name) and (End dialog), got: " .. tostring(seq and seq[1]) .. " / " .. tostring(seq and seq[6]))
+
+    -- Picking row 1 ("(Type a name)") and typing "Ben" + Enter sends BRIDGE said Ben
+    mark = E.mark()
+    M.typingLoaded = true
+    E.pick(1)
+    check(M.saying == true and M.typing == true, "picking (Type a name) opens typing slot")
+    M.Typed("mtype_b", "press")
+    M.Typed("mtype_e", "press")
+    M.Typed("mtype_n", "press")
+    check(M.Typed("mtype_enter", "press") == true, "Enter taken")
+    check(E.find("BRIDGE said ben", mark) ~= nil, "typed subject forwarded as BRIDGE said")
+
+    local spots = "360,1260,3050.0,760.0,42.0"
+    turn(E, 3, string.format("@locate kkut_additive_man_17 %d:%s @heard kkut_additive_man_17 You'll find Benesh Bell by the smithy.", #spots, spots))
+    E.advance(E.beatMillis + 500)
+    turn(E, 4, "@opt 1 guard_find_again 29:I'm looking for someone else. @rows 1")
+    check(untilMenu(E, 15000), "follow-up menu presented after guard directions")
+    check(type(M.state.locate) == "table" and M.state.locate.soul == "kkut_additive_man_17",
+          "guard lookup placed Find Benesh Bell marker")
+    local seq2 = E.hud.rows
+    check(type(seq2) == "table" and seq2[1] == "I'm looking for someone else." and seq2[6] == "(Say something else)",
+          "menuSayLabel reset to (Say something else) on follow-up menu, got: " .. tostring(seq2 and seq2[6]))
+    M.typingLoaded = false
+end)
+
 return { cases = cases, order = order }

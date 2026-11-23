@@ -301,4 +301,127 @@ TEST_CASE("real npcs.sqlite: Father Ernest resolves Benesh via co-located parish
           std::string::npos);
 }
 
+TEST_CASE("guard town/village directory: clean_guard_subject_mention, Burgher boundaries, ambiguity, and Session mode=guard_find") {
+    CHECK(clean_guard_subject_mention("Benesh Bell") == "Benesh Bell");
+    CHECK(clean_guard_subject_mention("  I'm looking for Benesh Bell, please! ") == "Benesh Bell");
+    CHECK(clean_guard_subject_mention("Can you tell me where the blacksmith is?") == "the blacksmith");
+    CHECK(clean_guard_subject_mention("Do you know where Father Adam is right now?") == "Father Adam");
+
+    CommandGraph graph;
+    CommandCandidate benesh;
+    benesh.soul_name = "soul_benesh";
+    benesh.full_name = "Benesh Bell";
+    benesh.given_name = "Benesh";
+    benesh.byname = "Bell";
+    benesh.settlement = "Kuttenberg";
+    benesh.trade = "parish clerk";
+    benesh.person_token = "soul_benesh";
+
+    CommandCandidate smith1;
+    smith1.soul_name = "soul_smith_1";
+    smith1.full_name = "Martin Hammer";
+    smith1.given_name = "Martin";
+    smith1.byname = "Hammer";
+    smith1.settlement = "Kuttenberg";
+    smith1.trade = "blacksmith";
+    smith1.person_token = "soul_smith_1";
+
+    CommandCandidate smith2;
+    smith2.soul_name = "soul_smith_2";
+    smith2.full_name = "Jakub Anvil";
+    smith2.given_name = "Jakub";
+    smith2.byname = "Anvil";
+    smith2.settlement = "Kuttenberg";
+    smith2.trade = "blacksmith";
+    smith2.person_token = "soul_smith_2";
+
+    graph.hold_location("location_kutnaHora", {benesh, smith1, smith2},
+                        {{"soul_benesh", {{360, 1260, 3050.0, 760.0, 42.0}}},
+                         {"soul_smith_1", {{360, 1260, 2980.0, 710.0, 40.0}}},
+                         {"soul_smith_2", {{360, 1260, 3110.0, 820.0, 44.0}}}});
+
+    // Notice sidecar_llm has ZERO replies queued -- guard subject lookup bypasses Stage-1/Stage-2!
+    StubLlm sidecar_llm;
+    CommandDirector cmd_dir(nullptr, &sidecar_llm, graph);
+
+    StubLlm dialogue_llm;
+    FakeGame game;
+    TurnWriter writer(game.paths());
+    Options opts;
+    Prefiller prefiller(dialogue_llm, opts);
+    Session session(dialogue_llm, writer, prefiller, opts);
+    session.set_world("Bohemia, 1403.");
+    session.set_stream_interval(std::chrono::hours(1));
+    session.set_menu(true);
+    session.set_persona_source(
+        [](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+            return Persona{"Guard Radovan", "You are Guard Radovan on watch in Kuttenberg.", "Move along."};
+        });
+    session.set_commands(&cmd_dir);
+
+    // 1. Opening with mode=guard_find greets with "Who are you looking for?" (turn 1)
+    //    and offers "@saylabel 13:(Type a name) @rows 0" (turn 2).
+    session.handle(classify(
+        "<12:00:00> BRIDGE begin npc=soul_guard mode=guard_find loc=location_kutnaHora"));
+    CHECK(game.whole(1) == "Who are you looking for?\n");
+    CHECK(game.whole(2) == "@saylabel 13:(Type a name) @rows 0\n");
+    session.handle(classify("<12:00:01> BRIDGE played turn=1 -- Who are you looking for?"));
+    session.handle(classify("<12:00:01> BRIDGE played turn=2 -- (directives only)"));
+
+    // 2. Ambiguous query ("the blacksmith") asks which blacksmith and keeps awaiting_guard_subject_ active!
+    dialogue_llm.replies.push_back("We have Martin Hammer and Jakub Anvil — which smith are you after?");
+    session.say("the blacksmith", true);
+    CHECK(sidecar_llm.calls.empty());
+    CHECK(dialogue_llm.calls.back().messages.back().content.find("Martin Hammer (blacksmith)") !=
+          std::string::npos);
+    CHECK(dialogue_llm.calls.back().messages.back().content.find("Jakub Anvil (blacksmith)") !=
+          std::string::npos);
+    CHECK(game.whole(3).find("@locate") == std::string::npos);
+    CHECK(game.whole(4) == "@saylabel 13:(Type a name) @rows 0\n");
+    session.handle(classify("<12:00:02> BRIDGE played turn=3 -- Which smith?"));
+    session.handle(classify("<12:00:02> BRIDGE played turn=4 -- (directives only)"));
+
+    // 3. Clarifying with bare name ("Martin Hammer") resolves immediately and places @locate!
+    dialogue_llm.replies.push_back("Martin Hammer works at the upper forge.");
+    session.say("Martin Hammer", true);
+    CHECK(sidecar_llm.calls.empty());
+    CHECK(game.whole(5).find("@locate soul_smith_1 26:360,1260,2980.0,710.0,40.0") != std::string::npos);
+    CHECK(game.whole(6).find("guard_find_again") != std::string::npos);
+    CHECK(game.whole(6).find("I'm looking for someone else.") != std::string::npos);
+    session.handle(classify("<12:00:03> BRIDGE played turn=5 -- Martin Hammer works at the upper forge."));
+    session.handle(classify("<12:00:03> BRIDGE played turn=6 -- (directives only)"));
+
+    // 4. Picking "I'm looking for someone else." re-prompts "Who are you looking for?"
+    session.handle(classify("<12:00:04> BRIDGE picked 1 guard_find_again -- I'm looking for someone else."));
+    session.handle(classify("<12:00:04> BRIDGE said -- I'm looking for someone else."));
+    CHECK(game.whole(7).find("Who are you looking for?") != std::string::npos);
+    CHECK(game.whole(8) == "@saylabel 13:(Type a name) @rows 0\n");
+    session.handle(classify("<12:00:05> BRIDGE played turn=7 -- Who are you looking for?"));
+    session.handle(classify("<12:00:05> BRIDGE played turn=8 -- (directives only)"));
+
+    // 5. Full sentence ("I'm looking for Banash Bell") resolves phonetically to Benesh Bell!
+    dialogue_llm.replies.push_back("Benesh Bell is the parish clerk by the smithy.");
+    session.say("I'm looking for Banash Bell", true);
+    CHECK(game.whole(9).find("@locate soul_benesh 26:360,1260,3050.0,760.0,42.0") != std::string::npos);
+
+    // 6. Real npcs.sqlite Burgher settlement boundary check (if present on disk)
+    if (std::filesystem::exists("data/kcd2/npcs.sqlite")) {
+        CommandGraph real_graph("data/kcd2/npcs.sqlite");
+        REQUIRE(real_graph.ok());
+        const auto kut_cands = real_graph.candidates_in_location("location_kutnaHora");
+        const auto tro_cands = real_graph.candidates_in_location("location_troskovice");
+        CHECK(kut_cands.size() > 500);
+        CHECK(tro_cands.size() >= 20);
+        CommandDirector real_dir(nullptr, &sidecar_llm, real_graph);
+        const CommandOutcome real_benesh = real_dir.resolve_guard_lookup(
+            "kkut_commander", "Captain Plumel", "location_kutnaHora", "Benesh Bell", {}, {});
+        CHECK(real_benesh.status == CommandStatus::ResolvedSoul);
+        CHECK(real_benesh.soul_name == "kkut_additive_man_17");
+        // Troskowitz guard does NOT claim to know Kuttenberg-only parish clerk Benesh Bell!
+        const CommandOutcome wrong_town = real_dir.resolve_guard_lookup(
+            "ttro_catchpole", "Bailiff Thrush", "location_troskovice", "Benesh Bell", {}, {});
+        CHECK(wrong_town.status == CommandStatus::UnknownToNpc);
+    }
+}
+
 

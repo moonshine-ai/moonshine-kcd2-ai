@@ -1,4 +1,5 @@
 #include "npcdb.hpp"
+#include "settlement_boundaries.hpp"
 
 #include <sqlite3.h>
 
@@ -6,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -210,6 +212,206 @@ std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filt
     }
     if (rc != SQLITE_DONE) {
         fail(db.get(), "reading locate souls failed");
+    }
+    return out;
+}
+
+std::vector<GuardSoul> read_guard_souls(const std::string& db_path,
+                                        const Filter& filter,
+                                        const std::vector<Quest>& quests) {
+    sqlite3* raw_db = nullptr;
+    if (sqlite3_open_v2(db_path.c_str(), &raw_db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+        DbHandle doomed(raw_db, &sqlite3_close);
+        throw std::runtime_error("cannot open " + db_path + ": " +
+                                 (raw_db ? sqlite3_errmsg(raw_db) : "out of memory"));
+    }
+    DbHandle db(raw_db, &sqlite3_close);
+
+    if (sqlite3_table_column_metadata(db.get(), nullptr, "npc", "occupation",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return {};
+    }
+
+    std::set<std::string> excluded = {"tvez_kocour", "kkut_mikulas", "kzik_herold"};
+    for (const Quest& q : quests) {
+        for (const std::string* s :
+             {&q.giver_soul, &q.target_soul, &q.onward_soul, &q.helper_soul, &q.counsel_soul}) {
+            if (!s->empty()) excluded.insert(*s);
+        }
+    }
+
+    struct LevelPt {
+        std::string level;
+        double x = 0.0;
+        double y = 0.0;
+    };
+    std::map<std::string, std::vector<LevelPt>> coords;
+    auto collect = [&](const char* sql) {
+        sqlite3_stmt* raw = nullptr;
+        if (sqlite3_prepare_v2(db.get(), sql, -1, &raw, nullptr) != SQLITE_OK) return;
+        StmtHandle st(raw, &sqlite3_finalize);
+        while (sqlite3_step(st.get()) == SQLITE_ROW) {
+            const unsigned char* sn = sqlite3_column_text(st.get(), 0);
+            const unsigned char* lv = sqlite3_column_text(st.get(), 1);
+            if (!sn || !lv) continue;
+            coords[reinterpret_cast<const char*>(sn)].push_back(
+                {reinterpret_cast<const char*>(lv), sqlite3_column_double(st.get(), 2),
+                 sqlite3_column_double(st.get(), 3)});
+        }
+    };
+    collect("SELECT soul_name, level, dump_x, dump_y FROM npc_routine_hub WHERE dump_x IS NOT NULL AND level IS NOT NULL");
+    collect("SELECT soul_name, level, pos_x, pos_y FROM npc_routine WHERE pos_x IS NOT NULL AND level IS NOT NULL");
+    {
+        sqlite3_stmt* raw = nullptr;
+        if (sqlite3_prepare_v2(
+                db.get(),
+                "SELECT m.soul_name, p.level, p.pos FROM social_membership m "
+                "JOIN social_place p USING (place_id) WHERE p.pos IS NOT NULL AND p.level IS NOT NULL",
+                -1, &raw, nullptr) == SQLITE_OK) {
+            StmtHandle st(raw, &sqlite3_finalize);
+            while (sqlite3_step(st.get()) == SQLITE_ROW) {
+                const unsigned char* sn = sqlite3_column_text(st.get(), 0);
+                const unsigned char* lv = sqlite3_column_text(st.get(), 1);
+                const unsigned char* ps = sqlite3_column_text(st.get(), 2);
+                if (!sn || !lv || !ps) continue;
+                double px = 0.0, py = 0.0;
+                if (std::sscanf(reinterpret_cast<const char*>(ps), "%lf,%lf", &px, &py) == 2) {
+                    coords[reinterpret_cast<const char*>(sn)].push_back(
+                        {reinterpret_cast<const char*>(lv), px, py});
+                }
+            }
+        }
+    }
+    for (std::size_t i = 0; i < kcd2_settlements::kLevelSpawnFallbackCount; ++i) {
+        const auto& sp = kcd2_settlements::kLevelSpawnFallbacks[i];
+        coords[sp.soul_name].push_back({sp.level, sp.x, sp.y});
+    }
+
+    const bool has_skald =
+        sqlite3_table_column_metadata(db.get(), nullptr, "skald_character", "skald_character_name",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_kind =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "kind",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_display =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "display_name",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_social_class =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "social_class",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_faction =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "faction_detail",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_faction_cat =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "faction_category",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    std::string name_expr = "g.full_name";
+    if (has_skald && has_display) {
+        name_expr = "COALESCE(NULLIF(g.full_name, ''), NULLIF(s.full_name, ''), NULLIF(n.display_name, ''), 'Guard')";
+    } else if (has_display) {
+        name_expr = "COALESCE(NULLIF(g.full_name, ''), NULLIF(n.display_name, ''), 'Guard')";
+    } else {
+        name_expr = "COALESCE(NULLIF(g.full_name, ''), 'Guard')";
+    }
+
+    std::string sql =
+        "SELECT n.soul_name, " + name_expr + ", COALESCE(n.gender, 'male') "
+        "FROM npc n "
+        "LEFT JOIN generated_name g USING (soul_id) ";
+    if (has_skald) {
+        sql += "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name ";
+    }
+    sql += "WHERE LOWER(n.soul_name) NOT LIKE '%dead%' "
+           "AND LOWER(n.soul_name) NOT LIKE '%corpse%' "
+           "AND COALESCE(n.occupation, '') NOT LIKE '%bandit%' ";
+    if (has_kind) sql += "AND COALESCE(n.kind, 'human') = 'human' ";
+    if (has_faction_cat) sql += "AND COALESCE(n.faction_category, '') != 'enemies' ";
+    if (has_social_class) sql += "AND COALESCE(n.social_class, '') NOT IN ('bandit', 'renegade') ";
+
+    sql += "AND (COALESCE(n.occupation, '') IN ('guard', 'guard leader', 'watchman', 'catchpole', 'soldier crime authority') "
+           "OR n.soul_name LIKE 'extraGuards_%' ";
+    if (has_social_class) {
+        sql += "OR COALESCE(n.social_class, '') IN ('guard', 'guardLeader', 'watchman', 'catchpole') ";
+    }
+    if (has_faction) {
+        sql += "OR COALESCE(n.faction_detail, '') = 'soldiers_guards' "
+               "OR COALESCE(n.faction_detail, '') LIKE '%militia%Guards%' "
+               "OR COALESCE(n.faction_detail, '') LIKE '%townHallGuards%' "
+               "OR COALESCE(n.faction_detail, '') = 'commonFolk_vineyard_guards' "
+               "OR COALESCE(n.faction_detail, '') = 'commonFolk_monastery_knights' ";
+    }
+    sql += ") ";
+
+    std::vector<std::string> bound;
+    const struct {
+        const char* column;
+        const std::vector<std::string>* values;
+    } clauses[] = {
+        {"n.settlement", &filter.settlements},
+        {"g.household_key", &filter.households},
+        {"n.soul_name", &filter.souls},
+    };
+    for (const auto& c : clauses) {
+        if (c.values->empty()) continue;
+        sql += "AND " + std::string(c.column) + " IN (" + placeholders(c.values->size()) + ") ";
+        bound.insert(bound.end(), c.values->begin(), c.values->end());
+    }
+    sql += "ORDER BY n.soul_name";
+
+    sqlite3_stmt* raw_stmt = nullptr;
+    if (sqlite3_prepare_v2(db.get(), sql.c_str(), -1, &raw_stmt, nullptr) != SQLITE_OK) {
+        fail(db.get(), "preparing guard souls query failed");
+    }
+    StmtHandle stmt(raw_stmt, &sqlite3_finalize);
+    for (std::size_t i = 0; i < bound.size(); ++i) {
+        sqlite3_bind_text(stmt.get(), static_cast<int>(i + 1), bound[i].c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    auto text = [&](int col) {
+        const unsigned char* p = sqlite3_column_text(stmt.get(), col);
+        return p ? std::string(reinterpret_cast<const char*>(p)) : std::string();
+    };
+
+    std::vector<GuardSoul> out;
+    int rc;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+        const std::string soul = text(0);
+        if (soul.empty() || excluded.count(soul) != 0) continue;
+        const bool is_dynamic_extra = soul.rfind("extraGuards_", 0) == 0;
+        if (!is_dynamic_extra && !kcd2_settlements::is_permanent_settlement_soul(soul)) continue;
+
+        std::string best_pop;
+        if (!is_dynamic_extra) {
+            const auto it = coords.find(soul);
+            if (it == coords.end() || it->second.empty()) continue;
+            // Prefer exact Burgher polygon containment; allow up to 60m outside for gate guards.
+            double best_d = 60.0;
+            for (const LevelPt& pt : it->second) {
+                for (std::size_t i = 0; i < kcd2_settlements::kSettlementPolygonCount; ++i) {
+                    const auto& poly = kcd2_settlements::kSettlementPolygons[i];
+                    if (pt.level != poly.level) continue;
+                    const double d = kcd2_settlements::distance_to_polygon(pt.x, pt.y, poly);
+                    if (d < best_d || (d == 0.0 && best_pop.empty())) {
+                        best_d = d;
+                        best_pop = poly.pop_center_id;
+                        if (d == 0.0) break;
+                    }
+                }
+                if (best_d == 0.0 && !best_pop.empty()) break;
+            }
+            if (best_pop.empty()) continue;
+        }
+
+        GuardSoul gs;
+        gs.soul_name = soul;
+        gs.display_name = text(1);
+        gs.gender = text(2);
+        gs.default_pop_center = std::move(best_pop);
+        out.push_back(std::move(gs));
+    }
+    if (rc != SQLITE_DONE) {
+        fail(db.get(), "reading guard souls failed");
     }
     return out;
 }

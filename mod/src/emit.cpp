@@ -1,4 +1,5 @@
 #include "emit.hpp"
+#include "settlement_boundaries.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -515,14 +516,40 @@ std::string table_header() {
 
 }  // namespace
 
+std::string guard_role(const std::string& modid) {
+    (void)modid;
+    return "MOONSHINE_GUARD";
+}
+
+std::string guard_metarole(const std::string& modid) {
+    (void)modid;
+    return "MOONSHINE_GUARD_META";
+}
+
+std::string guard_dialogue_node() {
+    return "guard_talk";
+}
+
+std::string guard_find_prompt_key(const std::string& modid) {
+    return modid + "_guard_find_prompt";
+}
+
+std::string guard_find_prompt_text() {
+    return "Can you help me find someone?";
+}
+
 std::string emit_metarole_table(const std::string& modid, const std::string& metarole,
-                                const std::vector<Quest>& quests) {
+                                const std::vector<Quest>& quests,
+                                bool with_guards) {
     require_identifier(metarole, "dialogue metarole");
     (void)modid;
 
     std::string s = table_header();
     s += "\t<metaroles version=\"1\">\r\n";
     s += "\t\t<metarole metarole_name=\"" + metarole + "\" />\r\n";
+    if (with_guards) {
+        s += "\t\t<metarole metarole_name=\"" + guard_metarole(modid) + "\" />\r\n";
+    }
     // One more per quest, for the holder alone. A dialogue speaks to whoever holds its
     // Role, so a quest's own dialogue needs a role nobody but its holder has, or every
     // talkable soul would be offering to give the axe back.
@@ -555,7 +582,8 @@ std::string emit_metarole_table(const std::string& modid, const std::string& met
 std::string emit_role_table(const std::string& modid,
                             const std::string& role,
                             const std::string& metarole,
-                            const std::vector<Quest>& quests) {
+                            const std::vector<Quest>& quests,
+                            bool with_guards) {
     require_identifier(role, "dialogue role");
     require_identifier(metarole, "dialogue metarole");
     if (role == metarole) {
@@ -590,6 +618,9 @@ std::string emit_role_table(const std::string& modid,
         s += row(name + "_ZENA", group, "role_" + name + "_(ZENA)");
     };
     triple(role, metarole);
+    if (with_guards) {
+        triple(guard_role(modid), guard_metarole(modid));
+    }
     // The holder roles, the same shape under their own metaroles, since the gendered
     // pair is what lets AddMetaRoleByName reach a soul on an old save.
     for (const Quest& q : quests) {
@@ -609,7 +640,8 @@ std::string emit_storm_roles(const std::string& modid,
                              const std::vector<std::string>& only_souls,
                              const std::string& role,
                              const std::vector<Quest>& quests,
-                             std::size_t* granted) {
+                             std::size_t* granted,
+                             const std::vector<GuardSoul>& guards) {
     require_identifier(role, "dialogue role");
 
     const std::set<std::string> allowed(only_souls.begin(), only_souls.end());
@@ -631,6 +663,11 @@ std::string emit_storm_roles(const std::string& modid,
         if (!allowed.empty() && allowed.count(p.soul_name) == 0) continue;
         rule("talk", p.soul_name, role);
         ++count;
+    }
+    const std::string g_role = guard_role(modid);
+    for (const GuardSoul& gs : guards) {
+        if (!allowed.empty() && allowed.count(gs.soul_name) == 0) continue;
+        rule("guard", gs.soul_name, g_role);
     }
     // The holder of each quest gets that quest's role as well, so its dialogue has a
     // speaker from the moment the soul is made. Souls made before the mod was enabled
@@ -1696,7 +1733,8 @@ std::string emit_quest_level(const std::string& modid,
                              const std::string& dialogue_name,
                              const std::vector<Persona>& personas,
                              const std::vector<Quest>& all_quests,
-                             const std::vector<LocateSoul>& locate_souls) {
+                             const std::vector<LocateSoul>& locate_souls,
+                             bool with_guards) {
     require_identifier(level, "level");
     // This level's quests only (Quest::level): a quest's graph belongs in the Level that is
     // awake where its parties live, and a link's before is looked for among these alone,
@@ -1722,6 +1760,9 @@ std::string emit_quest_level(const std::string& modid,
     s += "\t\t\t<Definitions>\r\n";
     const std::string dir = level + "/";
     s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + dialogue_name + ".xml") + "\" />\r\n";
+    if (with_guards) {
+        s += "\t\t\t\t<Definition File=\"" + xml_escape(dir + guard_dialogue_node() + ".xml") + "\" />\r\n";
+    }
     // One file and one node per run (stages.md): a quest of one scene as before, a story's
     // same-giver scenes gathered under their head's name.
     const std::vector<QuestRun> runs = quest_runs(quests);
@@ -1739,6 +1780,10 @@ std::string emit_quest_level(const std::string& modid,
     s += "\t\t\t</Definitions>\r\n";
     s += "\t\t\t<Nodes>\r\n";
     s += "\t\t\t\t<" + dialogue_name + " Name=\"" + dialogue_name + "\" />\r\n";
+    if (with_guards) {
+        const std::string gnode = guard_dialogue_node();
+        s += "\t\t\t\t<" + gnode + " Name=\"" + gnode + "\" />\r\n";
+    }
     s += "\t\t\t\t<" + locate_node(level) + " Name=\"" + locate_node(level) + "\" />\r\n";
     for (std::size_t sh = 0; sh < loc_shards; ++sh) {
         const std::string sh_node = locate_shard_node(level, sh);
@@ -7978,6 +8023,170 @@ std::string emit_dialogue(const std::string& modid,
     return s;
 }
 
+std::string emit_guard_dialogue(const std::string& modid,
+                                const std::string& name,
+                                const std::string& role,
+                                double beat_seconds) {
+    if (beat_seconds <= 0) throw std::runtime_error("a beat needs a length in seconds");
+    require_identifier(role, "guard dialogue role");
+
+    std::string s = skald_header(modid);
+    s += "\t\t<FaderDialog Name=\"" + xml_escape(name) + "\">\r\n";
+    s += "\t\t\t<Text Text=\"" + xml_escape(name) + "\" />\r\n";
+    s += "\t\t\t<Dialogue TechnicalStatus=\"Enabled\" Initiator=\"Player\""
+         " AllowGreeting=\"false\" AllowFarewell=\"false\">\r\n";
+
+    auto commands_for = [&](const FaceDef& face, const std::string& subject) {
+        const std::string who = xml_escape(role);
+        std::string c = "\t\t\t\t\t\t\t\t\t\t\t<Commands>";
+        if (face.kind == FaceDef::Speak) {
+            c += "<AnimationHeadCommand Role=\"" + who +
+                 "\" Delay=\"0.15\" FragmentId=\"ADLG_FA_OpenMouth\" "
+                 "Guid=\"79fbefd0-5b94-4a4e-9efa-650bcdddd59d\" Variant=\"0\" />"
+                 "<AnimationHeadCommand Role=\"" + who +
+                 "\" Delay=\"1.1\" FragmentId=\"ADLG_FA_Hmm\" "
+                 "Guid=\"bac33065-1c6c-4def-969b-86d9bf436af1\" Variant=\"1\" />"
+                 "<AnimationHeadCommand Role=\"" + who +
+                 "\" Delay=\"2.0\" FragmentId=\"ADLG_FA_OpenMouth\" "
+                 "Guid=\"79fbefd0-5b94-4a4e-9efa-650bcdddd59d\" Variant=\"0\" />";
+        } else if (face.kind == FaceDef::Mood) {
+            c += "<FacialMoodCommand Role=\"" + who + "\" FacialMood=\"" +
+                 xml_escape(face.mood) + "\" />";
+        } else if (face.kind == FaceDef::Head) {
+            c += "<AnimationHeadCommand Role=\"" + who +
+                 "\" Delay=\"0.15\" FragmentId=\"" + xml_escape(face.fragment) +
+                 "\" Guid=\"" + xml_escape(face.guid) + "\" Variant=\"" +
+                 xml_escape(face.variant) + "\" />";
+        }
+        c += "<CameraCommand Role=\"" + xml_escape(subject) +
+             "\" CameraType=\"CloseUp\" /></Commands>\r\n";
+        return c;
+    };
+
+    const std::string hold_key = dialogue_hold_key(modid, name);
+    auto beat = [&](const std::string& speaker, double wait, double length,
+                    const std::string& cmds) {
+        std::string e;
+        e += "\t\t\t\t\t\t\t\t\t\t<Response Role=\"" + xml_escape(speaker) + "\"";
+        if (wait > 0) e += " StartDelay=\"" + trim_number(wait) + "\"";
+        e += " ReferenceLength=\"" + trim_number(length) + "\">\r\n";
+        e += cmds;
+        e += "\t\t\t\t\t\t\t\t\t\t</Response>\r\n";
+        return e;
+    };
+
+    const std::string talk_var = talking_variable(modid);
+    const std::string face_var = face_variable(modid);
+    const double wait = std::min(beat_seconds, 2.5);
+
+    auto sequence = [&](const std::string& tag, const std::string& condition,
+                        const std::string& cmds, const std::string& exit) {
+        std::string e;
+        e += "\t\t\t\t\t\t\t\t<Sequence EntryCondition=\"" + condition +
+             "\" EndType=\"Decision\" Name=\"" + tag + "\" ExitScript=\"" + exit + "\">\r\n";
+        e += "\t\t\t\t\t\t\t\t\t<UiPrompt StringName=\"" + xml_escape(hold_key) + "\" Text=\"" +
+             xml_escape(kHoldPrompt) + "\" />\r\n";
+        e += "\t\t\t\t\t\t\t\t\t<Elements>\r\n";
+        e += beat(role, 0, wait / 2, cmds);
+        e += beat("HENRY", wait, wait / 2, cmds);
+        e += "\t\t\t\t\t\t\t\t\t</Elements>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t<Decision Name=\"hold_" + tag + "\" Autoselect=\"true\">\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t<Sequences>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t<Sequence EntryCondition=\"gvar('" + xml_escape(talk_var) +
+             "')==1\" EndType=\"GoTo\" GoToDecision=\"loop\" Name=\"stay_" + tag + "\">\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t<Elements>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t\t<Response Role=\"" + xml_escape(role) + "\" />\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t</Elements>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t</Sequence>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t<Sequence EntryCondition=\"gvar('" + xml_escape(talk_var) +
+             "')!=1\" EndType=\"EndDialogue\" Name=\"go_" + tag + "\" ExitScript=\""
+             "Moonshine.OnClosed()\">\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t<Elements>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t\t<Response Role=\"" + xml_escape(role) + "\" />\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t\t</Elements>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t\t</Sequence>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t\t</Sequences>\r\n";
+        e += "\t\t\t\t\t\t\t\t\t</Decision>\r\n";
+        e += "\t\t\t\t\t\t\t\t</Sequence>\r\n";
+        return e;
+    };
+
+    const std::string talking = "gvar('" + xml_escape(talk_var) + "')==1 AND ";
+
+    // Priority="General" (never Autoselect) merges "Can you help me find someone?" into
+    // the guard's existing conversation menu alongside any vanilla options (such as
+    // "I want to turn in a gang" in Kuttenberg). Picking it enters the unreachable
+    // carrier's Autoselected `loop` decision via GoToDecision="loop".
+    s += "\t\t\t\t<Decision Name=\"dec1\" Priority=\"General\">\r\n";
+    s += "\t\t\t\t\t<Sequences>\r\n";
+    s += "\t\t\t\t\t\t<Sequence EntryCondition=\"gvar('" + xml_escape(talk_var) +
+         "')!=1\" EndType=\"GoTo\" GoToDecision=\"loop\" Name=\"ask_find\" "
+         "ExitScript=\"Moonshine.GuardFindStart()\">\r\n";
+    s += "\t\t\t\t\t\t\t<UiPrompt StringName=\"" + xml_escape(guard_find_prompt_key(modid)) +
+         "\" Text=\"" + xml_escape(guard_find_prompt_text()) + "\" />\r\n";
+    s += "\t\t\t\t\t\t\t<Elements>\r\n";
+    s += "\t\t\t\t\t\t\t\t<Response Role=\"" + xml_escape(role) + "\" />\r\n";
+    s += "\t\t\t\t\t\t\t</Elements>\r\n";
+    s += "\t\t\t\t\t\t</Sequence>\r\n";
+
+    s += "\t\t\t\t\t\t<Sequence EntryCondition=\"FALSE\" EndType=\"Decision\" Name=\"loop_c\">\r\n";
+    s += "\t\t\t\t\t\t\t<Decision Name=\"loop\" Autoselect=\"true\">\r\n";
+    s += "\t\t\t\t\t\t\t\t<Sequences>\r\n";
+    for (int i = 0; i < kFaceCount; ++i) {
+        const FaceDef& face = kFaces[i];
+        s += sequence("face_" + xml_escape(face.name),
+                      talking + "gvar('" + xml_escape(face_var) + "')==" + std::to_string(i),
+                      commands_for(face, role), "Moonshine.Beat()");
+    }
+    s += sequence("face_henry",
+                  talking + "gvar('" + xml_escape(face_var) + "')==" + std::to_string(kFaceCount + 1),
+                  commands_for(kFaces[0], "HENRY"), "Moonshine.Beat()");
+    {
+        const std::string henry_camera =
+            "\t\t\t\t\t\t\t\t\t\t\t<Commands><CameraCommand Role=\"HENRY\" CameraType=\"CloseUp\" />"
+            "</Commands>\r\n";
+        s += "\t\t\t\t\t\t\t\t<Sequence EntryCondition=\"" + talking + "gvar('" +
+             xml_escape(face_var) + "')==" + std::to_string(kFaceCount) +
+             "\" EndType=\"Decision\" Name=\"menu\">\r\n";
+        s += "\t\t\t\t\t\t\t\t\t<UiPrompt StringName=\"" + xml_escape(hold_key) + "\" Text=\"" +
+             xml_escape(kHoldPrompt) + "\" />\r\n";
+        s += "\t\t\t\t\t\t\t\t\t<Elements>\r\n";
+        s += beat(role, 0, 0.25, henry_camera);
+        s += beat("HENRY", 0.25, 0.25, henry_camera);
+        s += "\t\t\t\t\t\t\t\t\t</Elements>\r\n";
+        s += "\t\t\t\t\t\t\t\t\t<Decision Name=\"pick\">\r\n";
+        s += "\t\t\t\t\t\t\t\t\t\t<Sequences>\r\n";
+        for (int row = 1; row <= kMenuRows; ++row) {
+            const bool last = row == kMenuRows;
+            s += "\t\t\t\t\t\t\t\t\t\t\t<Sequence EndType=\"" +
+                 std::string(last ? "EndDialogue" : "GoTo\" GoToDecision=\"loop") +
+                 "\" Name=\"row_" + std::to_string(row) + "\" ExitScript=\"Moonshine.Picked(" +
+                 std::to_string(row) + ")\">\r\n";
+            s += "\t\t\t\t\t\t\t\t\t\t\t\t<UiPrompt StringName=\"" +
+                 xml_escape(menu_row_key(modid, row)) + "\" Text=\"" + xml_escape(kHoldPrompt) +
+                 "\" />\r\n";
+            s += "\t\t\t\t\t\t\t\t\t\t\t\t<Elements>\r\n";
+            s += "\t\t\t\t\t\t\t\t\t\t\t\t\t<Response Role=\"" + xml_escape(role) + "\" />\r\n";
+            s += "\t\t\t\t\t\t\t\t\t\t\t\t</Elements>\r\n";
+            s += "\t\t\t\t\t\t\t\t\t\t\t</Sequence>\r\n";
+        }
+        s += "\t\t\t\t\t\t\t\t\t\t</Sequences>\r\n";
+        s += "\t\t\t\t\t\t\t\t\t</Decision>\r\n";
+        s += "\t\t\t\t\t\t\t\t</Sequence>\r\n";
+    }
+    s += "\t\t\t\t\t\t\t\t</Sequences>\r\n";
+    s += "\t\t\t\t\t\t\t</Decision>\r\n";
+    s += "\t\t\t\t\t\t</Sequence>\r\n";
+    s += "\t\t\t\t\t</Sequences>\r\n";
+    s += "\t\t\t\t</Decision>\r\n";
+
+    s += "\t\t\t</Dialogue>\r\n";
+    s += "\t\t</FaderDialog>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return s;
+}
+
 std::string emit_storm_rules(const std::string& modid,
                              const std::vector<Persona>& personas,
                              int rule_order) {
@@ -8185,6 +8394,8 @@ std::string state_lua(const std::string& g) {
     // the on-sight grant is emptied so that a soul seen before the load is not passed
     // over after it (bugs.txt 21 Nov 2026: no hand-in on Father Adam after a load).
     s += "\t\t" + g + ".holderGranted = {}\n";
+    s += "\t\t" + g + ".guardGranted = {}\n";
+    s += "\t\t" + g + ".lastLookedGuard = nil\n";
     s += "\t\t" + g + ".regrantLeft = " + g + ".regrantTicks\n";
     s += "\t\t" + g + ".Log(\"BRIDGE state reset, a world is arriving (\" .. tostring(via) .. \")\")\n";
     s += "\tend\n";
@@ -9585,7 +9796,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const ScreenText& screen,
                                   const std::vector<std::string>& inboxes,
                                   const std::vector<Quest>& quests,
-                                  const std::vector<LocateSoul>& locate_souls) {
+                                  const std::vector<LocateSoul>& locate_souls,
+                                  const std::vector<GuardSoul>& guards) {
     if (inboxes.empty()) throw std::runtime_error("nowhere to read a turn's words from");
     if (screen.mode != "draw" && screen.mode != "info" && screen.mode != "caption") {
         throw std::runtime_error(
@@ -9615,8 +9827,41 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- say who is speaking. The speaker is being looked at, but a line that arrives a\n";
     s += "-- word at a time under a face reads better with a name in front of it.\n";
     s += g + ".soulNames = {\n";
+    std::set<std::string> named_set;
     for (const Persona& p : personas) {
         s += "[\"" + lua_escape(p.soul_name) + "\"]=\"" + lua_escape(p.full_name) + "\",\n";
+        named_set.insert(p.soul_name);
+    }
+    for (const GuardSoul& gs : guards) {
+        if (!gs.display_name.empty() && named_set.insert(gs.soul_name).second) {
+            s += "[\"" + lua_escape(gs.soul_name) + "\"]=\"" + lua_escape(gs.display_name) + "\",\n";
+        }
+    }
+    s += "}\n";
+    s += g + ".guardRole = \"" + lua_escape(guard_role(modid)) + "\"\n";
+    s += g + ".guardMeta = \"" + lua_escape(guard_metarole(modid)) + "\"\n";
+    s += g + ".guardSouls = {\n";
+    for (const GuardSoul& gs : guards) {
+        s += "[\"" + lua_escape(gs.soul_name) + "\"]=\"" + lua_escape(gs.default_pop_center) + "\",\n";
+    }
+    s += "}\n";
+    // Burgher (`SettlementLocation`) population-center boundary polygons, sorted smallest-area
+    // first per level so nested sub-areas resolve innermost first.
+    s += g + ".settlementPolys = {\n";
+    for (const char* lvl : {"klaster", "kutnohorsko", "trosecko"}) {
+        s += "\t[\"" + std::string(lvl) + "\"] = {\n";
+        for (std::size_t i = 0; i < kcd2_settlements::kSettlementPolygonCount; ++i) {
+            const auto& poly = kcd2_settlements::kSettlementPolygons[i];
+            if (std::strcmp(poly.level, lvl) != 0) continue;
+            s += "\t\t{ id = \"" + lua_escape(poly.pop_center_id) + "\", verts = { ";
+            for (std::size_t v = 0; v < poly.vertex_count; ++v) {
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%.2f,%.2f,", poly.vertices[v].x, poly.vertices[v].y);
+                s += buf;
+            }
+            s += "} },\n";
+        }
+        s += "\t},\n";
     }
     s += "}\n";
     // The beggars among them (npc.occupation), who take alms off the app's rows: the begin
@@ -9741,6 +9986,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "-- The app said the list is closed (@rows <n> closed): its rows alone are drawn, with\n";
     s += "-- no say row and no way out under them. Cleared when the menu is next asked for.\n";
     s += g + ".menuClosed = false\n";
+    s += g + ".menuSayLabel = nil\n";
     s += "-- Set by a turn flagged @end: the conversation closes once that turn is read.\n";
     s += g + ".ending = false\n";
     s += "-- @voiced in front of a line: the app is speaking what it writes, and sends a hook\n";
@@ -14631,6 +14877,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".menuSayRow = " + g + ".menuRows - 1\n";
     s += "\t\t" + g + ".optionsTotal = nil\n";
     s += "\t\t" + g + ".menuClosed = false\n";
+    s += "\t\t" + g + ".menuSayLabel = nil\n";
     s += "\t\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
     s += "\t\t" + g + ".SayReset()\n";
     s += "\t\t" + g + ".Log(\"BRIDGE choose over the standing menu\")\n";
@@ -14654,6 +14901,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".menuSayRow = " + g + ".menuRows - 1\n";
     s += "\t" + g + ".optionsTotal = nil\n";
     s += "\t" + g + ".menuClosed = false\n";
+    s += "\t" + g + ".menuSayLabel = nil\n";
     s += "\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
     // A new round starts with nothing in the say row.
     s += "\t" + g + ".SayReset()\n";
@@ -14822,7 +15070,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tlocal opt = " + g + ".options[row]\n";
     s += "\t\t\tif opt ~= nil then text = opt.text; have = have + 1 else text = \"\"; empty[#empty + 1] = row end\n";
     s += "\t\telseif row == last + 1 then\n";
-    s += "\t\t\ttext = sayText or " + g + ".menuSay\n";
+    s += "\t\t\ttext = sayText or " + g + ".menuSayLabel or " + g + ".menuSay\n";
     s += "\t\tend\n";
     s += "\t\tvalues[#values + 1] = text\n";
     s += "\t\tvalues[#values + 1] = false\n";
@@ -15180,6 +15428,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".menuDrawn = 0\n";
     s += "\t" + g + ".optionsTotal = nil\n";
     s += "\t" + g + ".menuClosed = false\n";
+    s += "\t" + g + ".menuSayLabel = nil\n";
     s += "\t" + g + ".menuToken = " + g + ".menuToken + 1\n";
     s += "\t" + g + ".menuSayRow = 0\n";
     s += "\t" + g + ".menuLeaveRow = 2\n";
@@ -15851,7 +16100,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(function() pp = " + g + ".Player():GetWorldPos() end)\n";
     s += "\t" + g + ".watchQuick = false\n";
     s += "\t" + g + ".giverSwitches = 0\n";
-    s += "\tif pp ~= nil then " + g + ".WatchRoad(pp, now) end\n";
+    s += "\tif pp ~= nil then\n";
+    s += "\t\t" + g + ".WatchRoad(pp, now)\n";
+    s += "\t\tif System.GetEntitiesInSphere ~= nil then\n";
+    s += "\t\t\tlocal ok, ents = pcall(function() return System.GetEntitiesInSphere(pp, 35.0) end)\n";
+    s += "\t\t\tif ok and type(ents) == \"table\" then\n";
+    s += "\t\t\t\tfor i = 1, #ents do pcall(function() " + g + ".GrantGuard(ents[i], false) end) end\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
     s += "\tif pp ~= nil then\n";
     s += "\t\tfor _, id in ipairs(pending) do\n";
     s += "\t\t\tif id == \"@locate\" then\n";
@@ -18611,6 +18868,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\tpcall(function() " + g + ".StateStat(who, name, value) end)\n";
     s += "\t\t\t\twords = rest\n";
     s += "\t\t\tend\n";
+    s += "\t\telseif string.match(words, \"^@saylabel%s+%d+:\") then\n";
+    s += "\t\t\tlocal sllen, sltail = string.match(words, \"^@saylabel%s+(%d+):(.*)$\")\n";
+    s += "\t\t\tlocal sln = tonumber(sllen) or 0\n";
+    s += "\t\t\t" + g + ".menuSayLabel = string.sub(sltail, 1, sln)\n";
+    s += "\t\t\twords = string.match(string.sub(sltail, sln + 1), \"^%s*(.*)$\")\n";
     s += "\t\telseif string.match(words, \"^@rows%s+%d+\") then\n";
     // @rows <n>: the list is whole at n rows, so the draw need not wait for more. With
     // `closed` after the count, the list is those rows alone: no say row and no way out
@@ -18755,6 +19017,141 @@ std::string emit_conversation_lua(const std::string& modid,
     // Every quest the soul holds the thing of, since a soul may hold for one favour and
     // give another. Granted together, and the frame is stood back from if any was.
     s += g + ".holderGranted = {}\n";
+    s += g + ".guardGranted = {}\n";
+    s += g + ".lastLookedGuard = nil\n";
+    s += "function " + g + ".GrantGuard(npc, fromSight)\n";
+    s += "\tif npc == nil then return false end\n";
+    s += "\tlocal name = EntityUtils.GetName(npc)\n";
+    s += "\tif name == nil or " + g + ".guardSouls[name] == nil then return false end\n";
+    s += "\tif fromSight then " + g + ".lastLookedGuard = npc end\n";
+    s += "\tif " + g + ".guardGranted[name] then return false end\n";
+    s += "\t" + g + ".guardGranted[name] = true\n";
+    s += "\tif not " + g + ".HasMeta(npc, " + g + ".guardMeta)\n";
+    s += "\t\t\tand npc.soul ~= nil and npc.soul.AddMetaRoleByName ~= nil then\n";
+    s += "\t\t" + g + ".GrantName(npc, " + g + ".guardMeta)\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE guard role \" .. " + g + ".guardMeta ..\n";
+    s += "\t\t\t\" granted to \" .. name .. \" -> \" .. tostring(" + g + ".HasMeta(npc, " + g + ".guardMeta)))\n";
+    s += "\t\treturn true\n";
+    s += "\tend\n";
+    s += "\treturn false\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".PointInPoly(x, y, verts)\n";
+    s += "\tlocal n = #verts\n";
+    s += "\tif n < 6 then return false end\n";
+    s += "\tlocal inside = false\n";
+    s += "\tlocal j = n - 1\n";
+    s += "\tfor i = 1, n - 1, 2 do\n";
+    s += "\t\tlocal xi, yi = verts[i], verts[i + 1]\n";
+    s += "\t\tlocal xj, yj = verts[j], verts[j + 1]\n";
+    s += "\t\tif ((yi > y) ~= (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi) then\n";
+    s += "\t\t\tinside = not inside\n";
+    s += "\t\tend\n";
+    s += "\t\tj = i\n";
+    s += "\tend\n";
+    s += "\treturn inside\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".DistToPoly(x, y, verts)\n";
+    s += "\tif " + g + ".PointInPoly(x, y, verts) then return 0.0 end\n";
+    s += "\tlocal n = #verts\n";
+    s += "\tlocal best = 1e18\n";
+    s += "\tlocal j = n - 1\n";
+    s += "\tfor i = 1, n - 1, 2 do\n";
+    s += "\t\tlocal ax, ay = verts[j], verts[j + 1]\n";
+    s += "\t\tlocal bx, by = verts[i], verts[i + 1]\n";
+    s += "\t\tlocal dx, dy = bx - ax, by - ay\n";
+    s += "\t\tlocal len2 = dx * dx + dy * dy\n";
+    s += "\t\tlocal t = 0.0\n";
+    s += "\t\tif len2 > 1e-12 then\n";
+    s += "\t\t\tt = ((x - ax) * dx + (y - ay) * dy) / len2\n";
+    s += "\t\t\tif t < 0.0 then t = 0.0 elseif t > 1.0 then t = 1.0 end\n";
+    s += "\t\tend\n";
+    s += "\t\tlocal px, py = ax + t * dx - x, ay + t * dy - y\n";
+    s += "\t\tlocal d2 = px * px + py * py\n";
+    s += "\t\tif d2 < best then best = d2 end\n";
+    s += "\t\tj = i\n";
+    s += "\tend\n";
+    s += "\treturn math.sqrt(best)\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".SettlementAt(lvl, x, y, gateMargin)\n";
+    s += "\tlocal polys = " + g + ".settlementPolys[lvl]\n";
+    s += "\tif polys == nil or x == nil or y == nil then return \"\" end\n";
+    s += "\tfor i = 1, #polys do\n";
+    s += "\t\tif " + g + ".PointInPoly(x, y, polys[i].verts) then return polys[i].id end\n";
+    s += "\tend\n";
+    s += "\tlocal margin = tonumber(gateMargin) or 0\n";
+    s += "\tif margin > 0 then\n";
+    s += "\t\tlocal bestD = margin\n";
+    s += "\t\tlocal bestId = \"\"\n";
+    s += "\t\tfor i = 1, #polys do\n";
+    s += "\t\t\tlocal d = " + g + ".DistToPoly(x, y, polys[i].verts)\n";
+    s += "\t\t\tif d <= bestD then bestD = d; bestId = polys[i].id end\n";
+    s += "\t\tend\n";
+    s += "\t\treturn bestId\n";
+    s += "\tend\n";
+    s += "\treturn \"\"\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".CurrentLevel(npc)\n";
+    s += "\tlocal function norm(raw)\n";
+    s += "\t\tif type(raw) ~= \"string\" or raw == \"\" then return \"\" end\n";
+    s += "\t\tlocal lo = string.lower(raw)\n";
+    s += "\t\tif string.find(lo, \"klaster\", 1, true) then return \"klaster\" end\n";
+    s += "\t\tif string.find(lo, \"kutnohorsko\", 1, true) then return \"kutnohorsko\" end\n";
+    s += "\t\tif string.find(lo, \"trosecko\", 1, true) then return \"trosecko\" end\n";
+    s += "\t\treturn \"\"\n";
+    s += "\tend\n";
+    s += "\tlocal ov = norm(" + g + ".levelOverride)\n";
+    s += "\tif ov ~= \"\" then return ov end\n";
+    s += "\tfor _, fn in ipairs({\n";
+    s += "\t\tfunction() return System.GetCurrentLevelName and System.GetCurrentLevelName() end,\n";
+    s += "\t\tfunction() return Game and Game.GetLevelName and Game.GetLevelName() end,\n";
+    s += "\t\tfunction() return CryAction and CryAction.GetLevelName and CryAction.GetLevelName() end,\n";
+    s += "\t}) do\n";
+    s += "\t\tlocal ok, raw = pcall(fn)\n";
+    s += "\t\tif ok then local got = norm(raw); if got ~= \"\" then return got end end\n";
+    s += "\tend\n";
+    s += "\tif npc ~= nil then\n";
+    s += "\t\tlocal name = EntityUtils.GetName(npc)\n";
+    s += "\t\tlocal le = name ~= nil and " + g + ".locateSouls[name] or nil\n";
+    s += "\t\tif le ~= nil and type(le.lvl) == \"string\" and le.lvl ~= \"\" then return le.lvl end\n";
+    s += "\t\tlocal def = name ~= nil and " + g + ".guardSouls[name] or \"\"\n";
+    s += "\t\tif def ~= \"\" then\n";
+    s += "\t\t\tfor _, k in ipairs({\"klaster\", \"trosecko\", \"kutnohorsko\"}) do\n";
+    s += "\t\t\t\tlocal ps = " + g + ".settlementPolys[k] or {}\n";
+    s += "\t\t\t\tfor i = 1, #ps do if ps[i].id == def then return k end end\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\t\tif System.GetEntitiesInSphere ~= nil and npc.GetWorldPos ~= nil then\n";
+    s += "\t\t\tlocal ok, ents = pcall(function() return System.GetEntitiesInSphere(npc:GetWorldPos(), 80.0) end)\n";
+    s += "\t\t\tif ok and type(ents) == \"table\" then\n";
+    s += "\t\t\t\tfor i = 1, #ents do\n";
+    s += "\t\t\t\t\tlocal en = EntityUtils.GetName(ents[i])\n";
+    s += "\t\t\t\t\tlocal near = en ~= nil and " + g + ".locateSouls[en] or nil\n";
+    s += "\t\t\t\t\tif near ~= nil and near.lvl ~= nil then return near.lvl end\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\treturn \"kutnohorsko\"\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".GuardLocation(npc)\n";
+    s += "\tif npc == nil then return \"\" end\n";
+    s += "\tlocal name = EntityUtils.GetName(npc) or \"\"\n";
+    s += "\tlocal lvl = " + g + ".CurrentLevel(npc)\n";
+    s += "\tlocal ok, pos = pcall(function() return npc:GetWorldPos() end)\n";
+    s += "\tif ok and type(pos) == \"table\" and type(pos.x) == \"number\" and type(pos.y) == \"number\" then\n";
+    s += "\t\tlocal exact = " + g + ".SettlementAt(lvl, pos.x, pos.y, 0)\n";
+    s += "\t\tif exact ~= \"\" then return exact end\n";
+    s += "\t\tlocal gated = " + g + ".SettlementAt(lvl, pos.x, pos.y, 60)\n";
+    s += "\t\tif gated ~= \"\" then return gated end\n";
+    s += "\tend\n";
+    s += "\treturn " + g + ".guardSouls[name] or \"\"\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".GrantHolder(npc)\n";
     s += "\tlocal name = EntityUtils.GetName(npc)\n";
     s += "\tif " + g + ".holderGranted[name] then return false end\n";
@@ -18873,6 +19270,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\t\tif soul ~= nil then pcall(function() " + g + ".GrantHolder(soul) end) end\n";
     s += "\t\t\t\tend\n";
     s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tif p ~= nil and p.GetWorldPos ~= nil and System.GetEntitiesInSphere ~= nil then\n";
+    s += "\t\tlocal ok, ents = pcall(function() return System.GetEntitiesInSphere(p:GetWorldPos(), 40.0) end)\n";
+    s += "\t\tif ok and type(ents) == \"table\" then\n";
+    s += "\t\t\tfor i = 1, #ents do pcall(function() " + g + ".GrantGuard(ents[i], false) end) end\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "end\n";
@@ -19513,6 +19917,130 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".Pump)\n";
     s += "end\n";
     s += "\n";
+    // Entered from `guard_talk.xml`'s `ask_find` ExitScript ("Can you help me find someone?").
+    // The player is ALREADY inside the guard's FaderDialog, so Talking(true) and Face("idle")
+    // go up synchronously before GoToDecision="loop" reads them, `opened = true` skips
+    // Attempt(npc, user), and `hold = 0` lets "Who are you looking for?" speak at once.
+    s += "function " + g + ".OpenGuardFind(npc, user, loc)\n";
+    s += "\tif npc == nil or user == nil or not " + g + ".IsHenry(user) then return end\n";
+    s += "\t" + g + ".Talking(true)\n";
+    s += "\t" + g + ".Face(\"idle\")\n";
+    s += "\tlocal name = EntityUtils.GetName(npc)\n";
+    s += "\tlocal holding = \"\"\n";
+    s += "\tpcall(function() holding = " + g + ".Holding(npc, user) end)\n";
+    s += "\tpcall(function() holding = holding .. " + g + ".AlmsLine(npc, user) end)\n";
+    s += "\tlocal scene = " + g + ".Seen(user) .. " + g + ".SoulState(npc) .. " + g + ".World() .. holding"
+         " .. \" qset=\" .. tostring(" + g + ".questSet)\n";
+    s += "\tpcall(function() " + g + ".StateBegin(name, scene) end)\n";
+    s += "\tif type(" + g + ".state.locate) == \"table\" and " + g + ".state.locate.soul == name then\n";
+    s += "\t\tpcall(" + g + ".ClearLocate, \"talked\")\n";
+    s += "\tend\n";
+    s += "\tlocal extra = \" mode=guard_find\" .. ((loc ~= nil and loc ~= \"\") and (\" loc=\" .. loc) or \"\")\n";
+    s += "\t" + g + ".Log(\"BRIDGE begin npc=\" .. name\n";
+    s += "\t\t.. \" doing=\" .. (" + g + ".lastAnim[name] or \"none\")\n";
+    s += "\t\t.. scene .. extra)\n";
+    s += "\t" + g + ".npc = npc\n";
+    s += "\t" + g + ".user = user\n";
+    s += "\tlocal named = \"\"\n";
+    s += "\tpcall(function() named = " + g + ".soulNames[name] or \"Guard\" end)\n";
+    s += "\t" + g + ".npcName = named\n";
+    s += "\tif " + g + ".active then return end\n";
+    s += "\tpcall(" + g + ".SelfHush, \"a guard conversation is opening\")\n";
+    s += "\t" + g + ".active = true\n";
+    s += "\t" + g + ".beganAt = " + g + ".Now()\n";
+    s += "\t" + g + ".diskOn = false\n";
+    s += "\tpcall(" + g + ".FramesHold)\n";
+    s += "\t" + g + ".opened = true\n";
+    s += "\t" + g + ".openedAt = " + g + ".ticks\n";
+    s += "\t" + g + ".turnAtOpen = " + g + ".turn\n";
+    s += "\t" + g + ".appChecked = false\n";
+    s += "\t" + g + ".appDown = false\n";
+    s += "\t" + g + ".pushed = false\n";
+    s += "\t" + g + ".beats = 0\n";
+    s += "\t" + g + ".hold = 0\n";
+    s += "\t" + g + ".questQueue = {}\n";
+    s += "\t" + g + ".SetQuestCode(0)\n";
+    s += "\t" + g + ".down = false\n";
+    s += "\t" + g + ".pending = 0\n";
+    s += "\tpcall(function() " + g + ".TypingOpen(user) end)\n";
+    s += "\t" + g + ".shown = \"\"\n";
+    s += "\t" + g + ".above = \"\"\n";
+    s += "\t" + g + ".drawShape = 0\n";
+    s += "\t" + g + ".paints = 0\n";
+    s += "\t" + g + ".paintFrom = " + g + ".ticks\n";
+    s += "\t" + g + ".rateTold = false\n";
+    s += "\t" + g + ".wrote = nil\n";
+    s += "\t" + g + ".talkCaption = false\n";
+    s += "\t" + g + ".Caption(false)\n";
+    s += "\tif " + g + ".mode == \"caption\" then " + g + ".Plate() end\n";
+    s += "\tpcall(" + g + ".Pump)\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".GuardFindStart()\n";
+    s += "\t" + g + ".Talking(true)\n";
+    s += "\t" + g + ".Face(\"idle\")\n";
+    s += "\tlocal user = " + g + ".Player()\n";
+    s += "\tif user == nil then return end\n";
+    s += "\tlocal upos = nil\n";
+    s += "\tpcall(function() upos = user:GetWorldPos() end)\n";
+    s += "\tlocal function dist2(e)\n";
+    s += "\t\tif upos == nil or e == nil or e.GetWorldPos == nil then return 0 end\n";
+    s += "\t\tlocal ok, p = pcall(function() return e:GetWorldPos() end)\n";
+    s += "\t\tif not ok or p == nil then return 1e9 end\n";
+    s += "\t\tlocal dx, dy = (p.x or 0) - (upos.x or 0), (p.y or 0) - (upos.y or 0)\n";
+    s += "\t\treturn dx * dx + dy * dy\n";
+    s += "\tend\n";
+    s += "\tlocal function aliveGuard(e)\n";
+    s += "\t\tif e == nil then return false end\n";
+    s += "\t\tlocal n = EntityUtils.GetName(e)\n";
+    s += "\t\tif n == nil or " + g + ".guardSouls[n] == nil then return false end\n";
+    s += "\t\tif e.actor ~= nil and (e.actor:IsDead() or e.actor:IsUnconscious()) then return false end\n";
+    s += "\t\treturn dist2(e) <= 100.0\n";
+    s += "\tend\n";
+    s += "\tlocal npc = nil\n";
+    s += "\tif System.GetEntitiesInSphere ~= nil and upos ~= nil then\n";
+    s += "\t\tlocal ok, ents = pcall(function() return System.GetEntitiesInSphere(upos, 10.0) end)\n";
+    s += "\t\tif ok and type(ents) == \"table\" then\n";
+    s += "\t\t\tlocal bestD2 = 1e9\n";
+    s += "\t\t\tfor i = 1, #ents do\n";
+    s += "\t\t\t\tlocal e = ents[i]\n";
+    s += "\t\t\t\tif aliveGuard(e) then\n";
+    s += "\t\t\t\t\tlocal n = EntityUtils.GetName(e)\n";
+    s += "\t\t\t\t\tlocal twin = nil\n";
+    s += "\t\t\t\t\tpcall(function() twin = System.GetEntityByName(\"DialogTwin_\" .. n) end)\n";
+    s += "\t\t\t\t\tif twin ~= nil then npc = e; break end\n";
+    s += "\t\t\t\t\tlocal d2 = dist2(e)\n";
+    s += "\t\t\t\t\tif d2 < bestD2 then bestD2 = d2; npc = e end\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif npc == nil and aliveGuard(" + g + ".lastLookedGuard) then\n";
+    s += "\t\tnpc = " + g + ".lastLookedGuard\n";
+    s += "\tend\n";
+    s += "\tif npc == nil and System.GetEntityByName ~= nil then\n";
+    s += "\t\tlocal bestD2 = 1e9\n";
+    s += "\t\tfor name, _ in pairs(" + g + ".guardSouls) do\n";
+    s += "\t\t\tlocal e = nil\n";
+    s += "\t\t\tpcall(function() e = System.GetEntityByName(name) end)\n";
+    s += "\t\t\tif aliveGuard(e) then\n";
+    s += "\t\t\t\tlocal twin = nil\n";
+    s += "\t\t\t\tpcall(function() twin = System.GetEntityByName(\"DialogTwin_\" .. name) end)\n";
+    s += "\t\t\t\tif twin ~= nil then npc = e; break end\n";
+    s += "\t\t\t\tlocal d2 = dist2(e)\n";
+    s += "\t\t\t\tif d2 < bestD2 then bestD2 = d2; npc = e end\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif npc == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE guard find dropped: no nearby guard entity\")\n";
+    s += "\t\t" + g + ".Talking(false)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal loc = " + g + ".GuardLocation(npc)\n";
+    s += "\t" + g + ".OpenGuardFind(npc, user, loc)\n";
+    s += "end\n";
+    s += "\n";
     s += state_lua(g);
     // The player has this soul in their sights from talking distance -- GetActions is only
     // asked then -- and has not pressed. Told to the app as a begin that has not happened:
@@ -19542,12 +20070,18 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     s += "function " + g + ".AddConversationAction(npc, user, firstFast, output)\n";
     s += "\tif user == nil or user.actor == nil or npc.actor == nil then return end\n";
-    s += "\tif " + g + ".namedSouls[npc:GetName()] ~= true then return end\n";
     // Nothing on anyone while the player is not Henry (IsHenry): no prompt, no look-ahead,
-    // no holder role granted, as the game offers no quest givers to the other man either.
+    // no holder or guard role granted, as the game offers no quest givers to the other man either.
     s += "\tif not " + g + ".IsHenry(user) then return end\n";
     s += "\tif not user.actor:CanInteractWith(npc.id) then return end\n";
     s += "\tif npc.actor:IsDead() or npc.actor:IsUnconscious() then return end\n";
+    s += "\tlocal npcName = npc:GetName()\n";
+    s += "\tif " + g + ".guardSouls[npcName] ~= nil then\n";
+    s += "\t\t" + g + ".Remember(npc)\n";
+    s += "\t\tpcall(function() " + g + ".GrantGuard(npc, true) end)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tif " + g + ".namedSouls[npcName] ~= true then return end\n";
     s += "\n";
     s += "\t-- The whole reason the activity is readable at all: this runs while the NPC is\n";
     s += "\t-- only being looked at, so the saw is still in their hands. Remember comes\n";

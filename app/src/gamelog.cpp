@@ -185,6 +185,8 @@ Event classify(std::string_view line) {
         // Which deal the mod was built from, for the check against this app's database.
         event.approach.quest_set = field_from(line, " qset=");
         event.approach.lead = field_from(line, " lead=");
+        event.approach.mode = field_from(line, " mode=");
+        event.approach.guard_location = field_from(line, " loc=");
         // And the same for every quest the soul is party to, "<id>:<n>,<id>:<n>", for a soul
         // on more than one; " have=" is looked for with its space so it is not this field.
         const std::string holding = field_from(line, " holding=");
