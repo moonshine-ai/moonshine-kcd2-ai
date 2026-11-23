@@ -797,6 +797,13 @@ constexpr int kTravelGraceSeconds = 6;
 // and how long it keeps looking before the lead is given up.
 constexpr int kLeadTickMs = 500;
 constexpr int kLeadWaitSeconds = 30;
+// A session asked for while the game's own Talk was still playing out (bugs.txt 22 Nov
+// 2026: Father Adam's lead, the handover's reply still on screen) opens nothing of ours --
+// IsInDialog stays up on the old talk, the twin is gone, and no beat ever comes, while the
+// app's lines are captioned over it with no menu to follow. Ours beats inside three seconds
+// of opening (the second response's StartDelay); this many pump ticks (0.4 s each) with none
+// is taken as the dialogue up not being ours, and it is cut and ours asked for again, once.
+constexpr int kNoBeatTicks = 20;
 // The wave that goes with the shout (HailWave, 19 Nov 2026): the engine's urgeDialog
 // behaviour waves big past five metres and small within, and the clip is started on this
 // animation layer, which a probe on a standing townsman found takes an upper-body "_over"
@@ -908,14 +915,13 @@ constexpr double kDuelSweepMetres = 80.0;
 // not open leaves the yard quiet otherwise. Long enough for the camera and two lines.
 constexpr int kDuelTauntSeconds = 20;
 // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look; bugs.txt
-// 22 Nov 2026): a fop when his relative charisma (rch, 0..1) is at or above the first and
-// he does not look dangerous; a soldier when the game's reading of how dangerous he looks
-// (bad, 0..1: the armour and the arms on him) is at or above the second, or his weapon is
-// drawn. Read on the Windows laptop (mods/kcd2/README.md): bad 0.70 to 1.0 across four
-// outfits of a late save, rch 0.31 stripped to 1.0 dressed; the WatchLook log line carries
-// both readings for tuning these.
+// 22 Nov 2026). Armour is the quest graph's to read -- I_Soul::CheckEquipment over the five
+// slots the game's own players_appearance_scan.xml asks after (body_chainmail, body_plate,
+// head_helmet, leg_armor, sleeves), fed to the holder's dialogue as its `bare` port; the Lua
+// cannot read what is worn. Dress is the Lua's: a fop when his relative charisma (rch, 0..1;
+// 0.31 stripped, 1.0 in fine clothes on the measured save) is at or above this. The game's
+// danger look (bad) was tried and dropped: it read 1.0 in fine clothes.
 constexpr double kLookFopCharisma = 0.7;
-constexpr double kLookSoldierDread = 0.85;
 // How long after the men are made WatchDuel waits before one it cannot find, or finds
 // down, counts as beaten: a fresh spawn answers IsUnconscious before it stands (the 22 Nov
 // run cowed the man eight seconds in with both his friends on their feet), and a man

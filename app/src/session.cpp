@@ -232,6 +232,10 @@ void Session::handle(const Event& event) {
             // The game's own voiced Talk: dropped in main.cpp, which has the speaker.
             status("the player skipped a line of the game's own talk");
             break;
+        case Marker::TalkOver:
+            // The game's own voiced Talk closed: hushed in main.cpp, which has the speaker.
+            status("the game's own talk is over");
+            break;
         case Marker::None:
             break;
     }
@@ -424,10 +428,12 @@ void Session::open(std::string_view soul, const Approach& approach,
                                                                  : persona_.quest_of.greet_offer + "\n\n" + coming.offer;
         preset_.clear();
         if (!coming.accept_row.empty()) preset_.push_back({0, "accept", coming.accept_row});
+        if (!coming.accept_warn_row.empty()) preset_.push_back({0, "accept_warn", coming.accept_warn_row});
         if (!coming.threat_row.empty()) preset_.push_back({0, "offer_threat", coming.threat_row});
         if (!coming.no_row.empty()) preset_.push_back({0, "offer_no", coming.no_row});
         if (!coming.more_row.empty()) preset_.push_back({0, "more", coming.more_row});
         if (!coming.more_2_row.empty()) preset_.push_back({0, "more_2", coming.more_2_row});
+        if (!coming.refuse_lie_row.empty()) preset_.push_back({0, "refuse_lie", coming.refuse_lie_row});
         told_.emplace_back("help");
         status("the mod opened this conversation for " + persona_.quest_of.name +
                " to be offered, so the opening line is the offer, with its accepting rows first");
@@ -463,10 +469,12 @@ void Session::open(std::string_view soul, const Approach& approach,
                 persona_.greeting += "\n\n" + coming.offer;
                 preset_.clear();
                 if (!coming.accept_row.empty()) preset_.push_back({0, "accept", coming.accept_row});
+                if (!coming.accept_warn_row.empty()) preset_.push_back({0, "accept_warn", coming.accept_warn_row});
                 if (!coming.threat_row.empty()) preset_.push_back({0, "offer_threat", coming.threat_row});
                 if (!coming.no_row.empty()) preset_.push_back({0, "offer_no", coming.no_row});
                 if (!coming.more_row.empty()) preset_.push_back({0, "more", coming.more_row});
                 if (!coming.more_2_row.empty()) preset_.push_back({0, "more_2", coming.more_2_row});
+                if (!coming.refuse_lie_row.empty()) preset_.push_back({0, "refuse_lie", coming.refuse_lie_row});
                 told_.emplace_back("help");
             } else if (ending.ended) {
                 // Paid off on sight with nothing to lead on to: the thanks close the talk,
@@ -1101,8 +1109,8 @@ std::string Session::judge(std::string_view said) {
     // typed words -- except the opening round's own "Is there anything I can help you
     // with?", which the app wrote, before any offer, and which is not an acceptance.
     if (!picked_intent_.empty()) {
-        if (picked_intent_ == "accept") {
-            status("picked as accept, so the judge was not asked");
+        if (is_accept_intent(picked_intent_)) {
+            status("picked as " + picked_intent_ + ", so the judge was not asked");
             owe(persona_.quest.on_yes);
             persona_.quest.question.clear();
             return persona_.quest.direction;
@@ -1729,31 +1737,40 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.reply = written.offer;
             out.what = "the offer";
             if (!written.accept_row.empty()) out.next.push_back({0, "accept", written.accept_row});
+            if (!written.accept_warn_row.empty()) out.next.push_back({0, "accept_warn", written.accept_warn_row});
             // The offer's other answers, where written (scripted.h threat_row, no_row).
             if (!written.threat_row.empty()) out.next.push_back({0, "offer_threat", written.threat_row});
             if (!written.no_row.empty()) out.next.push_back({0, "offer_no", written.no_row});
             // And under it Henry's one question about the errand, while it is unasked, and
-            // a letter's "what is in it?", which he may ask before he agrees to carry it.
+            // a letter's "what is in it?", which he may ask before he agrees to carry it;
+            // and his refusal to lie for the giver, where one was written.
             if (!written.more_row.empty() && once("more")) out.next.push_back({0, "more", written.more_row});
             if (!written.more_2_row.empty() && once("more_2")) out.next.push_back({0, "more_2", written.more_2_row});
+            if (!written.refuse_lie_row.empty() && once("refuse_lie")) out.next.push_back({0, "refuse_lie", written.refuse_lie_row});
             if (!written.pry_row.empty() && once("pry")) out.next.push_back({0, "pry", written.pry_row});
         } else if (!written.help.empty() && once("help")) {
             out.reply = written.help;
             out.what = "the help reply";
         }
         out.spent.emplace_back("help");
-    } else if (intent == "accept") {
+    } else if (is_accept_intent(intent)) {
         // The errand taken up on its row, answered with the second telling where one was
         // written; the yes it owes the game rides with it (the judge is not asked either
         // way, see judge()). Without a second telling the model answers, as it always did.
+        // Taken on the warning row (accept_warn), the giver's answer to that stands in for
+        // the second telling.
         // A letter to be written at dictation begins here: the giver sits Henry down and
         // gives him the first part in the same breath, and the part's rows are the next list
         // (answer_scripted starts the dictation; offer lays them). The way to the receiver
         // (`agreed`) is not said here: nothing is to be carried yet, so it waits for the
         // sealing (notes.md 20 Oct 2026: no directions until the letter is written).
         const bool dictated = persona_.quest_of.has_dictation();
-        if ((!written.accept_reply.empty() || dictated) && !persona_.quest.question.empty()) {
-            if (dictated) {
+        const bool warned = intent == "accept_warn";
+        if ((!written.accept_reply.empty() || dictated || warned) && !persona_.quest.question.empty()) {
+            if (warned) {
+                out.reply = written.accept_warn_reply;
+                out.what = "the giver's answer to his agreeing with a warning promised";
+            } else if (dictated) {
                 const Quest::Dictation& dictation = persona_.quest_of.dictation;
                 out.reply = dictation.begin + "\n\n" + dictation.parts[0].dictate;
                 out.what = "the dictation begun on his agreeing, with its first part";
@@ -1766,6 +1783,7 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
             out.commands.push_back(persona_.quest.on_yes);
         }
         out.spent.emplace_back("accept");
+        if (warned) out.spent.emplace_back("accept_warn");
     } else if (intent == "offer_threat" || intent == "offer_no") {
         // The offer answered another way (scripted.h threat_row, no_row; bugs.txt 21 Nov
         // 2026): Henry will go to the man behind the matter himself, or will not take the
@@ -1819,23 +1837,30 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
                 }
             }
         }
-    } else if (intent == "more" || intent == "more_2") {
-        // Henry's question under the offer, answered as written. It settles nothing: the
-        // accepting row is laid again, so the errand is still there to be taken, and the
-        // other question with it while unasked.
+    } else if (intent == "more" || intent == "more_2" || intent == "refuse_lie") {
+        // Henry's question under the offer, answered as written -- or his word that he will
+        // not lie for the giver (refuse_lie), answered with the giver pressing his fear. It
+        // settles nothing: the accepting rows are laid again, so the errand is still there
+        // to be taken, and the other questions with them while unasked.
         const bool second = intent == "more_2";
-        const std::string& answer = second ? written.more_2_reply : written.more_reply;
+        const bool refusing = intent == "refuse_lie";
+        const std::string& answer = refusing ? written.refuse_lie_reply : second ? written.more_2_reply : written.more_reply;
         if (!answer.empty() && !persona_.quest.question.empty() && once(intent)) {
             out.reply = answer;
-            out.what = "the written answer to his question about the errand";
+            out.what = refusing ? "the giver's answer to Henry refusing to lie for him"
+                                : "the written answer to his question about the errand";
             if (!written.accept_row.empty()) out.next.push_back({0, "accept", written.accept_row});
+            if (!written.accept_warn_row.empty()) out.next.push_back({0, "accept_warn", written.accept_warn_row});
             if (!written.threat_row.empty()) out.next.push_back({0, "offer_threat", written.threat_row});
             if (!written.no_row.empty()) out.next.push_back({0, "offer_no", written.no_row});
+            if (intent != "more" && !written.more_row.empty() && once("more")) {
+                out.next.push_back({0, "more", written.more_row});
+            }
             if (!second && !written.more_2_row.empty() && once("more_2")) {
                 out.next.push_back({0, "more_2", written.more_2_row});
             }
-            if (second && !written.more_row.empty() && once("more")) {
-                out.next.push_back({0, "more", written.more_row});
+            if (!refusing && !written.refuse_lie_row.empty() && once("refuse_lie")) {
+                out.next.push_back({0, "refuse_lie", written.refuse_lie_row});
             }
         }
         out.spent.emplace_back(intent);
@@ -1872,9 +1897,10 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
                            std::to_string(approach_.npc_speech) + (read ? "" : ", unread") + ")";
                 out.directives.push_back(passed ? "@check speech pass" : "@check speech fail");
             }
-            // Asked before agreeing, it settles nothing: the accepting row is laid again.
+            // Asked before agreeing, it settles nothing: the accepting rows are laid again.
             if (!persona_.quest.question.empty() && !written.accept_row.empty()) {
                 out.next.push_back({0, "accept", written.accept_row});
+                if (!written.accept_warn_row.empty()) out.next.push_back({0, "accept_warn", written.accept_warn_row});
             }
         }
         out.spent.emplace_back(intent);
@@ -2062,7 +2088,7 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
     // on from each way chosen with it; the last part's choice ends it (the command owed
     // above closes the conversation on the sealing).
     if (persona_.quest_of.has_dictation()) {
-        if (intent == "accept" || intent == kDictateIntent) {
+        if (is_accept_intent(intent) || intent == kDictateIntent) {
             dictating_ = 1;
             wrote_.clear();
             dictation_due_ = false;
@@ -2077,7 +2103,7 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
     // the question is answered for the conversation, and the model's history carries the
     // direction with the words so a later turn knows what was agreed.
     std::string heard;
-    if (intent == "accept") {
+    if (is_accept_intent(intent)) {
         heard = std::string(said) + " " + persona_.quest.direction;
         persona_.quest.question.clear();
     }
@@ -2108,8 +2134,10 @@ bool Session::answer_scripted(std::string_view said, bool remember) {
                 reply += "\n\n" + coming.offer;
                 found->next.clear();
                 if (!coming.accept_row.empty()) found->next.push_back({0, "accept", coming.accept_row});
+                if (!coming.accept_warn_row.empty()) found->next.push_back({0, "accept_warn", coming.accept_warn_row});
                 if (!coming.more_row.empty()) found->next.push_back({0, "more", coming.more_row});
                 if (!coming.more_2_row.empty()) found->next.push_back({0, "more_2", coming.more_2_row});
+                if (!coming.refuse_lie_row.empty()) found->next.push_back({0, "refuse_lie", coming.refuse_lie_row});
                 told_.emplace_back("help");
             }
         }
@@ -2299,12 +2327,14 @@ std::vector<MenuOption> Session::written_fill(bool first_round, int room) {
     // model made in its own words.)
     if (!written.accept_row.empty() && spent("help") && !persona_.quest.question.empty()) {
         take("accept", written.accept_row);
+        if (!written.accept_warn_row.empty()) take("accept_warn", written.accept_warn_row);
         if (!written.threat_row.empty() && !spent("offer_threat")) take("offer_threat", written.threat_row);
         if (!written.no_row.empty() && !spent("offer_no")) take("offer_no", written.no_row);
         // His question about it stays under the accepting row until asked, and so does a
-        // letter's "what is in it?".
+        // letter's "what is in it?", and his refusal to lie.
         if (!written.more_row.empty() && !spent("more")) take("more", written.more_row);
         if (!written.more_2_row.empty() && !spent("more_2")) take("more_2", written.more_2_row);
+        if (!written.refuse_lie_row.empty() && !spent("refuse_lie")) take("refuse_lie", written.refuse_lie_row);
         if (!written.pry_row.empty() && !spent("pry")) take("pry", written.pry_row);
     }
     // The pry's pressing row, once the plain question has been refused and until it is
@@ -2624,7 +2654,7 @@ std::optional<std::string> Session::heard_for(const MenuOption& row) const {
     // direction without asking; agreement and help after the offer are put to the judge,
     // whose verdict decides the direction, so those cannot be guessed.
     if (!persona_.quest.question.empty()) {
-        if (row.intent == "accept") {
+        if (is_accept_intent(row.intent)) {
             heard += " " + persona_.quest.direction;
         } else if ((row.intent == "agree" || row.intent == "help") &&
                    row.text != kFirstRoundSeeds[0] && row.text != help_row()) {

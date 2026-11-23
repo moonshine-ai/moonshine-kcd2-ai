@@ -146,9 +146,10 @@ struct Quest {
     std::string holder_refuse;        // holder: the first excuse
     // The first excuse cut to Henry's presentation (bugs.txt 22 Nov 2026, In the Stocks'
     // Paul): a fop in a high-charisma outfit without armour (refuse_fop), a man playing at
-    // soldier in armour (refuse_soldier), the plain refuse otherwise. The Lua reads Henry's
-    // charisma and how dangerous he looks (WatchLook; the quest's look global) and the Talk
-    // opens on the matching line. Either written alone leaves the other to the plain one.
+    // soldier in armour (refuse_soldier), the plain refuse otherwise. The quest graph reads
+    // the armour on him (CheckEquipment) and the Lua his charisma (WatchHenryLook; the
+    // quest's look global), and the Talk opens on the matching line. Either written alone
+    // leaves the other to the plain one.
     std::string holder_refuse_fop;
     std::string holder_refuse_soldier;
     std::string holder_persuade;      // Henry: the reasonable way (a persuade check)

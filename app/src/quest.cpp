@@ -369,6 +369,11 @@ QuestPlan plan_deliver(const Quest& quest, const QuestFacts& facts) {
         if (!quest.offer.empty()) {
             plan.block += " When it comes up, this is how you put it: " + in_quotes(quest.offer);
         }
+        if (!quest.refuse_lie_reply.empty()) {
+            plan.block += " If they say they will carry it but will not lie about where it came from, you do "
+                          "not argue the point; you tell them how afraid you are, in these words or near "
+                          "them: " + in_quotes(quest.refuse_lie_reply);
+        }
         plan.question = "Did this person just agree, offer or promise to " + carry + " for you?";
         plan.on_yes = std::string(kQuestAccept);
         plan.direction = thing

@@ -465,6 +465,47 @@ case("Frames: a dialogue of the game's own is held to framesTalk while the app v
     check(tostring(E.cvars.sys_MaxFPS) == "60", "dots are not a line")
 end)
 
+case("Talk over: the game's own voiced Talk closing is said at once, once, so the app hushes what it still had of it", function(E, M, check)
+    -- bugs.txt 22 Nov 2026: the talk went on audibly after the view had closed, especially
+    -- after skipping -- the answer queued behind Henry's line played on to nobody, since
+    -- nothing told the app the Talk had gone. Now "BRIDGE talk over" within a quarter
+    -- second of the dialogue being down, after it was seen up, and the mouth stops with it.
+    E.dialog.open = true
+    M.Voice("henry", "Paul Schmidt. I've come about the chalice.")
+    M.Voice("male", "Then you've come to the wrong door, and you can go back out of it.")
+    E.advance(600)
+    check(not E.find("BRIDGE talk over"), "not while the dialogue is up")
+    check(M.talkIn == true, "seen up")
+    E.dialog.open = false
+    E.advance(300)
+    check(E.find("BRIDGE talk over"), "said within a quarter second of the close")
+    check(M.lipKey == nil and #M.lipQueue == 0, "the mouth stopped with it")
+    E.advance(3000)
+    check(E.count("BRIDGE talk over") == 1, "once: " .. tostring(E.count("BRIDGE talk over")))
+    E.advance(2000)
+    check(E.find("BRIDGE voiced dialogue over, frames given back"), "and the frames given back after")
+    -- The next Talk begun before the frames went back has its own end to say.
+    E.dialog.open = true
+    M.Voice("henry", "Elsbeth? You keep house for the gravedigger?")
+    check(M.talkOverSaid == false and M.talkIn == false, "a fresh Talk starts clean")
+    E.advance(600)
+    E.dialog.open = false
+    E.advance(300)
+    check(E.count("BRIDGE talk over") == 2, "and said: " .. tostring(E.count("BRIDGE talk over")))
+    E.advance(5000)
+    -- A tick before the game has the dialogue up is not its end.
+    M.Voice("henry", "...")
+    M.Voice("henry", "Father, a word.")
+    E.advance(600)
+    check(E.count("BRIDGE talk over") == 2, "never seen up, never over")
+    E.dialog.open = true
+    E.advance(300)
+    E.dialog.open = false
+    E.advance(300)
+    check(E.count("BRIDGE talk over") == 3, "up and then down: over")
+    E.advance(5000)
+end)
+
 case("Disk: a dialogue of the game's own opens the disk for the mouth's cues, and gives it back with the frames", function(E, M, check)
     -- The cues are loose files; at the pak-only rest the engine never saw one, and Paul
     -- Schmidt's Talk armed every line and found no cue in 600 polls (notes.md 14 Oct 2026).
@@ -1590,8 +1631,11 @@ case("Lead: the scene after is opened by the mod at the soul the truth was told 
     check(M.leadQuest == nextId, "the lead remembered")
     E.advance(2000)
     check(not E.find("BRIDGE begin npc=", mark), "nothing opened while the Talk is up")
-    -- The Talk comes down: the held conversation opens with Adam, lead= on its begin line.
+    -- The Talk comes down, and stays down two ticks running: the held conversation opens
+    -- with Adam, lead= on its begin line.
     E.dialog.open = false
+    E.advance(600)
+    check(not E.find("BRIDGE begin npc=", mark), "not on the first clear tick")
     E.advance(1100)
     check(E.find("BRIDGE quest " .. nextId .. " lead: opening with " .. q.target, mark), "opened by the mod")
     local begin = E.find("BRIDGE begin npc=" .. q.target, mark)
@@ -2471,6 +2515,7 @@ local function opened(E, M, ticksSince)
     live(E, M)
     M.TypingOpen(player)
     M.opened = true
+    M.retaken = false
     M.ticks = 100
     M.openedAt = M.ticks - ticksSince
     M.turnAtOpen = M.turn
@@ -2525,6 +2570,7 @@ case("Pump: a session that has not beaten is not stuck while a line is on screen
     E.appUp = true
     opened(E, M, 2)
     M.beats = 0
+    M.retaken = true -- the not-ours retake already spent (its own case below)
     M.appChecked = true
     M.active = true
     -- A first line came (the app is answering); the graph has not beaten on it.
@@ -2552,6 +2598,52 @@ case("Pump: a session that has not beaten is not stuck while a line is on screen
     M.Step()
     check(E.find("BRIDGE open but never beat, the graph is stuck"), "then it is stuck")
     check(E.find("BRIDGE left, graph never beat"), "and the session left")
+    E.dialog.open = wasOpen
+end)
+
+-- A session asked for while the game's own Talk was still playing out (bugs.txt 22 Nov
+-- 2026, Father Adam's lead): IsInDialog up on the old talk, no beat of ours, the app's lines
+-- captioned over it and no menu. After kNoBeatTicks the old talk is cut and ours asked for
+-- again, once; a session beating as it should is left alone.
+case("Pump: in a dialogue with no beat of ours for eight seconds, the talk up is cut and ours asked for again, once", function(E, M, check)
+    E.appUp = true
+    opened(E, M, 2)
+    M.beats = 0
+    M.appChecked = true
+    M.turnAtOpen = M.turn - 1
+    M.playedAt = M.ticks
+    M.menuHeld = true
+    local wasOpen = E.dialog.open
+    -- The game's own talk is the one up (opened by nobody here: the harness's dialog flag
+    -- alone, no beat loop behind it).
+    E.dialog.open = true
+    E.dialog.npc = nil
+    local mark = E.mark()
+    M.ticks = M.openedAt + 19
+    M.Step()
+    check(not E.find("no beat in", mark), "nothing said inside the limit")
+    M.ticks = M.openedAt + 20
+    M.Step()
+    check(E.find("BRIDGE opened but no beat in 8s: the dialogue up is not ours", mark), "the dialogue up judged not ours")
+    check(E.find("dialogue closed, interrupted", mark), "the old talk cut")
+    check(E.find("dialogue opened on " .. M.npc.name, mark) and E.dialog.open == true, "and ours asked for again, and up")
+    check(M.retaken == true and M.openedAt == M.ticks, "once, the clocks started over")
+    -- Not twice: the same silence again is the stuck check's to end, not another cut.
+    M.ticks = M.openedAt + 20
+    M.Step()
+    check(E.count("no beat in", mark) == 1, "not said again")
+    -- A session that beats is never touched.
+    E.closeDialog("test")
+    opened(E, M, 25)
+    M.beats = 3
+    E.dialog.open = true
+    mark = E.mark()
+    M.Step()
+    check(not E.find("no beat in", mark), "a beating session is left alone")
+    E.closeDialog("test")
+    M.menuHeld = false
+    M.Leave("test")
+    M.OnClosed()
     E.dialog.open = wasOpen
 end)
 
@@ -4643,46 +4735,41 @@ case("Chest: the sheet of names in Henry's pocket is the letter j, and closing i
 end)
 
 -- The holder's first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026):
--- In the Stocks' Paul mocks a fop and a soldier boy. The look global his doors read is set
--- from Henry's charisma and how dangerous he looks (and whether his weapon is out), kept
--- fresh by the watch and written once per change, with the readings in the log.
-case("Look: the holder's door reads Henry's look -- a fop well dressed and harmless, a soldier boy armed to the eyes or with his sword out, nobody in particular otherwise -- kept fresh by the watch, once per change", function(E, M, check)
+-- In the Stocks' Paul mocks a fop and a soldier boy. The armour is the quest graph's read
+-- (its CheckEquipment, the dialogue's bare port; nothing of it here); the dress is the Lua's,
+-- the look global set from Henry's charisma, kept fresh by the watch and said in the log
+-- once per change, and written over without a word by the flags' sync.
+case("Look: the holder's door reads Henry's dress -- the look global up on his charisma and down again -- kept fresh by the watch, once per change, and silently at the flags' sync", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     check(q and q.lookVar ~= nil, "In the Stocks' Paul has his excuses cut to Henry's look")
     if q == nil or q.lookVar == nil then return end
     local plain = player.soul.stats.rch
-    player.soul.stats.rch, player.soul.stats.bad = 0.5, 0.3
+    player.soul.stats.rch = 0.5
     M.npc = E.soul(q.giver)
     local mark = E.mark()
     M.QuestCommand(id, "accept")
-    check(E.globals[q.lookVar] == 0, "nobody in particular at the accept (rch=0.5 bad=0.3)")
-    check(E.count("Henry looks nobody in particular", mark) == 1, "said once, with the readings")
+    check(E.globals[q.lookVar] == 0, "plain at the accept (rch=0.5)")
+    check(E.count("Henry looks plain", mark) == 1, "said once, with the reading")
+    E.advance(2100)
     E.advance(2100)
     check(E.count("Henry looks", mark) == 1, "and not again for the same look")
     player.soul.stats.rch = M.lookFopCharisma
     E.advance(2100)
-    check(E.globals[q.lookVar] == 1, "well dressed and harmless: a fop")
-    check(E.count("Henry looks a fop", mark) == 1, "said once")
-    player.soul.stats.bad = M.lookSoldierDread
-    E.advance(2100)
-    check(E.globals[q.lookVar] == 2, "dangerous to look at, however well dressed: a soldier boy")
-    player.soul.stats.bad = 0.3
-    E.advance(2100)
-    check(E.globals[q.lookVar] == 1, "the armour off, a fop again")
-    local drawn = player.human.IsWeaponDrawn
-    function player.human:IsWeaponDrawn() return true end
-    E.advance(2100)
-    check(E.globals[q.lookVar] == 2, "his sword out makes a soldier boy of any dress")
-    player.human.IsWeaponDrawn = drawn
-    player.soul.stats.rch = 0.5
-    E.advance(2100)
-    check(E.globals[q.lookVar] == 0, "sheathed and plainly dressed: nobody in particular")
-    check(E.count("Henry looks", mark) == 6, "one line per change")
-    -- A world arriving (QuestFlags) writes the global afresh from the look of the moment.
+    check(E.globals[q.lookVar] == 1, "well dressed: a fop's charisma")
+    check(E.count("Henry looks well dressed", mark) == 1, "said once")
+    -- The flags' sync (StateQuest runs it at every stage) writes the global over without
+    -- a word, so a world arriving has it right and the log is not filled.
     E.globals[q.lookVar] = 7
     M.QuestFlags()
-    check(E.globals[q.lookVar] == 0, "the flags' sync writes the look over")
-    player.soul.stats.rch, player.soul.stats.bad = plain, 0
+    check(E.globals[q.lookVar] == 1, "the flags' sync writes the look over")
+    M.QuestFlags()
+    M.QuestFlags()
+    check(E.count("Henry looks", mark) == 2, "and says nothing")
+    player.soul.stats.rch = 0.5
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 0, "plainly dressed again")
+    check(E.count("Henry looks", mark) == 3, "one line per change")
+    player.soul.stats.rch = plain
 end)
 
 -- A retrieve whose unyielding holder can be caught where he should not be at night (Words

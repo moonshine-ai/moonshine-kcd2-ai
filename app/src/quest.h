@@ -177,6 +177,15 @@ struct Quest {
     // `accept`; bugs.txt 18 Nov 2026, A Beggar's Heart: "I'll go to Bylany and ask her,
     // Father. Quietly."). Empty, and the app composes one from the kind (scripted.cpp).
     std::string accept;
+    // A giver who wants a story told for him (In the Stocks' Benesh: "make up a story";
+    // bugs.txt 22 Nov 2026): `refuse_lie` is Henry's row under the offer saying he will not
+    // lie for him, answered with `refuse_lie_reply` -- the giver pressing how afraid he is --
+    // and the offer stays open, as after `more`; the giver's paragraph carries the answer
+    // too, for the same thing said in Henry's own words. `accept_warn` is a second accepting
+    // row: Henry takes the errand and says he will warn the man behind the matter off the
+    // giver himself, answered with `accept_warn_reply` in place of `agreed`; the errand is
+    // taken as on `accept`, and nothing else is owed. Each laid only where both are written.
+    std::string refuse_lie, refuse_lie_reply, accept_warn, accept_warn_reply;
     // A find's count: how many of the thing the giver wants, and the hand-in takes. From
     // npc_quest_lines; 1 for everything else.
     int count = 1;

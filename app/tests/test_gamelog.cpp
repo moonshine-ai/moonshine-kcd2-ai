@@ -40,6 +40,8 @@ TEST_CASE("the markers the mod prints are recognised in the lines it prints them
     const Event skipped_line = classify("<12:05:03> [moonshine_names] BRIDGE skipped line");
     CHECK(skipped_line.marker == Marker::SkippedLine);
     CHECK(skipped_line.turn == 0);
+    // And the Talk closing, which hushes whatever the voice still had of it.
+    CHECK(classify("<12:05:04> [moonshine_names] BRIDGE talk over").marker == Marker::TalkOver);
 
     const Event guard_begin = classify(
         "<12:05:10> BRIDGE begin npc=kkut_commander doing=none rch=0.5 hour=11.0 mode=guard_find loc=location_kutnaHora");

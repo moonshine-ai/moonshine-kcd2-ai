@@ -2788,6 +2788,84 @@ TEST_CASE("an offer's written threat and decline are laid with the accepting row
     }
 }
 
+TEST_CASE("a giver who wants a story told may be refused the lie and still have the errand taken, with a warning promised") {
+    // bugs.txt 22 Nov 2026 (In the Stocks): Henry making it clear he will not lie to the
+    // priest gets Benesh pressing how afraid he is of Paul (refuse_lie: answered as `more`
+    // is, the offer still open); and he always has the row that takes the chalice back and
+    // promises to warn Paul off Benesh (accept_warn: the errand taken as on `accept`, the
+    // giver's own answer in place of the second telling).
+    Quest altar;
+    altar.id = "895f926a2b54";
+    altar.kind = "deliver";
+    altar.name = "Back on the Altar";
+    altar.role = QuestRole::Giver;
+    altar.giver_soul = kBartel;
+    altar.giver_name = "Benesh";
+    altar.target_soul = "kkut_additive_man_135";
+    altar.target_name = "Father Adam";
+    altar.item_kind = "chalice";
+    altar.offer = "Take the chalice back to Father Adam. Say you found it. Don't say my name.";
+    altar.accept = "I'll take it back to him.";
+    altar.agreed = "God keep you. He'll be at the church.";
+    altar.more = "Why shouldn't I say who sent me?";
+    altar.more_reply = "Because Paul will hear of it.";
+    altar.refuse_lie = "I'll take it back, but I'll not lie to a priest about where it came from.";
+    altar.refuse_lie_reply = "Then he'll know, and Paul will know by nightfall. You don't know what he is.";
+    altar.accept_warn = "I'll take it back. And I'll have a word with Paul Schmidt myself.";
+    altar.accept_warn_reply = "Don't -- no. God keep you, then. Mind yourself with him.";
+    Fixture f(false);
+    f.session.set_persona_source(
+        [&](std::string_view, const Approach& approach, std::string_view, const SoulRecord& record)
+            -> std::optional<Persona> {
+            const Standing standing = standing_of(record);
+            Persona persona{"Benesh", "You are Benesh, once the bell-ringer.", "You again."};
+            QuestFacts facts = standing.facts_of(altar.id);
+            persona.quest_of = altar;
+            persona.quest = plan_quest(altar, facts, approach, 3);
+            persona.scripted = plan_scripted("", {}, {}, altar, facts, standing, {altar}, {facts});
+            return persona;
+        });
+    LogTailer tailer(f.game.log());
+    f.game.launch();
+    f.game.begin_with(kBartel, " lead=" + altar.id);
+    f.drain(tailer);
+    f.play_all(tailer);
+    REQUIRE(f.game.menu().size() >= 4);
+    CHECK(f.offered[0].intent == "accept");
+    CHECK(f.offered[1].intent == "accept_warn");
+    CHECK(f.game.menu()[1] == altar.accept_warn);
+    CHECK(f.offered[2].intent == "more");
+    CHECK(f.offered[3].intent == "refuse_lie");
+    CHECK(f.game.menu()[3] == altar.refuse_lie);
+    // Refusing the lie: the giver's fear, nothing owed, and both accepting rows laid again
+    // with the question still unasked; the refusal itself is not offered twice.
+    f.offered.clear();
+    f.game.picked(4, "refuse_lie", altar.refuse_lie);
+    f.drain(tailer);
+    f.play_all(tailer);
+    CHECK(f.recorded.empty());
+    CHECK(f.session.history().back().content == altar.refuse_lie_reply);
+    REQUIRE(f.offered.size() >= 3);
+    CHECK(f.offered[0].intent == "accept");
+    CHECK(f.offered[1].intent == "accept_warn");
+    CHECK(f.offered[2].intent == "more");
+    for (const MenuOption& row : f.offered) CHECK(row.intent != "refuse_lie");
+    // Taking it with the warning: the yes owed, the giver's answer to the warning said,
+    // and the conversation left open as after `accept`, with neither accepting row again.
+    f.offered.clear();
+    f.game.picked(2, "accept_warn", altar.accept_warn);
+    f.drain(tailer);
+    REQUIRE(f.recorded.size() == 1);
+    CHECK(f.recorded[0] == std::make_pair(altar.id, std::string(kQuestAccept)));
+    f.play_all(tailer);
+    CHECK(f.session.history().back().content == altar.accept_warn_reply);
+    CHECK(f.llm.calls.empty());
+    for (const MenuOption& row : f.offered) {
+        CHECK(row.intent != "accept");
+        CHECK(row.intent != "accept_warn");
+    }
+}
+
 TEST_CASE("a letter's writer may be asked what is in it, and answers by Henry's Speech against his own") {
     // notes.md (9 Oct 2026, Holy Jest): Henry should be able to ask Benesh what the letter
     // says, and get it out of him on a speech check. The row is laid while the letter is in

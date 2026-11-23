@@ -34,12 +34,18 @@ inline constexpr int kMenuOptions = 4;
 // meaning never depends on reading the words twice. The intents with an argument,
 // `ask:<topic>` and `say:<remark>`, are the app's own (scripted.h). `more` is Henry's one
 // written question under an offer (scripted.h, more_row), answered as written and leaving
-// the offer open; `more_2` is his second, where one was written (quest.h, more_2).
+// the offer open; `more_2` is his second, where one was written (quest.h, more_2);
+// `refuse_lie` his word that he will not lie for the giver, answered the same way; and
+// `accept_warn` a second accepting row, the errand taken with a promise to warn the man
+// behind the matter off (quest.h accept_warn) -- acted on as `accept` is.
 inline constexpr std::string_view kIntents[] = {
     "help", "accept", "ask", "about", "agree", "decline", "press", "joke", "leave_soon", "farewell",
     "remind", "more", "more_2", "alms", "pry", "pry_press", "paper", "opinion_1", "opinion_2", "opinion_3",
-    "offer_threat", "offer_no",
+    "offer_threat", "offer_no", "refuse_lie", "accept_warn",
 };
+// Whether a picked row is the errand taken up: the accepting row, or the one that takes
+// it with a promise to warn the man behind the matter off (accept_warn).
+inline bool is_accept_intent(std::string_view intent) { return intent == "accept" || intent == "accept_warn"; }
 // Henry's row at a beggar, while he carries something the mod says he could spare
 // (approach.h, alms); picked, it is answered with the rows for what he has -- `alms:money`,
 // `alms:food`, `alms:clothes` (scripted.h) -- and each of those owes the mod `@alms <kind>`,

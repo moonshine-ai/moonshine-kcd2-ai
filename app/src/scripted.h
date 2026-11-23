@@ -229,6 +229,15 @@ struct Scripted {
     // intent `more_2`, so either may be asked first and the other stays.
     std::string more_2_row;
     std::string more_2_reply;
+    // Henry's row refusing to lie for the giver, and the giver's answer (quest.h refuse_lie;
+    // bugs.txt 22 Nov 2026): laid and answered as `more` is, under the intent `refuse_lie`.
+    std::string refuse_lie_row;
+    std::string refuse_lie_reply;
+    // A second accepting row, Henry taking the errand and promising to warn the man behind
+    // the matter off the giver (quest.h accept_warn): the errand taken as on `accept`, the
+    // giver answering with `accept_warn_reply`.
+    std::string accept_warn_row;
+    std::string accept_warn_reply;
     // The offer answered another way, where written (quest.h offer_threat, offer_no; bugs.txt
     // 21 Nov 2026): Henry's row saying he will go to the man behind the matter himself
     // (`offer_threat`, answered with `threat_reply`: the errand taken and ended `threatened`

@@ -272,6 +272,14 @@ Scripted plan_scripted(std::string_view self_account, const std::vector<Knowledg
             out.more_2_row = quest.more_2;
             out.more_2_reply = quest.more_2_reply;
         }
+        if (!quest.refuse_lie.empty() && !quest.refuse_lie_reply.empty()) {
+            out.refuse_lie_row = quest.refuse_lie;
+            out.refuse_lie_reply = quest.refuse_lie_reply;
+        }
+        if (!quest.accept_warn.empty() && !quest.accept_warn_reply.empty()) {
+            out.accept_warn_row = quest.accept_warn;
+            out.accept_warn_reply = quest.accept_warn_reply;
+        }
         // The offer answered another way, where written (quest.h offer_threat, offer_no).
         if (!quest.offer_threat.empty() && !quest.offer_threat_reply.empty()) {
             out.threat_row = quest.offer_threat;

@@ -1299,7 +1299,8 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
     // button to go while the loop is held in the model left the voice talking to nobody
     // until the reply was written (bugs.txt 21 Nov 2026: the TTS should stop when the
     // conversation closes). The loop hushes again when it reaches the event, which costs
-    // nothing.
+    // nothing. The end of a voiced Talk of the game's own ("BRIDGE talk over") is the same
+    // end (bugs.txt 22 Nov 2026: the talk went on audibly after the view had closed).
     int lefts_early = 0;
     const auto hush_line = [speaker] {
         if (!speaker) return;
@@ -1320,7 +1321,7 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
         for (const Event& event : tailer.buffered()) {
             if (event.marker == Marker::Voice) voice_ahead = true;
             if (event.marker == Marker::SkippedLine && !voice_ahead) ++lines;
-            if (event.marker == Marker::Left) ++lefts;
+            if (event.marker == Marker::Left || event.marker == Marker::TalkOver) ++lefts;
             if (event.marker != Marker::Skipped) continue;
             ++seen;
             if (event.turn >= turn) of_turn = true;
@@ -1602,12 +1603,14 @@ int run_with_game(const Args& args, Llm& llm, const std::string& world, Speaker*
                 // being said belongs to the line before this one.
                 if (event.marker == Marker::Begin || event.marker == Marker::Said ||
                     event.marker == Marker::Picked || event.marker == Marker::Left ||
-                    event.marker == Marker::Restarted) {
+                    event.marker == Marker::TalkOver || event.marker == Marker::Restarted) {
                     hush_all();
                 }
                 // An end hushed when it was seen ahead of the loop (skipped_since) is
                 // accounted for, so the next end is hushed early too.
-                if (event.marker == Marker::Left && lefts_early > 0) --lefts_early;
+                if ((event.marker == Marker::Left || event.marker == Marker::TalkOver) && lefts_early > 0) {
+                    --lefts_early;
+                }
                 // The player skipped the line: hushed when it was seen, if the loop was held
                 // in the model then (skipped_since), and again now. Again, because the early
                 // hush emptied the queue as it stood then, and the lines the mod showed

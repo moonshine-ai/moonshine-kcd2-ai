@@ -19,6 +19,8 @@ constexpr std::string_view kPlayed = "BRIDGE played turn=";
 constexpr std::string_view kSkipped = "BRIDGE skipped turn=";
 // The same tap in a voiced Talk of the game's own (Marker::SkippedLine).
 constexpr std::string_view kSkippedLine = "BRIDGE skipped line";
+// A voiced Talk of the game's own closed (Marker::TalkOver).
+constexpr std::string_view kTalkOver = "BRIDGE talk over";
 constexpr std::string_view kSaid = "BRIDGE said ";
 constexpr std::string_view kVoice = "BRIDGE voice ";
 constexpr std::string_view kLoaded = "BRIDGE state loaded";
@@ -211,6 +213,9 @@ Event classify(std::string_view line) {
     }
     if (line.find(kSkippedLine) != std::string_view::npos) {
         return {Marker::SkippedLine, 0, {}};
+    }
+    if (line.find(kTalkOver) != std::string_view::npos) {
+        return {Marker::TalkOver, 0, {}};
     }
     // The say slot: "voice" or "typed" after the start; bare is an older mod's, and voice.
     if (const std::size_t at = line.find(kSayStart); at != std::string_view::npos) {

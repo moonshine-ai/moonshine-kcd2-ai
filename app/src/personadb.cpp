@@ -1020,6 +1020,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'fought', 'fought_reply', 'confess', 'dead_reply', 'spot_text', "
                 "'greet_owed', 'greet_settle_unasked', 'greet_offer', 'thanks_onward', "
                 "'offer_2', 'agreed', 'more', 'more_reply', 'opener', 'accept', "
+                "'refuse_lie', 'refuse_lie_reply', 'accept_warn', 'accept_warn_reply', "
                 "'onward_soul', 'onward_name', 'greet_onward', 'keepsake_name', 'thanks_keepsake', 'thanks_exposed', "
                 "'plea_yes', 'plea_yes_reply', 'plea_no', 'plea_no_reply', 'plea_threat', 'plea_threat_reply', "
                 "'beg', 'spare', 'spare_reply', 'greet_arranged', 'greet_fallen', 'fallen', 'fallen_reply', "
@@ -1136,6 +1137,10 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 {"more_reply", &Quest::more_reply},
                 {"opener", &Quest::opener},
                 {"accept", &Quest::accept},
+                {"refuse_lie", &Quest::refuse_lie},
+                {"refuse_lie_reply", &Quest::refuse_lie_reply},
+                {"accept_warn", &Quest::accept_warn},
+                {"accept_warn_reply", &Quest::accept_warn_reply},
                 {"item_kind", &Quest::item_kind},
                 {"give", &Quest::give},
                 {"give_exposed", &Quest::give_exposed},

@@ -3389,10 +3389,29 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"opened.OnOpened\" To=\"SetTrue\" />\r\n";
             s += t(4) + "</State>\r\n";
         }
+        // Whether Henry stands bare of armour, for a holder whose first excuse is cut to
+        // his look (npcdb.hpp has_look): I_Soul::CheckEquipment with the five slots the
+        // game's players_appearance_scan.xml asks after as FreeSlots -- true when all five
+        // are empty -- read by his dialogue's doors as Port('bare') at the Talk.
+        if (quest.has_look()) {
+            s += t(4) + "<MakeArray Name=\"armourSlots\" TypeT=\"wh::entitymodule::EquipmentSlotIds\">\r\n";
+            s += t(5) + "<Constant Name=\"A\" Value=\"body_chainmail\" />\r\n";
+            s += t(5) + "<Constant Name=\"B\" Value=\"body_plate\" />\r\n";
+            s += t(5) + "<Constant Name=\"C\" Value=\"head_helmet\" />\r\n";
+            s += t(5) + "<Constant Name=\"D\" Value=\"leg_armor\" />\r\n";
+            s += t(5) + "<Constant Name=\"E\" Value=\"sleeves\" />\r\n";
+            s += t(4) + "</MakeArray>\r\n";
+            s += t(4) + "<MemberFunction Name=\"bareOfArmour\" MethodName=\"CheckEquipment\" "
+                        "DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+            s += t(5) + "<Asset Name=\"Soul\" Alias=\"player\" />\r\n";
+            s += t(5) + "<Edge From=\"armourSlots.Array\" To=\"FreeSlots\" />\r\n";
+            s += t(4) + "</MemberFunction>\r\n";
+        }
         s += t(4) + "<" + holder_node(quest.id) + " Name=\"holder\">\r\n";
         s += t(5) + "<Edge From=\"" + active_bool + "\" To=\"active\" />\r\n";
         s += t(5) + "<Edge From=\"handed.State\" To=\"handed\" />\r\n";
         if (seal_word) s += t(5) + "<Edge From=\"wasOpened.State\" To=\"opened\" />\r\n";
+        if (quest.has_look()) s += t(5) + "<Edge From=\"bareOfArmour.bool\" To=\"bare\" />\r\n";
         s += t(4) + "</" + holder_node(quest.id) + ">\r\n";
     }
     // The one who can let Henry in (In the Stocks' Elsbeth): her optional objective opens
@@ -5065,6 +5084,8 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     s += t(4) + "<Port Name=\"handover\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     const bool seal_word = quest.is_deliver() && !quest.log_opened.empty() && !quest.receiver_hand_opened.empty();
     if (seal_word) s += t(4) + "<Port Name=\"opened\" Direction=\"In\" Type=\"bool\" />\r\n";
+    // Whether Henry stands bare of armour (the graph's CheckEquipment; the look doors).
+    if (quest.has_look()) s += t(4) + "<Port Name=\"bare\" Direction=\"In\" Type=\"bool\" />\r\n";
     if (quest.is_mind()) {
         for (int i = 1; i <= std::min(3, std::max(1, quest.count)); ++i) {
             s += t(4) + "<Port Name=\"check" + std::to_string(i) + "\" Direction=\"Out\" Type=\"trigger\" />\r\n";
@@ -5578,17 +5599,19 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
                                   (quest.has_bedside() ? " AND gvar('" + seen_var + "')!=1" : "") +
                                   (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "");
     // His first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026): a
-    // door for the fop and one for the soldier boy, each on the quest's look global (the
-    // Lua's WatchHenryLook: 1 the fop, 2 the soldier), Henry's same line and the holder's own,
-    // going on to the one menu by name (GoTo, as a failed check comes back to it), and the
-    // plain door below for every other look.
+    // door for the soldier boy when armour is on him (the graph's `bare` port, from
+    // I_Soul::CheckEquipment over the game's own five armour slots; emit.hpp), one for the
+    // fop when he is bare of it and well dressed (the quest's look global, the Lua's
+    // WatchHenryLook: 1 on his charisma), Henry's same line and the holder's own, going on
+    // to the one menu by name (GoTo, as a failed check comes back to it), and the plain
+    // door below for every other look.
     std::string look_when;
     if (quest.has_look()) {
         const std::string look_var = xml_escape(quest_flag_variable(modid, quest.id, "look"));
-        auto look_door = [&](const char* tag, int look, const char* field, const std::string& words) {
+        auto look_door = [&](const char* tag, const std::string& when, const char* field, const std::string& words) {
             if (words.empty()) return;
-            s += t(6) + "<Sequence EntryCondition=\"" + open_when + " AND gvar('" + look_var + "')==" +
-                 std::to_string(look) + "\" EndType=\"GoTo\" GoToDecision=\"menu\" Name=\"" + tag +
+            s += t(6) + "<Sequence EntryCondition=\"" + open_when + " AND " + when +
+                 "\" EndType=\"GoTo\" GoToDecision=\"menu\" Name=\"" + tag +
                  "\" ExitScript=\"" + stage("open") + "\">\r\n";
             s += prompt(7, "open", quest.holder_open);
             s += t(7) + "<Elements>\r\n";
@@ -5596,10 +5619,13 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             s += line(8, role, field, words);
             s += t(7) + "</Elements>\r\n";
             s += t(6) + "</Sequence>\r\n";
-            look_when += " AND gvar('" + look_var + "')!=" + std::to_string(look);
         };
-        look_door("open_fop", 1, "refuse_fop", quest.holder_refuse_fop);
-        look_door("open_soldier", 2, "refuse_soldier", quest.holder_refuse_soldier);
+        const bool soldier = !quest.holder_refuse_soldier.empty();
+        look_door("open_soldier", "!Port('bare')", "refuse_soldier", quest.holder_refuse_soldier);
+        look_door("open_fop", std::string(soldier ? "Port('bare') AND " : "") + "gvar('" + look_var + "')==1",
+                  "refuse_fop", quest.holder_refuse_fop);
+        if (soldier) look_when += " AND Port('bare')";
+        if (!quest.holder_refuse_fop.empty()) look_when += " AND gvar('" + look_var + "')!=1";
     }
     s += t(6) + "<Sequence EntryCondition=\"" + open_when + look_when +
          "\" EndType=\"Decision\" Name=\"open\" ExitScript=\"" + stage("open") + "\">\r\n";
@@ -8388,6 +8414,8 @@ std::string state_lua(const std::string& g) {
     // A Talk's caption of ours is the last world's too; the new world's HUD is its own.
     s += "\t\t" + g + ".talkCaption = false\n";
     s += "\t\t" + g + ".voicedTalk = false\n";
+    s += "\t\t" + g + ".talkIn = false\n";
+    s += "\t\t" + g + ".talkOverSaid = false\n";
     // And the roles granted to the last world's souls went with it: a metarole added at
     // run time is not in the save, so every holder of an errand under way is granted
     // theirs again by name from the watch (RegrantRoles), and the once-per-soul memo of
@@ -8856,10 +8884,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.stageVar, f.ambushed and 2 or f.directed and 1 or 0) end)\n";
     s += "\t\tend\n";
     // A holder's door cut to Henry's look reads the look global; the Watch keeps it fresh.
-    s += "\t\tif q.lookVar ~= nil then\n";
-    s += "\t\t\t" + g + ".henryLookWas[id] = nil\n";
-    s += "\t\t\tpcall(" + g + ".WatchHenryLook, id, q)\n";
-    s += "\t\tend\n";
+    s += "\t\tif q.lookVar ~= nil then pcall(" + g + ".WatchHenryLook, id, q, true) end\n";
     // A buy's menu reads whether the giver's thing is on Henry; the Watch keeps it fresh.
     s += "\t\tif q.kind == \"buy\" then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.carryVar, " + g + ".Count(" + g + ".Player(), q.carry) > 0 and 1 or 0) end)\n";
@@ -10712,6 +10737,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".opened = false\n";
     s += g + ".openedAt = 0\n";
     s += g + ".pushed = false\n";
+    s += g + ".retaken = false\n";
     s += "-- How long a session may stay open without a single beat before it is cut, in\n";
     s += "-- pump ticks of 400ms. A beat is a few seconds, so this is generous; it exists\n";
     s += "-- because a graph resting where it will not move leaves the player no way out\n";
@@ -11761,10 +11787,30 @@ std::string emit_conversation_lua(const std::string& modid,
     // A session opened over the Talk: its own caption takes over (Begin hides the game's,
     // Leave gives it back), so the Talk's is simply let go of.
     s += "\t\tif " + g + ".active then " + g + ".voicedDisk = false; " + g + ".talkCaption = false; " + g + ".lineGen = " + g + ".lineGen + 1 return end\n";
-    // The Talk's caption goes the moment the Talk does, not with the frames four seconds on.
-    s += "\t\tif not " + g + ".InDialog() then pcall(" + g + ".TalkCaptionDown, \"talk over\") end\n";
+    // The Talk's caption goes the moment the Talk does, not with the frames four seconds on
+    // -- and so does the voice: "BRIDGE talk over", once, the moment the dialogue that was
+    // up is not, which the app takes as it takes a conversation's end and hushes the lines
+    // still queued (bugs.txt 22 Nov 2026: the talk went on audibly after the view had
+    // closed, especially after skipping -- a tap through the last row ends the Talk, and
+    // the answer queued behind Henry's line, or a line longer in the voice than in the
+    // game's reckoning, played on to nobody; nothing told the app the Talk had gone). Only
+    // after the dialogue has been seen up (talkIn), so a tick before the game has it open
+    // does not pass for its end; the mouth goes with it. Polled four times a second for
+    // this, where once was enough for the frames.
+    s += "\t\tif " + g + ".InDialog() then\n";
+    s += "\t\t\t" + g + ".talkIn = true\n";
+    s += "\t\telse\n";
+    s += "\t\t\tpcall(" + g + ".TalkCaptionDown, \"talk over\")\n";
+    s += "\t\t\tif " + g + ".talkIn and not " + g + ".talkOverSaid then\n";
+    s += "\t\t\t\t" + g + ".talkOverSaid = true\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE talk over\")\n";
+    s += "\t\t\t\tpcall(" + g + ".LipStop, \"talk over\")\n";
+    s += "\t\t\t\t" + g + ".lipKey = nil\n";
+    s += "\t\t\t\t" + g + ".lipQueue = {}\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
     s += "\t\tif " + g + ".Now() - " + g + ".voicedAt < 4 or " + g + ".InDialog() then\n";
-    s += "\t\t\tpcall(function() Script.SetTimer(1000, tick) end)\n";
+    s += "\t\t\tpcall(function() Script.SetTimer(250, tick) end)\n";
     s += "\t\t\treturn\n";
     s += "\t\tend\n";
     s += "\t\t" + g + ".Log(\"BRIDGE voiced dialogue over, frames given back\")\n";
@@ -11776,8 +11822,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".lipQueue = {}\n";
     s += "\t\t" + g + ".voicedSoul = nil\n";
     s += "\t\t" + g + ".voicedTalk = false\n";
+    s += "\t\t" + g + ".talkIn = false\n";
+    s += "\t\t" + g + ".talkOverSaid = false\n";
     s += "\tend\n";
-    s += "\tpcall(function() Script.SetTimer(1000, tick) end)\n";
+    s += "\tpcall(function() Script.SetTimer(250, tick) end)\n";
     s += "end\n";
     s += "\n";
     s += "function " + g + ".Path(pattern, turn)\n";
@@ -13049,6 +13097,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tpcall(" + g + ".VoicedFrames)\n";
+    // A Talk whose end was said and another begun within the frames' four seconds: the
+    // new one's end is its own to say.
+    s += "\tif " + g + ".talkOverSaid then " + g + ".talkOverSaid = false; " + g + ".talkIn = false end\n";
     s += "\t" + g + ".voicedTalk = true\n";
     s += "\tif soul ~= nil and soul ~= \"\" then " + g + ".voicedSoul = soul end\n";
     // The Talk's caption is ours, in pages, while the app is voicing (TalkCaption).
@@ -13067,6 +13118,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     s += g + ".voicedSoul = nil\n";
     s += g + ".voicedTalk = false\n";
+    s += g + ".talkIn = false\n";
+    s += g + ".talkOverSaid = false\n";
     s += g + ".lipQueue = {}\n";
     s += g + ".lipPieced = false\n";
     // The reply being written was skipped (Skip): the app ends it at what was on the
@@ -13347,6 +13400,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif not " + g + ".opened then\n";
     s += "\t\t" + g + ".opened = true\n";
     s += "\t\t" + g + ".openedAt = " + g + ".ticks\n";
+    s += "\t\t" + g + ".retaken = false\n";
     s += "\t\t" + g + ".turnAtOpen = " + g + ".turn\n";
     s += "\t\t" + g + ".appChecked = false\n";
     s += "\t\t" + g + ".appDown = false\n";
@@ -13389,6 +13443,29 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif " + g + ".opened and not " + g + ".InDialog() and\n";
     s += "\t\t\t" + g + ".ticks - " + g + ".openedAt >= 3 then\n";
     s += "\t\t" + g + ".PushCamera()\n";
+    s += "\tend\n";
+    s += "\n";
+    // In a dialogue, but not ours (emit.hpp kNoBeatTicks; bugs.txt 22 Nov 2026): the
+    // session was asked for while the game's own Talk was still playing its last line out,
+    // and the engine kept that one up and never began ours -- no twin, no beat, the app's
+    // lines captioned over it and the menu never drawn. The old talk is cut (InterruptDialogs,
+    // which takes IsInDialog down in the same call) and ours asked for again, once; the
+    // clocks start over from here.
+    s += "\tif " + g + ".opened and " + g + ".InDialog() and " + g + ".beats == 0 and not " + g + ".retaken and\n";
+    s += "\t\t\t" + g + ".ticks - " + g + ".openedAt >= " + std::to_string(kNoBeatTicks) + " then\n";
+    s += "\t\t" + g + ".retaken = true\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE opened but no beat in \" .. ((" + g + ".ticks - " + g + ".openedAt) * 0.4) ..\n";
+    s += "\t\t\t\"s: the dialogue up is not ours (the game's talk still playing out); cut, and ours asked for again\")\n";
+    s += "\t\tpcall(function() player.human:InterruptDialogs() end)\n";
+    s += "\t\tlocal npc, user = " + g + ".npc, " + g + ".user\n";
+    s += "\t\tif npc ~= nil and user ~= nil then\n";
+    s += "\t\t\t" + g + ".Call(\"RequestDialog again\", function()\n";
+    s += "\t\t\t\treturn npc.actor:RequestDialog(user.id, " + g + ".metarole, false, true, false)\n";
+    s += "\t\t\tend)\n";
+    s += "\t\tend\n";
+    s += "\t\t" + g + ".openedAt = " + g + ".ticks\n";
+    s += "\t\t" + g + ".pushed = false\n";
+    s += "\t\treturn\n";
     s += "\tend\n";
     s += "\n";
     // A session that opens and never beats is the one failure that traps the player:
@@ -18394,38 +18471,33 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Token(q)\n";
     s += "end\n";
     s += "\n";
-    // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look;
-    // emit.hpp kLookFopCharisma, kLookSoldierDread): 2 the soldier boy (he looks dangerous,
-    // or his weapon is out), 1 the fop (well dressed and not dangerous), 0 anyone else. The
-    // readings come back with it for the log. Unread stats are nobody in particular.
+    // Henry's dress, for a holder whose first excuse is cut to his look (npcdb.hpp has_look;
+    // emit.hpp kLookFopCharisma): 1 well dressed (his relative charisma at or above the
+    // mark), 0 otherwise; the reading comes back with it for the log. Armour is the quest
+    // graph's own read (CheckEquipment, the dialogue's `bare` port), not the Lua's. An
+    // unread stat is plain.
     s += g + ".lookFopCharisma = " + health_text(kLookFopCharisma) + "\n";
-    s += g + ".lookSoldierDread = " + health_text(kLookSoldierDread) + "\n";
     s += "function " + g + ".HenryLook()\n";
-    s += "\tlocal p = " + g + ".Player()\n";
-    s += "\tlocal rch = " + g + ".PlayerStat(p, \"rch\")\n";
-    s += "\tlocal bad = " + g + ".PlayerStat(p, \"bad\")\n";
-    s += "\tlocal drawn = false\n";
-    s += "\tif p ~= nil and p.human ~= nil and p.human.IsWeaponDrawn ~= nil then\n";
-    s += "\t\tlocal ok, got = pcall(function() return p.human:IsWeaponDrawn() end)\n";
-    s += "\t\tdrawn = ok and got == true\n";
-    s += "\tend\n";
-    s += "\tlocal look = 0\n";
-    s += "\tif drawn or (type(bad) == \"number\" and bad >= " + g + ".lookSoldierDread) then look = 2\n";
-    s += "\telseif type(rch) == \"number\" and rch >= " + g + ".lookFopCharisma then look = 1 end\n";
-    s += "\treturn look, rch, bad, drawn\n";
+    s += "\tlocal rch = " + g + ".PlayerStat(" + g + ".Player(), \"rch\")\n";
+    s += "\tlocal look = (type(rch) == \"number\" and rch >= " + g + ".lookFopCharisma) and 1 or 0\n";
+    s += "\treturn look, rch\n";
     s += "end\n";
     s += "\n";
-    // The look global kept fresh as Henry dresses and arms himself, so the holder's door
-    // opens on the right excuse; said in the log with the readings when it changes.
+    // The look global kept fresh as Henry dresses, so the holder's door opens on the right
+    // excuse; said in the log with the reading when it changes (silent is the flags' sync,
+    // which writes it over without a word).
     s += g + ".henryLookWas = {}\n";
-    s += "function " + g + ".WatchHenryLook(id, q)\n";
-    s += "\tlocal look, rch, bad, drawn = " + g + ".HenryLook()\n";
+    s += "function " + g + ".WatchHenryLook(id, q, quiet)\n";
+    s += "\tlocal look, rch = " + g + ".HenryLook()\n";
+    s += "\tif quiet then\n";
+    s += "\t\tpcall(function() Variables.SetGlobal(q.lookVar, look) end)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     s += "\tif " + g + ".henryLookWas[id] == look then return end\n";
     s += "\t" + g + ".henryLookWas[id] = look\n";
     s += "\tpcall(function() Variables.SetGlobal(q.lookVar, look) end)\n";
-    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s Henry looks %s (rch=%s bad=%s drawn=%s)\", id,\n";
-    s += "\t\tlook == 2 and \"a soldier boy\" or look == 1 and \"a fop\" or \"nobody in particular\",\n";
-    s += "\t\ttostring(rch), tostring(bad), tostring(drawn)))\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s Henry looks %s (rch=%s)\", id,\n";
+    s += "\t\tlook == 1 and \"well dressed\" or \"plain\", tostring(rch)))\n";
     s += "end\n";
     s += "\n";
     // A buy: the holder dead (the charm is on the body, and bringing it is the retrieve's
@@ -18727,12 +18799,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t" + g + ".PayMoney(quest.pay, \"accept advanced\")\n";
     s += "\t\tend\n";
     s += "\t\tif quest.kind == \"mind\" or quest.kind == \"ambush\" or quest.kind == \"buy\" then " + g + ".QuestFlags() end\n";
+    s += "\t\tif quest.lookVar ~= nil then " + g + ".henryLookWas[id] = nil; " + g + ".WatchHenryLook(id, quest) end\n";
     // A find's keepsake goes down where the things grow the moment the errand is taken up,
     // so the objective's marker has something to sit on; the watch tries again if not.
     s += "\t\tif quest.kind == \"find\" and quest.keepsake ~= nil then " + g + ".LayKeepsake(id, \"accept\") end\n";
     s += "\t\tif quest.kind == \"travel\" or quest.kind == \"beat\" or quest.kind == \"pray\" or quest.kind == \"mind\"\n";
     s += "\t\t\t\tor quest.kind == \"ask\" or quest.kind == \"leave\" or quest.kind == \"return\"\n";
     s += "\t\t\t\tor quest.kind == \"ambush\" or quest.kind == \"buy\" or quest.kind == \"duel\"\n";
+    s += "\t\t\t\tor quest.lookVar ~= nil\n";
     s += "\t\t\t\tor (quest.kind == \"find\" and quest.keepsake ~= nil)\n";
     s += "\t\t\t\tor (quest.kind == \"retrieve\" and quest.chest ~= nil) then\n";
     s += "\t\t\t" + g + ".WatchArm(\"accept\")\n";
@@ -19739,6 +19813,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // still offers it, as before.
     s += g + ".leadQuest = nil\n";
     s += g + ".leadTries = 0\n";
+    s += g + ".leadClear = 0\n";
     s += "function " + g + ".QuestLead(id)\n";
     s += "\tlocal quest = " + g + ".quests[id]\n";
     s += "\tif quest == nil or quest.leadNext == nil then return end\n";
@@ -19750,6 +19825,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. quest.leadNext .. \" to be led on to from \" .. id .. \" once the Talk is down\")\n";
     s += "\t" + g + ".leadQuest = quest.leadNext\n";
     s += "\t" + g + ".leadTries = 0\n";
+    s += "\t" + g + ".leadClear = 0\n";
     s += "\tScript.SetTimer(" + std::to_string(kLeadTickMs) + ", " + g + ".LeadTick)\n";
     s += "end\n";
     s += "function " + g + ".LeadTick()\n";
@@ -19761,11 +19837,22 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" lead given up: the Talk did not come down\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tif " + g + ".active or " + g + ".InDialog() then\n";
+    // Down for real (bugs.txt 22 Nov 2026: opened on IsInDialog's first dip while the
+    // Talk's last reply was still playing out, and the engine began nothing of ours): the
+    // giver's dialogue twin gone as well, and two ticks running with nothing up.
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tlocal twin = nil\n";
+    s += "\tpcall(function() twin = System.GetEntityByName(\"DialogTwin_\" .. q.giver) end)\n";
+    s += "\tif " + g + ".active or " + g + ".InDialog() or twin ~= nil then\n";
+    s += "\t\t" + g + ".leadClear = 0\n";
     s += "\t\tScript.SetTimer(" + std::to_string(kLeadTickMs) + ", " + g + ".LeadTick)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\t" + g + ".leadClear = (" + g + ".leadClear or 0) + 1\n";
+    s += "\tif " + g + ".leadClear < 2 then\n";
+    s += "\t\tScript.SetTimer(" + std::to_string(kLeadTickMs) + ", " + g + ".LeadTick)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     s += "\tlocal e = nil\n";
     s += "\tpcall(function() e = System.GetEntityByName(q.giver) end)\n";
     s += "\tif e == nil or not " + g + ".QuestOfferable(id) then\n";

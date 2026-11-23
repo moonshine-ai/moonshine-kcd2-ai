@@ -113,6 +113,9 @@ enum class Marker {
     // of such a Talk is Henry's line and then theirs, so only the line being heard goes
     // (Speaker::hush_line); the rest of the row still plays. No turn: there is no session.
     SkippedLine,
+    // A voiced Talk of the game's own closed: the mod says so the moment the dialogue is
+    // down, and whatever the voice still had of it is hushed (bugs.txt 22 Nov 2026).
+    TalkOver,
 };
 
 struct Event {
