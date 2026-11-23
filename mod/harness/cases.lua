@@ -6956,4 +6956,64 @@ case("Guard find: grants MOONSHINE_GUARD_META without overriding native Talk, re
     M.typingLoaded = false
 end)
 
+case("Guard find: scans live storySouls inside settlement and locates cross-level Player party souls like Katherine", function(E, M, check)
+    -- Player party & major cross-level friendly NPCs have per-level SoulAsset shards in both Trosky (1) and Kuttenberg (2)
+    for _, sn in ipairs({ "ttro_katerina", "tkop_ptacek", "tneb_bohuta", "tneb_zizka", "tsem_racek", "tsem_hanus" }) do
+        local entry = M.locateSouls[sn]
+        check(entry ~= nil and type(entry.byLvl) == "table", sn .. " present in M.locateSouls")
+        check(entry.byLvl[1] ~= nil and entry.byLvl[2] ~= nil, sn .. " has both trosecko (1) and kutnohorsko (2) locate shards")
+    end
+    check(M.locateSouls["kkut_rozaRuthard"] ~= nil and M.locateSouls["kkut_rozaRuthard"].byLvl[2] ~= nil,
+          "Rosa Ruthard has kutnohorsko locate shard")
+
+    local hasKat, hasHans, hasRosa = false, false, false
+    for _, sn in ipairs(M.storySouls or {}) do
+        if sn == "ttro_katerina" then hasKat = true end
+        if sn == "tkop_ptacek" then hasHans = true end
+        if sn == "kkut_rozaRuthard" then hasRosa = true end
+    end
+    check(hasKat and hasHans and hasRosa, "storySouls includes Katherine, Hans Capon, and Rosa Ruthard")
+
+    local guardName = "kkut_commander"
+    if M.guardSouls[guardName] == nil then
+        for k, v in pairs(M.guardSouls) do
+            if v == "location_kutnaHora" then guardName = k; break end
+        end
+    end
+    player:SetWorldPos({ x = 3000, y = 750, z = 40 })
+    local guard = E.soul(guardName, { pos = { x = 3002, y = 750, z = 40 } })
+    -- Spawn Katherine & Rosa inside Kuttenberg's Burgher boundary, and Hans off-map in holdingWait (~395, 202)
+    E.soul("ttro_katerina", { pos = { x = 3163.7, y = 655.1, z = 53.0 } })
+    E.soul("kkut_rozaRuthard", { pos = { x = 2993.1, y = 665.1, z = 51.1 } })
+    E.soul("tkop_ptacek", { pos = { x = 395.0, y = 202.0, z = 10.0 } })
+
+    local mark = E.mark()
+    E.guardAskFind(guard)
+    local resetLine, resetIdx = E.find("BRIDGE guard_present reset loc=location_kutnaHora", mark)
+    local addLine, addIdx = E.find("BRIDGE guard_present add ", mark)
+    local beginLine, beginIdx = E.find("BRIDGE begin npc=" .. guardName, mark)
+    check(resetLine ~= nil and addLine ~= nil and beginLine ~= nil, "guard_present reset + add + begin all logged")
+    check(resetIdx < beginIdx and addIdx < beginIdx, "guard_present lines precede BRIDGE begin")
+    check(string.find(addLine, "ttro_katerina@3163.7,655.1,53.0", 1, true) ~= nil,
+          "Katherine reported live inside Kuttenberg: " .. tostring(addLine))
+    check(string.find(addLine, "kkut_rozaRuthard@2993.1,665.1,51.1", 1, true) ~= nil,
+          "Rosa Ruthard reported live inside Kuttenberg: " .. tostring(addLine))
+    check(string.find(addLine, "tkop_ptacek@", 1, true) == nil,
+          "Hans Capon in off-map holdingWait excluded from Kuttenberg guard_present: " .. tostring(addLine))
+
+    -- Placing @locate for Katherine in Kuttenberg selects the kutnohorsko (level 2) shard!
+    local kutEntry = M.locateSouls["ttro_katerina"].byLvl[2]
+    turn(E, 1, "Who are you looking for?")
+    turn(E, 2, "@saylabel 13:(Type a name) @rows 0")
+    check(untilMenu(E, 15000), "menu presented for guard prompt")
+    M.choosing = false
+    M.awaiting = true
+    local katSpots = "0,1440,3163.7,655.1,53.0"
+    turn(E, 3, string.format("@locate ttro_katerina %d:%s @heard ttro_katerina You'll find Katherine at the Hangman's Halter.", #katSpots, katSpots))
+    E.advance(1500)
+    check(type(M.state.locate) == "table" and M.state.locate.soul == "ttro_katerina"
+          and M.state.locate.lvl == 2 and M.state.locate.shard == kutEntry.shard,
+          "Locate selected kutnohorsko (lvl=2) shard for Katherine, got lvl=" .. tostring(M.state.locate and M.state.locate.lvl) .. " shard=" .. tostring(M.state.locate and M.state.locate.shard))
+end)
+
 return { cases = cases, order = order }

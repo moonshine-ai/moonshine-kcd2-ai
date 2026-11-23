@@ -54,6 +54,21 @@ enum class CommandStatus {
     AmbiguousSoul,
 };
 
+struct LiveSoulSpot {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+// Live settlement snapshot emitted by `Moonshine.ScanGuardPresent` when a guard lookup opens,
+// plus the guard's own world coordinates (`at=<x>,<y>`).
+struct GuardPresence {
+    bool has_live_scan = false;
+    double guard_x = -1.0;
+    double guard_y = -1.0;
+    std::map<std::string, LiveSoulSpot, std::less<>> live_souls;
+};
+
 struct CommandCandidate {
     std::string soul_name;
     std::string full_name;
@@ -65,9 +80,13 @@ struct CommandCandidate {
     std::string settlement;
     std::string trade;
     std::vector<std::string> roles;
+    std::vector<std::string> extra_aliases;
     int hop = 1;
     double closeness = 1.0;
     bool is_absentee = false;
+    bool is_game_named = false;
+    bool is_major_friend = false;
+    bool is_traveling = false;
     std::string why_unmeetable;
     std::string person_token;
     std::string via_name;
@@ -170,12 +189,21 @@ public:
 
     std::vector<CommandCandidate> candidates_for(std::string_view speaker_soul);
     std::vector<CommandCandidate> candidates_in_location(std::string_view location_id);
+    std::optional<CommandCandidate> candidate_by_soul(std::string_view soul);
+    std::vector<CommandCandidate> candidates_for_guard(
+        std::string_view location_id,
+        const GuardPresence* guard_presence = nullptr);
     std::vector<RoutineSpot> spots_of(std::string_view target_soul);
+    std::vector<RoutineSpot> spots_of_in_location(
+        std::string_view target_soul,
+        std::string_view location_id,
+        const GuardPresence* guard_presence = nullptr);
     SoulWhereabouts whereabouts_of(std::string_view target_soul);
 
 private:
     std::vector<CommandCandidate> query_db_candidates(std::string_view speaker_soul) const;
     std::vector<CommandCandidate> query_db_location_candidates(std::string_view location_id) const;
+    std::optional<CommandCandidate> query_db_single_candidate(std::string_view soul) const;
     std::vector<RoutineSpot> query_db_spots(std::string_view target_soul) const;
     SoulWhereabouts query_db_whereabouts(std::string_view target_soul) const;
 
@@ -185,8 +213,10 @@ private:
     std::mutex lock_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> cache_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> location_cache_;
+    std::map<std::string, CommandCandidate, std::less<>> soul_cache_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_locations_;
+    std::map<std::string, CommandCandidate, std::less<>> held_souls_;
     std::map<std::string, std::vector<RoutineSpot>, std::less<>> held_spots_;
 };
 
@@ -214,7 +244,8 @@ public:
     // ranked toward `query_hint` when re-transcribing a spoken guard lookup.
     std::string location_keyterms(std::string_view location_id,
                                   std::size_t max_terms = 95,
-                                  std::string_view query_hint = {});
+                                  std::string_view query_hint = {},
+                                  const GuardPresence* guard_presence = nullptr);
 
     // Deterministic entity resolution given an already-extracted `{action, target_mention}`.
     CommandOutcome link(std::string_view speaker_soul,
@@ -223,7 +254,8 @@ public:
                         const std::vector<Message>& history,
                         const SoulRecord& record,
                         KbGate kb_gate = KbGate::Open,
-                        std::string_view guard_location = {});
+                        std::string_view guard_location = {},
+                        const GuardPresence* guard_presence = nullptr);
 
     // Direct subject resolution after "Can you help me find someone?" -> "Who are you looking
     // for?", treating spoken or typed input directly as the `locate_npc` subject over the
@@ -235,7 +267,8 @@ public:
         std::string_view said,
         const std::vector<Message>& history,
         const SoulRecord& record,
-        const std::function<std::string(std::string_view)>& retranscribe_fn = {});
+        const std::function<std::string(std::string_view)>& retranscribe_fn = {},
+        const GuardPresence* guard_presence = nullptr);
 
     // Full Stage-1 -> Stage-2 -> Stage-3 (+ optional conditional STT Pass-2) pipeline.
     CommandOutcome resolve(std::string_view speaker_soul,
@@ -246,7 +279,8 @@ public:
                            const SoulRecord& record,
                            KbGate kb_gate = KbGate::Open,
                            const std::function<std::string(std::string_view)>& retranscribe_fn = {},
-                           std::string_view guard_location = {});
+                           std::string_view guard_location = {},
+                           const GuardPresence* guard_presence = nullptr);
 
 private:
     ExtractedCommand run_extractor(std::string_view speaker_name,

@@ -50,6 +50,12 @@ struct LocateSoul {
 
 std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filter& filter);
 
+// Game-named (`is_named = 1` without `generated_name`) friendly human souls (main-story
+// companions, allies, VIPs, and authored KCD2 named characters) whose live entity positions
+// are scanned when a guard lookup opens so guards know which named NPCs are currently inside
+// their settlement.
+std::vector<std::string> read_story_souls(const std::string& db_path, const Filter& filter);
+
 struct Quest;
 
 // A friendly town, village, castle, camp, or monastery guard who offers the

@@ -116,6 +116,10 @@ enum class Marker {
     // A voiced Talk of the game's own closed: the mod says so the moment the dialogue is
     // down, and whatever the voice still had of it is hushed (bugs.txt 22 Nov 2026).
     TalkOver,
+    // Live named-NPC settlement scan printed right before `BRIDGE begin ... mode=guard_find`:
+    // `BRIDGE guard_present reset loc=<id>` (`intent = "reset"`, `soul = <id>`) followed by
+    // zero or more `BRIDGE guard_present add <soul@x,y,z;...>` (`intent = "add"`, `said = ...`).
+    GuardPresent,
 };
 
 struct Event {

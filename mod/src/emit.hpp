@@ -1251,7 +1251,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const std::vector<std::string>& inboxes,
                                   const std::vector<Quest>& quests,
                                   const std::vector<LocateSoul>& locate_souls = {},
-                                  const std::vector<GuardSoul>& guards = {});
+                                  const std::vector<GuardSoul>& guards = {},
+                                  const std::vector<std::string>& story_souls = {});
 
 // Data/Libs/Config/<modid>_typing.xml -- a keyboard, as two actionmaps, which the
 // conversation Lua loads at runtime with ActionMapManager.LoadFromXML rather than by

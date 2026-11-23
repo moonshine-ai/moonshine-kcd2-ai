@@ -38,6 +38,7 @@ constexpr std::string_view kConsoleLine = "BRIDGE console line ";
 // both. The line itself, once sent, is a said line.
 constexpr std::string_view kSayStart = "BRIDGE say start";
 constexpr std::string_view kSayStop = "BRIDGE say stop";
+constexpr std::string_view kGuardPresent = "BRIDGE guard_present ";
 constexpr std::string_view kNpc = "npc=";
 constexpr std::string_view kDoing = "doing=";
 
@@ -304,6 +305,21 @@ Event classify(std::string_view line) {
         if (const std::size_t at = line.find(marker); at != std::string_view::npos) {
             Event event{Marker::WorldChanged};
             event.said = std::string(trim(line.substr(at + std::string_view("BRIDGE state ").size())));
+            return event;
+        }
+    }
+    if (const std::size_t at = line.find(kGuardPresent); at != std::string_view::npos) {
+        const std::string_view rest = trim(line.substr(at + kGuardPresent.size()));
+        if (rest.rfind("reset", 0) == 0) {
+            Event event{Marker::GuardPresent};
+            event.intent = "reset";
+            event.soul = field_from(rest, "loc=");
+            return event;
+        }
+        if (rest.rfind("add ", 0) == 0) {
+            Event event{Marker::GuardPresent};
+            event.intent = "add";
+            event.said = std::string(trim(rest.substr(4)));
             return event;
         }
     }

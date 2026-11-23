@@ -198,20 +198,177 @@ std::vector<LocateSoul> read_locate_souls(const std::string& db_path, const Filt
         return p ? std::string(reinterpret_cast<const char*>(p)) : std::string();
     };
 
+    std::map<std::string, std::set<std::string>> extra_levels = {
+        {"kkut_albik", {"klaster"}},
+        {"ttkc_barbora", {"kutnohorsko"}},
+        {"tneb_kozlik", {"kutnohorsko"}},
+        {"tneb_mikes", {"kutnohorsko"}},
+        {"tvez_man_8", {"kutnohorsko"}},
+        {"ttro_malir", {"kutnohorsko"}},
+        {"ttro_bergov", {"kutnohorsko"}},
+        {"tzel_david", {"kutnohorsko"}},
+        {"tzel_michal", {"kutnohorsko"}},
+        {"tsla_nomad", {"kutnohorsko"}},
+        {"ksuc_nomad", {"trosecko"}},
+    };
+    auto collect_soul_levels = [&](const char* tbl) {
+        if (sqlite3_table_column_metadata(db.get(), nullptr, tbl, "level",
+                                          nullptr, nullptr, nullptr, nullptr, nullptr) != SQLITE_OK) {
+            return;
+        }
+        const std::string q = "SELECT DISTINCT soul_name, level FROM " + std::string(tbl) +
+                              " WHERE level IN ('trosecko', 'kutnohorsko', 'klaster')";
+        sqlite3_stmt* st = nullptr;
+        if (sqlite3_prepare_v2(db.get(), q.c_str(), -1, &st, nullptr) != SQLITE_OK) return;
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const unsigned char* s0 = sqlite3_column_text(st, 0);
+            const unsigned char* s1 = sqlite3_column_text(st, 1);
+            if (s0 && s1) {
+                extra_levels[reinterpret_cast<const char*>(s0)].insert(
+                    reinterpret_cast<const char*>(s1));
+            }
+        }
+        sqlite3_finalize(st);
+    };
+    collect_soul_levels("npc_routine_hub");
+    collect_soul_levels("npc_routine");
+
+    static const std::set<std::string> kExcludedLocateSouls = {
+        "kkut_henry",
+        "cutscene_henry_injured_arm",
+        "tvez_henrysMother",
+        "zachrana_fatherOfHenry",
+        "prepadeni_ptacek_naked",
+        "hladAZmar_katerina_naked",
+        "stealthMiseZaJindru_markvartAulitzMurdered",
+        "katuvSleh_hangman",
+    };
+
     std::vector<LocateSoul> out;
     int rc;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-        LocateSoul s;
-        s.soul_name = text(0);
-        s.full_name = text(1);
-        s.soul_guid = text(2);
-        s.level = level_for_region(text(3));
-        if (!s.soul_name.empty() && !s.full_name.empty() && !s.soul_guid.empty() && !s.level.empty()) {
+        const std::string soul_name = text(0);
+        const std::string full_name = text(1);
+        const std::string soul_guid = text(2);
+        const std::string region = text(3);
+        if (soul_name.empty() || full_name.empty() || soul_guid.empty()) continue;
+        if (kExcludedLocateSouls.count(soul_name) != 0) continue;
+
+        std::set<std::string> lvls;
+        const std::string primary = level_for_region(region);
+        if (!primary.empty()) lvls.insert(primary);
+        if (region == "Player party") {
+            if (soul_name.rfind("finale_", 0) == 0) {
+                lvls.insert("kutnohorsko");
+            } else {
+                lvls.insert("trosecko");
+                lvls.insert("kutnohorsko");
+            }
+        }
+        if (auto it = extra_levels.find(soul_name); it != extra_levels.end()) {
+            lvls.insert(it->second.begin(), it->second.end());
+        }
+        for (const std::string& lvl : lvls) {
+            LocateSoul s;
+            s.soul_name = soul_name;
+            s.full_name = full_name;
+            s.soul_guid = soul_guid;
+            s.level = lvl;
             out.push_back(std::move(s));
         }
     }
     if (rc != SQLITE_DONE) {
         fail(db.get(), "reading locate souls failed");
+    }
+    return out;
+}
+
+std::vector<std::string> read_story_souls(const std::string& db_path, const Filter& filter) {
+    sqlite3* raw_db = nullptr;
+    if (sqlite3_open_v2(db_path.c_str(), &raw_db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+        DbHandle doomed(raw_db, &sqlite3_close);
+        throw std::runtime_error("cannot open " + db_path + ": " +
+                                 (raw_db ? sqlite3_errmsg(raw_db) : "out of memory"));
+    }
+    DbHandle db(raw_db, &sqlite3_close);
+
+    if (sqlite3_table_column_metadata(db.get(), nullptr, "npc", "is_named",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return {};
+    }
+
+    const bool has_kind =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "kind",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_fcat =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "faction_category",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_region =
+        sqlite3_table_column_metadata(db.get(), nullptr, "npc", "region",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    std::string sql =
+        "SELECT n.soul_name "
+        "FROM npc n "
+        "LEFT JOIN generated_name g USING (soul_id) "
+        "WHERE COALESCE(n.is_named, 0) = 1 "
+        "AND g.soul_id IS NULL "
+        "AND NULLIF(COALESCE(n.soul_id, ''), '') IS NOT NULL "
+        "AND LOWER(n.soul_name) NOT LIKE '%dead%' "
+        "AND LOWER(n.soul_name) NOT LIKE '%corpse%' ";
+    if (has_kind) sql += "AND COALESCE(n.kind, 'human') = 'human' ";
+    if (has_fcat) sql += "AND COALESCE(n.faction_category, '') NOT IN ('enemies', 'badGuys', 'death') ";
+    if (has_region) sql += "AND COALESCE(n.region, '') NOT IN ('Dead bodies', 'Cutscene', 'Test', 'Player') ";
+
+    std::vector<std::string> bound;
+    const struct {
+        const char* column;
+        const std::vector<std::string>* values;
+    } clauses[] = {
+        {"n.settlement", &filter.settlements},
+        {"n.soul_name", &filter.souls},
+    };
+    for (const auto& c : clauses) {
+        if (c.values->empty()) continue;
+        sql += "AND " + std::string(c.column) + " IN (" + placeholders(c.values->size()) + ") ";
+        bound.insert(bound.end(), c.values->begin(), c.values->end());
+    }
+    sql += "ORDER BY n.soul_name";
+
+    sqlite3_stmt* raw_stmt = nullptr;
+    if (sqlite3_prepare_v2(db.get(), sql.c_str(), -1, &raw_stmt, nullptr) != SQLITE_OK) {
+        fail(db.get(), "preparing story souls query failed");
+    }
+    StmtHandle stmt(raw_stmt, &sqlite3_finalize);
+    for (std::size_t i = 0; i < bound.size(); ++i) {
+        sqlite3_bind_text(stmt.get(), static_cast<int>(i + 1), bound[i].c_str(), -1,
+                          SQLITE_TRANSIENT);
+    }
+
+    static const std::set<std::string> kExcludedStorySouls = {
+        "kkut_henry",
+        "cutscene_henry_injured_arm",
+        "tvez_henrysMother",
+        "zachrana_fatherOfHenry",
+        "prepadeni_ptacek_naked",
+        "hladAZmar_katerina_naked",
+        "stealthMiseZaJindru_markvartAulitzMurdered",
+        "katuvSleh_hangman",
+    };
+
+    std::vector<std::string> out;
+    int rc;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+        const unsigned char* p = sqlite3_column_text(stmt.get(), 0);
+        if (!p) continue;
+        std::string s(reinterpret_cast<const char*>(p));
+        if (!s.empty() && kExcludedStorySouls.count(s) == 0 &&
+            kcd2_settlements::is_permanent_settlement_soul(s)) {
+            out.push_back(std::move(s));
+        }
+    }
+    if (rc != SQLITE_DONE) {
+        fail(db.get(), "reading story souls failed");
     }
     return out;
 }

@@ -4824,8 +4824,10 @@ std::vector<std::pair<std::string, std::string>> locate_souls_localization(
     rows.emplace_back(shared_key("name"), "Directions");
     rows.emplace_back(shared_key("description"), "Someone pointed me the way.");
     rows.reserve(3 + locate_souls.size() * 2);
+    std::set<std::string> seen;
     for (const LocateSoul& ls : locate_souls) {
         require_identifier(ls.soul_name, "locate soul_name");
+        if (!seen.insert(ls.soul_name).second) continue;
         const std::string prefix = modid + "_q_locate_soul_" + ls.soul_name + "_";
         rows.emplace_back(prefix + "obj", "Find " + ls.full_name);
         rows.emplace_back(prefix + "log", "I asked the way to " + ls.full_name + " and had it pointed out to me.");
@@ -9822,7 +9824,8 @@ std::string emit_conversation_lua(const std::string& modid,
                                   const std::vector<std::string>& inboxes,
                                   const std::vector<Quest>& quests,
                                   const std::vector<LocateSoul>& locate_souls,
-                                  const std::vector<GuardSoul>& guards) {
+                                  const std::vector<GuardSoul>& guards,
+                                  const std::vector<std::string>& story_souls) {
     if (inboxes.empty()) throw std::runtime_error("nowhere to read a turn's words from");
     if (screen.mode != "draw" && screen.mode != "info" && screen.mode != "caption") {
         throw std::runtime_error(
@@ -9868,6 +9871,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".guardSouls = {\n";
     for (const GuardSoul& gs : guards) {
         s += "[\"" + lua_escape(gs.soul_name) + "\"]=\"" + lua_escape(gs.default_pop_center) + "\",\n";
+    }
+    s += "}\n";
+    s += g + ".storySouls = {\n";
+    for (const std::string& sn : story_souls) {
+        s += "\"" + lua_escape(sn) + "\",\n";
     }
     s += "}\n";
     // Burgher (`SettlementLocation`) population-center boundary polygons, sorted smallest-area
@@ -17486,7 +17494,15 @@ std::string emit_conversation_lua(const std::string& modid,
         s += "for line in string.gmatch(\"" + lua_escape(tsv) + "\", \"[^\\n]+\") do\n";
         s += "\tlocal sn, lv, sh, sl, nm = string.match(line, \"^([^\\t]+)\\t(%d+)\\t(%d+)\\t(%d+)\\t(.+)$\")\n";
         s += "\tif sn ~= nil then\n";
-        s += "\t\t" + g + ".locateSouls[sn] = { lvl = tonumber(lv), shard = tonumber(sh), slot = tonumber(sl), name = nm }\n";
+        s += "\t\tlocal lvn, shn, sln = tonumber(lv), tonumber(sh), tonumber(sl)\n";
+        s += "\t\tlocal cur = " + g + ".locateSouls[sn]\n";
+        s += "\t\tif cur == nil then\n";
+        s += "\t\t\tcur = { lvl = lvn, shard = shn, slot = sln, name = nm, singleLvl = true, byLvl = {} }\n";
+        s += "\t\t\t" + g + ".locateSouls[sn] = cur\n";
+        s += "\t\telseif cur.lvl ~= lvn then\n";
+        s += "\t\t\tcur.singleLvl = false\n";
+        s += "\t\tend\n";
+        s += "\t\tcur.byLvl[lvn] = { lvl = lvn, shard = shn, slot = sln, name = nm }\n";
         s += "\tend\n";
         s += "end\n";
     }
@@ -17578,10 +17594,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "function " + g + ".Locate(soul, rawSpots)\n";
     s += "\tif type(soul) ~= \"string\" or soul == \"\" then return false end\n";
-    s += "\tlocal entry = " + g + ".locateSouls[soul]\n";
-    s += "\tif entry == nil then\n";
+    s += "\tlocal base = " + g + ".locateSouls[soul]\n";
+    s += "\tif base == nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE locate \" .. soul .. \" has no level SoulAsset\")\n";
     s += "\t\treturn false\n";
+    s += "\tend\n";
+    s += "\tlocal entry = base\n";
+    s += "\tif type(base.byLvl) == \"table\" then\n";
+    s += "\t\tlocal curName = " + g + ".CurrentLevel(" + g + ".npc)\n";
+    s += "\t\tlocal codeMap = { trosecko = 1, kutnohorsko = 2, klaster = 3 }\n";
+    s += "\t\tlocal want = codeMap[curName]\n";
+    s += "\t\tif want ~= nil and base.byLvl[want] ~= nil then entry = base.byLvl[want] end\n";
     s += "\tend\n";
     s += "\tlocal prev = " + g + ".state.locate\n";
     s += "\tlocal spots = " + g + ".ParseSpots(rawSpots)\n";
@@ -19188,9 +19211,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif ok then local got = norm(raw); if got ~= \"\" then return got end end\n";
     s += "\tend\n";
     s += "\tif npc ~= nil then\n";
+    s += "\t\tlocal lvlNames = { [1] = \"trosecko\", [2] = \"kutnohorsko\", [3] = \"klaster\" }\n";
     s += "\t\tlocal name = EntityUtils.GetName(npc)\n";
     s += "\t\tlocal le = name ~= nil and " + g + ".locateSouls[name] or nil\n";
-    s += "\t\tif le ~= nil and type(le.lvl) == \"string\" and le.lvl ~= \"\" then return le.lvl end\n";
+    s += "\t\tif le ~= nil and le.singleLvl and lvlNames[le.lvl] ~= nil then return lvlNames[le.lvl] end\n";
     s += "\t\tlocal def = name ~= nil and " + g + ".guardSouls[name] or \"\"\n";
     s += "\t\tif def ~= \"\" then\n";
     s += "\t\t\tfor _, k in ipairs({\"klaster\", \"trosecko\", \"kutnohorsko\"}) do\n";
@@ -19204,7 +19228,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\tfor i = 1, #ents do\n";
     s += "\t\t\t\t\tlocal en = EntityUtils.GetName(ents[i])\n";
     s += "\t\t\t\t\tlocal near = en ~= nil and " + g + ".locateSouls[en] or nil\n";
-    s += "\t\t\t\t\tif near ~= nil and near.lvl ~= nil then return near.lvl end\n";
+    s += "\t\t\t\t\tif near ~= nil and near.singleLvl and lvlNames[near.lvl] ~= nil then return lvlNames[near.lvl] end\n";
     s += "\t\t\t\tend\n";
     s += "\t\t\tend\n";
     s += "\t\tend\n";
@@ -20004,6 +20028,43 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".Pump)\n";
     s += "end\n";
     s += "\n";
+    // Scans all game-named friendly NPCs (`storySouls`) in the active level and reports
+    // those whose live entity is currently inside the guard's Burgher settlement `loc`.
+    s += "function " + g + ".ScanGuardPresent(npc, loc)\n";
+    s += "\tif type(loc) ~= \"string\" or loc == \"\" or System.GetEntityByName == nil then return end\n";
+    s += "\tlocal lvl = " + g + ".CurrentLevel(npc)\n";
+    s += "\t" + g + ".Log(\"BRIDGE guard_present reset loc=\" .. loc)\n";
+    s += "\tlocal list = " + g + ".storySouls or {}\n";
+    s += "\tlocal chunk = \"\"\n";
+    s += "\tfor i = 1, #list do\n";
+    s += "\t\tlocal sn = list[i]\n";
+    s += "\t\tlocal okE, e = pcall(function() return System.GetEntityByName(sn) end)\n";
+    s += "\t\tif okE and e ~= nil and e.GetWorldPos ~= nil then\n";
+    s += "\t\t\tlocal hidden = false\n";
+    s += "\t\t\tpcall(function() if e.IsHidden ~= nil and e:IsHidden() then hidden = true end end)\n";
+    s += "\t\t\tlocal dead = false\n";
+    s += "\t\t\tpcall(function() if e.actor ~= nil and e.actor:IsDead() then dead = true end end)\n";
+    s += "\t\t\tif not hidden and not dead then\n";
+    s += "\t\t\t\tlocal okP, pos = pcall(function() return e:GetWorldPos() end)\n";
+    s += "\t\t\t\tif okP and type(pos) == \"table\" and type(pos.x) == \"number\" and type(pos.y) == \"number\" then\n";
+    s += "\t\t\t\t\tif (math.abs(pos.x) > 1.0 or math.abs(pos.y) > 1.0) and " + g + ".SettlementAt(lvl, pos.x, pos.y, 0) == loc then\n";
+    s += "\t\t\t\t\t\tlocal item = string.format(\"%s@%.1f,%.1f,%.1f\", sn, pos.x, pos.y, pos.z or 0)\n";
+    s += "\t\t\t\t\t\tif chunk ~= \"\" and (#chunk + 1 + #item) > 400 then\n";
+    s += "\t\t\t\t\t\t\t" + g + ".Log(\"BRIDGE guard_present add \" .. chunk)\n";
+    s += "\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\telseif chunk == \"\" then\n";
+    s += "\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\telse\n";
+    s += "\t\t\t\t\t\t\tchunk = chunk .. \";\" .. item\n";
+    s += "\t\t\t\t\t\tend\n";
+    s += "\t\t\t\t\tend\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif chunk ~= \"\" then " + g + ".Log(\"BRIDGE guard_present add \" .. chunk) end\n";
+    s += "end\n";
+    s += "\n";
     // Entered from `guard_talk.xml`'s `ask_find` ExitScript ("Can you help me find someone?").
     // The player is ALREADY inside the guard's FaderDialog, so Talking(true) and Face("idle")
     // go up synchronously before GoToDecision="loop" reads them, `opened = true` skips
@@ -20019,6 +20080,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal scene = " + g + ".Seen(user) .. " + g + ".SoulState(npc) .. " + g + ".World() .. holding"
          " .. \" qset=\" .. tostring(" + g + ".questSet)\n";
     s += "\tpcall(function() " + g + ".StateBegin(name, scene) end)\n";
+    s += "\tpcall(function() " + g + ".ScanGuardPresent(npc, loc) end)\n";
     s += "\tif type(" + g + ".state.locate) == \"table\" and " + g + ".state.locate.soul == name then\n";
     s += "\t\tpcall(" + g + ".ClearLocate, \"talked\")\n";
     s += "\tend\n";

@@ -327,6 +327,8 @@ int main(int argc, char** argv) {
         }
         std::vector<kcd2::LocateSoul> locate_souls =
             o.dialogue ? kcd2::read_locate_souls(o.db, filter) : std::vector<kcd2::LocateSoul>{};
+        std::vector<std::string> story_souls =
+            o.dialogue ? kcd2::read_story_souls(o.db, filter) : std::vector<std::string>{};
 
         // Two souls sharing a soul_name would mean two rules fighting over one
         // <hasName> selector, so refuse rather than ship an ambiguous mod.
@@ -607,7 +609,8 @@ int main(int argc, char** argv) {
         data_pak.add("Scripts/mods/" + o.modid + ".lua",
                      kcd2::emit_conversation_lua(o.modid, personas, o.dialogue_role,
                                                  o.dialogue_metarole, o.leave_hint, o.screen,
-                                                 inboxes, quests, locate_souls, guard_souls));
+                                                 inboxes, quests, locate_souls, guard_souls,
+                                                 story_souls));
         data_pak.write(o.out + "/Data/" + o.modid + ".pak");
 
         kcd2::Pak loc_pak;

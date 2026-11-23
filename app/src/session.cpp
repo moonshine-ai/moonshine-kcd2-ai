@@ -193,7 +193,32 @@ void Session::handle(const Event& event) {
             // words are simply lost, and better lost than said to the wrong soul.
             record_ = {};
             pending_.clear();
+            pending_guard_present_loc_.clear();
+            pending_guard_presence_ = {};
+            guard_presence_ = {};
             status("the game's store " + event.said);
+            break;
+        case Marker::GuardPresent:
+            if (event.intent == "reset") {
+                pending_guard_present_loc_ = event.soul;
+                pending_guard_presence_ = {};
+                pending_guard_presence_.has_live_scan = true;
+            } else if (event.intent == "add" && pending_guard_presence_.has_live_scan) {
+                std::string_view rest = event.said;
+                while (!rest.empty()) {
+                    const std::size_t semi = rest.find(';');
+                    const std::string_view item = rest.substr(0, semi);
+                    rest = (semi == std::string_view::npos) ? std::string_view() : rest.substr(semi + 1);
+                    const std::size_t at_pos = item.find('@');
+                    if (at_pos == std::string_view::npos || at_pos == 0) continue;
+                    const std::string sn(item.substr(0, at_pos));
+                    const std::string coords(item.substr(at_pos + 1));
+                    double px = 0.0, py = 0.0, pz = 0.0;
+                    if (std::sscanf(coords.c_str(), "%lf,%lf,%lf", &px, &py, &pz) >= 2) {
+                        pending_guard_presence_.live_souls[sn] = {px, py, pz};
+                    }
+                }
+            }
             break;
         case Marker::Quit:
             // The run is over: whoever was being talked to is gone with it, and the next
@@ -272,6 +297,15 @@ void Session::open(std::string_view soul, const Approach& approach,
     approach_ = approach;
     anim_ = std::string(anim);
     guard_location_ = approach.guard_location;
+    guard_presence_ = {};
+    if (!guard_location_.empty() && pending_guard_presence_.has_live_scan &&
+        pending_guard_present_loc_ == guard_location_) {
+        guard_presence_ = std::move(pending_guard_presence_);
+    }
+    guard_presence_.guard_x = approach.x;
+    guard_presence_.guard_y = approach.y;
+    pending_guard_present_loc_.clear();
+    pending_guard_presence_ = {};
     awaiting_guard_subject_ = (approach.mode == "guard_find");
 
     // The look-ahead still waiting on its dwell is spent: greet() makes the greeting now.
@@ -793,6 +827,7 @@ void Session::close() {
     drew_.clear();
     put_off_.clear();
     guard_location_.clear();
+    guard_presence_ = {};
     awaiting_guard_subject_ = false;
     status("conversation over");
     // Planned now, with the player walking away, and done between looks at the log rather
@@ -935,7 +970,7 @@ void Session::set_listening(bool on, std::string_view why) {
     if (commands_ && listener_.on_keyterms) {
         std::string terms =
             !guard_location_.empty()
-                ? commands_->location_keyterms(guard_location_, 60)
+                ? commands_->location_keyterms(guard_location_, 60, {}, &guard_presence_)
                 : commands_->pass1_keyterms(soul_, history_, record_);
         if (!persona_.name.empty()) {
             terms = terms.empty() ? persona_.name : (persona_.name + ", " + terms);
@@ -1281,7 +1316,8 @@ void Session::answer(std::string_view said, bool remember) {
             const auto retx =
                 (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
             cmd = commands_->resolve_guard_lookup(
-                soul_, persona_.name, guard_location_, said, history_, record_, retx);
+                soul_, persona_.name, guard_location_, said, history_, record_, retx,
+                &guard_presence_);
             if (cmd.status == CommandStatus::AmbiguousSoul) {
                 awaiting_guard_subject_ = true;
             } else {
@@ -1296,7 +1332,7 @@ void Session::answer(std::string_view said, bool remember) {
             (last_said_voiced_ && listener_.on_retranscribe) ? listener_.on_retranscribe : nullptr;
         cmd = commands_->resolve(
             soul_, persona_.name, "", said, history_, record_, persona_.scripted.kb_gate, retx,
-            guard_location_);
+            guard_location_, &guard_presence_);
         // If Henry already accepted this giver's errand and asks where the quest's own target
         // is, let the giver direct him there rather than putting him off behind KbGate::Owed.
         if (cmd.action == CommandAction::LocateNpc &&
@@ -1307,7 +1343,7 @@ void Session::answer(std::string_view said, bool remember) {
             cmd.soul_name == persona_.quest_of.target_soul) {
             cmd = commands_->resolve(
                 soul_, persona_.name, "", said, history_, record_, KbGate::Open, nullptr,
-                guard_location_);
+                guard_location_, &guard_presence_);
         }
         // When phonetic/fuzzy entity linking corrected an STT name typo ("Banash" -> "Benesh"),
         // substitute the canonical spelling for KB retrieval so KnowledgeDirector hits too.

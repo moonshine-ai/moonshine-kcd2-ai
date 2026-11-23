@@ -11,6 +11,7 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "json.hpp"
 
@@ -727,6 +728,9 @@ void CommandGraph::hold(std::string speaker_soul,
                         std::vector<CommandCandidate> candidates,
                         std::map<std::string, std::vector<RoutineSpot>> spots) {
     std::lock_guard<std::mutex> g(lock_);
+    for (const CommandCandidate& c : candidates) {
+        if (!c.soul_name.empty()) held_souls_[c.soul_name] = c;
+    }
     held_[std::move(speaker_soul)] = std::move(candidates);
     for (auto& [k, v] : spots) held_spots_[k] = std::move(v);
 }
@@ -735,6 +739,9 @@ void CommandGraph::hold_location(std::string location_id,
                                  std::vector<CommandCandidate> candidates,
                                  std::map<std::string, std::vector<RoutineSpot>> spots) {
     std::lock_guard<std::mutex> g(lock_);
+    for (const CommandCandidate& c : candidates) {
+        if (!c.soul_name.empty()) held_souls_[c.soul_name] = c;
+    }
     held_locations_[std::move(location_id)] = std::move(candidates);
     for (auto& [k, v] : spots) held_spots_[k] = std::move(v);
 }
@@ -759,11 +766,91 @@ std::vector<CommandCandidate> CommandGraph::candidates_in_location(std::string_v
     return built;
 }
 
+std::optional<CommandCandidate> CommandGraph::candidate_by_soul(std::string_view soul) {
+    std::lock_guard<std::mutex> g(lock_);
+    if (soul.empty()) return std::nullopt;
+    if (auto it = held_souls_.find(soul); it != held_souls_.end()) return it->second;
+    if (auto it = soul_cache_.find(soul); it != soul_cache_.end()) return it->second;
+    if (!db_) return std::nullopt;
+    std::optional<CommandCandidate> built = query_db_single_candidate(soul);
+    if (built.has_value()) {
+        soul_cache_.emplace(std::string(soul), *built);
+    }
+    return built;
+}
+
+std::vector<CommandCandidate> CommandGraph::candidates_for_guard(
+    std::string_view location_id,
+    const GuardPresence* guard_presence) {
+    std::vector<CommandCandidate> base = candidates_in_location(location_id);
+    if (!guard_presence || !guard_presence->has_live_scan) return base;
+
+    std::vector<CommandCandidate> out;
+    out.reserve(base.size() + guard_presence->live_souls.size());
+    std::set<std::string, std::less<>> seen;
+    for (CommandCandidate& c : base) {
+        if (c.is_traveling &&
+            guard_presence->live_souls.find(c.soul_name) == guard_presence->live_souls.end()) {
+            continue;
+        }
+        seen.insert(c.soul_name);
+        out.push_back(std::move(c));
+    }
+    for (const auto& [soul, live_spot] : guard_presence->live_souls) {
+        (void)live_spot;
+        if (seen.find(soul) != seen.end()) continue;
+        if (std::optional<CommandCandidate> extra = candidate_by_soul(soul)) {
+            seen.insert(extra->soul_name);
+            out.push_back(std::move(*extra));
+        }
+    }
+    return out;
+}
+
 std::vector<RoutineSpot> CommandGraph::spots_of(std::string_view target_soul) {
     std::lock_guard<std::mutex> g(lock_);
     if (auto it = held_spots_.find(target_soul); it != held_spots_.end()) return it->second;
     if (!db_ || target_soul.empty()) return {};
     return query_db_spots(target_soul);
+}
+
+std::vector<RoutineSpot> CommandGraph::spots_of_in_location(
+    std::string_view target_soul,
+    std::string_view location_id,
+    const GuardPresence* guard_presence) {
+    std::vector<RoutineSpot> out;
+    if (guard_presence) {
+        if (auto it = guard_presence->live_souls.find(target_soul);
+            it != guard_presence->live_souls.end()) {
+            out.push_back({0, 1440, it->second.x, it->second.y, it->second.z});
+        }
+    }
+    std::vector<RoutineSpot> db_spots = spots_of(target_soul);
+    if (location_id.empty()) {
+        for (const RoutineSpot& sp : db_spots) out.push_back(sp);
+        return out;
+    }
+    std::vector<const kcd2_settlements::SettlementPolygon*> polys;
+    for (std::size_t i = 0; i < kcd2_settlements::kSettlementPolygonCount; ++i) {
+        if (location_id == kcd2_settlements::kSettlementPolygons[i].pop_center_id) {
+            polys.push_back(&kcd2_settlements::kSettlementPolygons[i]);
+        }
+    }
+    for (const RoutineSpot& sp : db_spots) {
+        bool in_loc = polys.empty();
+        for (const auto* poly : polys) {
+            if (kcd2_settlements::point_in_polygon(sp.x, sp.y, *poly)) {
+                in_loc = true;
+                break;
+            }
+        }
+        if (in_loc) {
+            out.push_back(sp);
+            if (out.size() >= 8) break;
+        }
+    }
+    if (out.empty()) return db_spots;
+    return out;
 }
 
 SoulWhereabouts CommandGraph::whereabouts_of(std::string_view target_soul) {
@@ -789,6 +876,179 @@ std::string take_sentences(std::string_view text, std::size_t max_sentences) {
         }
     }
     return s;
+}
+
+std::vector<std::string> split_raw_words(std::string_view s) {
+    std::vector<std::string> out;
+    std::size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        const std::size_t start = i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        if (i > start) out.emplace_back(s.substr(start, i - start));
+    }
+    return out;
+}
+
+bool is_leading_name_honorific(std::string_view norm_word) {
+    static const std::unordered_set<std::string_view> kHonorifics = {
+        "master",      "bailiff",     "innkeeper",    "blacksmith", "miller",
+        "captain",     "father",      "sir",          "lord",       "lady",
+        "knight",      "chamberlain", "abbot",        "rabbi",      "confessor",
+        "monk",        "novice",      "brother",      "sister",     "executioner",
+        "miner",       "butcher",     "alchemist",    "wagoner",    "mercenary",
+        "armiger",     "adjutant",    "guardsman",    "cuman",      "margrave",
+        "baron",       "hetman",      "ritterbruder", "doctor",
+    };
+    return kHonorifics.count(norm_word) != 0;
+}
+
+void populate_canonical_name_parts(CommandCandidate& c, std::string_view occupation = {}) {
+    if (c.full_name.empty()) return;
+    if (c.given_name.empty()) {
+        const std::vector<std::string> raw = split_raw_words(c.full_name);
+        if (!raw.empty()) {
+            auto is_possessive = [](std::string_view w) {
+                return (w.size() >= 3 && w.substr(w.size() - 2) == "'s") ||
+                       (w.size() >= 4 && w.substr(w.size() - 4) == "\xe2\x80\x99s");
+            };
+            bool has_any_possessive = false;
+            for (const auto& w : raw) {
+                if (is_possessive(w)) {
+                    has_any_possessive = true;
+                    break;
+                }
+            }
+            std::size_t idx = 0;
+            bool skip_decomp = false;
+            if (has_any_possessive) {
+                // Possessive relationship labels like "Radovan's wife Milena", "Kreyzl's wife Milada",
+                // "Mikush's Vendula", vs pure role labels like "Halama's wife" / "Vidlak fisherman's wife".
+                if (is_possessive(raw[0]) && raw.size() >= 3 &&
+                    std::islower(static_cast<unsigned char>(raw[1][0])) &&
+                    std::isupper(static_cast<unsigned char>(raw[2][0]))) {
+                    if (c.title.empty()) c.title = raw[0] + " " + raw[1];
+                    idx = 2;
+                } else if (is_possessive(raw[0]) && raw.size() == 2 &&
+                           std::isupper(static_cast<unsigned char>(raw[1][0])) &&
+                           command_normalize(raw[1]) != "man" &&
+                           command_normalize(raw[1]) != "guard") {
+                    if (c.title.empty()) c.title = raw[0];
+                    idx = 1;
+                } else {
+                    skip_decomp = true;
+                }
+            } else {
+                const std::string w0 = command_normalize(raw[0]);
+                if (raw.size() >= 2 && c.title.empty() && is_leading_name_honorific(w0)) {
+                    c.title = raw[0];
+                    idx = 1;
+                }
+            }
+            if (!skip_decomp && idx < raw.size()) {
+                c.given_name = raw[idx];
+                if (idx + 1 < raw.size()) {
+                    std::string tail;
+                    for (std::size_t k = idx + 1; k < raw.size(); ++k) {
+                        if (!tail.empty()) tail.push_back(' ');
+                        tail += raw[k];
+                    }
+                    if (c.byname.empty()) c.byname = tail;
+
+                    const std::string last_norm = command_normalize(raw.back());
+                    if (last_norm.size() >= 3 && last_norm != "ii" && last_norm != "iii" &&
+                        last_norm != "iv") {
+                        c.extra_aliases.push_back(raw.back());
+                        if (!c.title.empty()) {
+                            c.extra_aliases.push_back(c.title + " " + raw.back());
+                        }
+                    }
+                    for (std::size_t k = idx + 1; k + 1 < raw.size(); ++k) {
+                        const std::string prep = command_normalize(raw[k]);
+                        if (prep == "of" || prep == "von") {
+                            if (k > idx + 1) {
+                                std::string pre;
+                                for (std::size_t j = idx; j < k; ++j) {
+                                    if (!pre.empty()) pre.push_back(' ');
+                                    pre += raw[j];
+                                }
+                                c.extra_aliases.push_back(pre);
+                            }
+                            std::string post;
+                            for (std::size_t j = k + 1; j < raw.size(); ++j) {
+                                if (!post.empty()) post.push_back(' ');
+                                post += raw[j];
+                            }
+                            if (command_normalize(post).size() >= 3) {
+                                c.extra_aliases.push_back(post);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const std::string occ = command_normalize(occupation.empty() ? std::string_view(c.trade) : occupation);
+    if (c.is_game_named && !c.given_name.empty()) {
+        if (occ.find("priest") != std::string::npos) {
+            c.extra_aliases.push_back("Father " + c.given_name);
+        }
+        if (occ.find("noble") != std::string::npos) {
+            if (c.gender == "female" || occ.find("woman") != std::string::npos) {
+                c.extra_aliases.push_back("Lady " + c.given_name);
+                c.extra_aliases.push_back("Lady " + c.full_name);
+            } else {
+                c.extra_aliases.push_back("Sir " + c.given_name);
+                c.extra_aliases.push_back("Sir " + c.full_name);
+                c.extra_aliases.push_back("Lord " + c.given_name);
+                const std::vector<std::string> rw = split_raw_words(c.full_name);
+                if (rw.size() >= 2 && command_normalize(rw.back()).size() >= 3) {
+                    c.extra_aliases.push_back("Lord " + rw.back());
+                }
+            }
+        }
+        if (occ.find("hetman") != std::string::npos || occ.find("soldier") != std::string::npos) {
+            c.extra_aliases.push_back("Captain " + c.given_name);
+            const std::vector<std::string> rw = split_raw_words(c.full_name);
+            if (rw.size() >= 2 && command_normalize(rw.back()).size() >= 3) {
+                c.extra_aliases.push_back("Captain " + rw.back());
+            }
+        }
+    }
+}
+
+std::string sanitize_settlement_label(std::string_view raw) {
+    static const std::unordered_set<std::string_view> kInternalGroups = {
+        "new buddies", "old buddies", "katerina", "ptacek", "bohuta", "zizka",
+        "racek", "hanus", "henry", "father martin", "certovka", "bohounovice",
+        "hermits", "executioners", "farms", "fast travel nomads camp",
+    };
+    const std::string low = command_normalize(raw);
+    if (low.empty() || kInternalGroups.count(low) != 0) return {};
+    return std::string(raw);
+}
+
+std::string compass_bearing_phrase(double gx, double gy, double tx, double ty) {
+    if (gx < 0.0 || gy < 0.0) return {};
+    const double dx = tx - gx;
+    const double dy = ty - gy;
+    const double dist = std::hypot(dx, dy);
+    if (dist < 18.0) return "right nearby";
+    // CryEngine world space: +X is East, +Y is North.
+    const double deg = std::atan2(dy, dx) * (180.0 / 3.14159265358979323846);
+    const char* dir = "to the east";
+    if (deg >= -22.5 && deg < 22.5) dir = "to the east";
+    else if (deg >= 22.5 && deg < 67.5) dir = "to the northeast";
+    else if (deg >= 67.5 && deg < 112.5) dir = "to the north";
+    else if (deg >= 112.5 && deg < 157.5) dir = "to the northwest";
+    else if (deg >= 157.5 || deg < -157.5) dir = "to the west";
+    else if (deg >= -157.5 && deg < -112.5) dir = "to the southwest";
+    else if (deg >= -112.5 && deg < -67.5) dir = "to the south";
+    else dir = "to the southeast";
+    if (dist < 75.0) return std::string("just ") + dir + " of here";
+    return std::string(dir) + " of here";
 }
 
 }  // namespace
@@ -1148,6 +1408,21 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
     const bool has_social_class =
         sqlite3_table_column_metadata(db_, nullptr, "npc", "social_class",
                                       nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_is_named =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "is_named",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_is_unique =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "is_unique",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_vip_class =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "vip_class",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_region =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "region",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_quest =
+        sqlite3_table_column_metadata(db_, nullptr, "npc_quest", "quest_id",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
 
     std::string meta_sql =
         "SELECT COALESCE(NULLIF(g.full_name, ''), ";
@@ -1162,7 +1437,16 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
         "COALESCE(n.settlement, ''), COALESCE(";
     if (has_trade) meta_sql += "NULLIF(t.trade, ''), ";
     meta_sql +=
-        "NULLIF(n.occupation, ''), '') "
+        "NULLIF(n.occupation, ''), ''), "
+        "COALESCE(n.occupation, ''), "
+        "CASE WHEN g.soul_id IS NULL AND ";
+    meta_sql += has_is_named ? "COALESCE(n.is_named, 0) = 1 " : "0 ";
+    meta_sql += "THEN 1 ELSE 0 END, ";
+    meta_sql += has_is_unique ? "COALESCE(n.is_unique, 0), " : "0, ";
+    meta_sql += has_vip_class ? "COALESCE(n.vip_class, 'none'), " : "'none', ";
+    meta_sql += has_region ? "COALESCE(n.region, ''), " : "'', ";
+    meta_sql += has_faction_cat ? "COALESCE(n.faction_category, '') " : "'' ";
+    meta_sql +=
         "FROM npc n "
         "LEFT JOIN generated_name g ON g.soul_id = n.soul_id ";
     if (has_skald) {
@@ -1176,8 +1460,12 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
                 "AND LOWER(n.soul_name) NOT LIKE '%dead%' "
                 "AND LOWER(n.soul_name) NOT LIKE '%corpse%' ";
     if (has_kind) meta_sql += "AND COALESCE(n.kind, 'human') = 'human' ";
-    if (has_faction_cat) meta_sql += "AND COALESCE(n.faction_category, '') != 'enemies' ";
-    if (has_social_class) meta_sql += "AND COALESCE(n.social_class, '') NOT IN ('bandit', 'renegade') ";
+    if (has_faction_cat) meta_sql += "AND COALESCE(n.faction_category, '') NOT IN ('enemies', 'badGuys', 'death') ";
+    if (has_social_class) {
+        meta_sql += has_is_named
+                        ? "AND (COALESCE(n.is_named, 0) = 1 OR COALESCE(n.social_class, '') NOT IN ('bandit', 'renegade')) "
+                        : "AND COALESCE(n.social_class, '') NOT IN ('bandit', 'renegade') ";
+    }
 
     sqlite3_stmt* meta_st = nullptr;
     if (sqlite3_prepare_v2(db_, meta_sql.c_str(), -1, &meta_st, nullptr) != SQLITE_OK) return {};
@@ -1186,6 +1474,13 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
     sqlite3_prepare_v2(
         db_, "SELECT DISTINCT role FROM social_membership WHERE soul_name = ?1 AND role IS NOT NULL",
         -1, &role_st, nullptr);
+
+    sqlite3_stmt* quest_st = nullptr;
+    if (has_quest) {
+        sqlite3_prepare_v2(
+            db_, "SELECT quest_id FROM npc_quest WHERE giver_soul = ?1 OR target_soul = ?1",
+            -1, &quest_st, nullptr);
+    }
 
     std::vector<CommandCandidate> out;
     out.reserve(souls.size());
@@ -1206,14 +1501,23 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
         c.gender = col_str(meta_st, 5);
         c.settlement = col_str(meta_st, 6);
         c.trade = col_str(meta_st, 7);
+        const std::string occ = col_str(meta_st, 8);
+        c.is_game_named = sqlite3_column_int(meta_st, 9) != 0;
+        const bool is_uniq = sqlite3_column_int(meta_st, 10) != 0;
+        const std::string vip = col_str(meta_st, 11);
+        const std::string region = col_str(meta_st, 12);
+        const std::string fcat = col_str(meta_st, 13);
+        c.is_major_friend = c.is_game_named &&
+                            (region == "Player party" || fcat == "friends" || fcat == "allies" ||
+                             is_uniq || (!vip.empty() && vip != "none"));
+        c.is_traveling = c.is_game_named &&
+                         (region == "Player party" || fcat == "friends" || fcat == "allies" ||
+                          c.settlement == "new Buddies" || c.settlement == "old Buddies");
         c.hop = 1;
         c.closeness = 1.0;
         c.person_token = make_person_token(soul);
 
-        if (c.given_name.empty()) {
-            const std::size_t sp = c.full_name.find(' ');
-            c.given_name = (sp == std::string::npos) ? c.full_name : c.full_name.substr(0, sp);
-        }
+        populate_canonical_name_parts(c, occ);
         if (role_st) {
             sqlite3_reset(role_st);
             sqlite3_bind_text(role_st, 1, soul.c_str(), -1, SQLITE_TRANSIENT);
@@ -1222,11 +1526,127 @@ std::vector<CommandCandidate> CommandGraph::query_db_location_candidates(
                 if (!r.empty() && r != "member" && r != "resident") c.roles.push_back(r);
             }
         }
+        if (quest_st) {
+            sqlite3_reset(quest_st);
+            sqlite3_bind_text(quest_st, 1, soul.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(quest_st) == SQLITE_ROW) {
+                const std::string qid = col_str(quest_st, 0);
+                if (!qid.empty()) c.quest_ids.push_back(qid);
+            }
+        }
         out.push_back(std::move(c));
     }
     sqlite3_finalize(meta_st);
     if (role_st) sqlite3_finalize(role_st);
+    if (quest_st) sqlite3_finalize(quest_st);
     return out;
+}
+
+std::optional<CommandCandidate> CommandGraph::query_db_single_candidate(
+    std::string_view soul) const {
+    if (!db_ || soul.empty() || !kcd2_settlements::is_permanent_settlement_soul(soul)) {
+        return std::nullopt;
+    }
+    const bool has_skald =
+        sqlite3_table_column_metadata(db_, nullptr, "skald_character", "skald_character_name",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_trade =
+        sqlite3_table_column_metadata(db_, nullptr, "npc_trade", "trade",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_kind =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "kind",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_faction_cat =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "faction_category",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_is_named =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "is_named",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_is_unique =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "is_unique",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_vip_class =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "vip_class",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+    const bool has_region =
+        sqlite3_table_column_metadata(db_, nullptr, "npc", "region",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    std::string sql =
+        "SELECT COALESCE(NULLIF(g.full_name, ''), ";
+    if (has_skald) sql += "NULLIF(s.full_name, ''), NULLIF(s.ui_name, ''), ";
+    sql +=
+        "NULLIF(n.display_name, ''), ''), "
+        "COALESCE(g.given, ''), COALESCE(g.title, ''), COALESCE(g.byname, ''), "
+        "COALESCE(";
+    if (has_skald) sql += "NULLIF(s.ui_name, ''), ";
+    sql +=
+        "NULLIF(n.display_name, ''), ''), LOWER(COALESCE(n.gender, '')), "
+        "COALESCE(n.settlement, ''), COALESCE(";
+    if (has_trade) sql += "NULLIF(t.trade, ''), ";
+    sql +=
+        "NULLIF(n.occupation, ''), ''), "
+        "COALESCE(n.occupation, ''), "
+        "CASE WHEN g.soul_id IS NULL AND ";
+    sql += has_is_named ? "COALESCE(n.is_named, 0) = 1 " : "0 ";
+    sql += "THEN 1 ELSE 0 END, ";
+    sql += has_is_unique ? "COALESCE(n.is_unique, 0), " : "0, ";
+    sql += has_vip_class ? "COALESCE(n.vip_class, 'none'), " : "'none', ";
+    sql += has_region ? "COALESCE(n.region, ''), " : "'', ";
+    sql += has_faction_cat ? "COALESCE(n.faction_category, '') " : "'' ";
+    sql +=
+        "FROM npc n "
+        "LEFT JOIN generated_name g ON g.soul_id = n.soul_id ";
+    if (has_skald) {
+        sql += "LEFT JOIN skald_character s ON s.skald_character_name = n.skald_character_name ";
+    }
+    if (has_trade) {
+        sql += "LEFT JOIN npc_trade t ON t.soul_name = n.soul_name ";
+    }
+    sql += "WHERE n.soul_name = ?1 "
+           "AND NULLIF(COALESCE(n.soul_id, ''), '') IS NOT NULL "
+           "AND LOWER(n.soul_name) NOT LIKE '%dead%' "
+           "AND LOWER(n.soul_name) NOT LIKE '%corpse%' ";
+    if (has_kind) sql += "AND COALESCE(n.kind, 'human') = 'human' ";
+    if (has_faction_cat) sql += "AND COALESCE(n.faction_category, '') NOT IN ('enemies', 'badGuys', 'death') ";
+
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &st, nullptr) != SQLITE_OK) return std::nullopt;
+    sqlite3_bind_text(st, 1, soul.data(), static_cast<int>(soul.size()), SQLITE_TRANSIENT);
+    std::optional<CommandCandidate> res;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        CommandCandidate c;
+        c.soul_name = std::string(soul);
+        c.full_name = col_str(st, 0);
+        if (!c.full_name.empty()) {
+            c.given_name = col_str(st, 1);
+            c.title = col_str(st, 2);
+            c.byname = col_str(st, 3);
+            c.ui_name = col_str(st, 4);
+            c.gender = col_str(st, 5);
+            c.settlement = col_str(st, 6);
+            c.trade = col_str(st, 7);
+            const std::string occ = col_str(st, 8);
+            c.is_game_named = sqlite3_column_int(st, 9) != 0;
+            const bool is_uniq = sqlite3_column_int(st, 10) != 0;
+            const std::string vip = col_str(st, 11);
+            const std::string region = col_str(st, 12);
+            const std::string fcat = col_str(st, 13);
+            c.is_major_friend = c.is_game_named &&
+                                (region == "Player party" || fcat == "friends" || fcat == "allies" ||
+                                 is_uniq || (!vip.empty() && vip != "none"));
+            c.is_traveling = c.is_game_named &&
+                             (region == "Player party" || fcat == "friends" || fcat == "allies" ||
+                              c.settlement == "new Buddies" || c.settlement == "old Buddies");
+            c.hop = 1;
+            c.closeness = 1.0;
+            c.person_token = make_person_token(soul);
+            populate_canonical_name_parts(c, occ);
+            res = std::move(c);
+        }
+    }
+    sqlite3_finalize(st);
+    return res;
 }
 
 std::vector<RoutineSpot> CommandGraph::query_db_spots(std::string_view target_soul) const {
@@ -1393,8 +1813,9 @@ std::string CommandDirector::pass2_keyterms(std::string_view speaker_soul,
 
 std::string CommandDirector::location_keyterms(std::string_view location_id,
                                                std::size_t max_terms,
-                                               std::string_view query_hint) {
-    std::vector<CommandCandidate> cands = graph_.candidates_in_location(location_id);
+                                               std::string_view query_hint,
+                                               const GuardPresence* guard_presence) {
+    std::vector<CommandCandidate> cands = graph_.candidates_for_guard(location_id, guard_presence);
     if (cands.empty() || max_terms == 0) return {};
 
     const std::string q_det = strip_determiners(query_hint);
@@ -1404,8 +1825,16 @@ std::string CommandDirector::location_keyterms(std::string_view location_id,
     ranked.reserve(cands.size());
     for (const CommandCandidate& c : cands) {
         double sc = c.trade.empty() ? 0.0 : 0.05;
+        if (c.is_major_friend) sc += 0.25;
+        else if (c.is_game_named || !c.quest_ids.empty()) sc += 0.12;
         if (!q_det.empty()) {
             for (const std::string& al : {c.full_name, c.given_name, c.byname, c.ui_name, c.trade}) {
+                const std::string ad = strip_determiners(al);
+                if (!ad.empty()) {
+                    sc = std::max(sc, surface_and_phonetic_score(q_det, q_phon, ad, phonetic_phrase(ad)));
+                }
+            }
+            for (const std::string& al : c.extra_aliases) {
                 const std::string ad = strip_determiners(al);
                 if (!ad.empty()) {
                     sc = std::max(sc, surface_and_phonetic_score(q_det, q_phon, ad, phonetic_phrase(ad)));
@@ -1446,7 +1875,8 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
                                      const std::vector<Message>& history,
                                      const SoulRecord& record,
                                      KbGate kb_gate,
-                                     std::string_view guard_location) {
+                                     std::string_view guard_location,
+                                     const GuardPresence* guard_presence) {
     CommandOutcome out;
     out.action = extracted.action;
     if (extracted.action == CommandAction::None) return out;
@@ -1531,7 +1961,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
 
     std::vector<CommandCandidate> cands;
     if (!guard_location.empty() && extracted.action == CommandAction::LocateNpc) {
-        for (CommandCandidate& c : graph_.candidates_in_location(guard_location)) {
+        for (CommandCandidate& c : graph_.candidates_for_guard(guard_location, guard_presence)) {
             if (c.soul_name != speaker_soul) cands.push_back(std::move(c));
         }
     }
@@ -1575,6 +2005,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         for (const CommandCandidate& c : cands) {
             double c_surf = 0.0;
             bool matched_role_or_trade = false;
+            bool matched_explicit_multiword_alias = false;
 
             // Name aliases
             std::vector<std::string> name_aliases = {c.full_name, c.given_name, c.ui_name};
@@ -1585,10 +2016,35 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
                 name_aliases.push_back(c.byname);
                 if (!c.given_name.empty()) name_aliases.push_back(c.given_name + " " + c.byname);
             }
+            for (const std::string& ea : c.extra_aliases) name_aliases.push_back(ea);
+
             for (const std::string& al : name_aliases) {
                 const std::string ad = strip_determiners(al);
                 if (ad.empty()) continue;
-                c_surf = std::max(c_surf, surface_and_phonetic_score(q_det, q_phon, ad, phonetic_phrase(ad)));
+                const double sc = surface_and_phonetic_score(q_det, q_phon, ad, phonetic_phrase(ad));
+                c_surf = std::max(c_surf, sc);
+                if (q_toks.size() >= 2 && split_words(ad).size() >= 2 && sc >= 0.86) {
+                    matched_explicit_multiword_alias = true;
+                }
+            }
+
+            // Leading honorific fallback ("Father Godwin" -> "Godwin", "Lord Capon" -> "Capon")
+            if (q_toks.size() >= 2 && is_leading_name_honorific(q_toks[0])) {
+                std::string stripped_q;
+                for (std::size_t k = 1; k < q_toks.size(); ++k) {
+                    if (!stripped_q.empty()) stripped_q.push_back(' ');
+                    stripped_q += q_toks[k];
+                }
+                const std::string sq_phon = phonetic_phrase(stripped_q);
+                for (const std::string& al : name_aliases) {
+                    const std::string ad = strip_determiners(al);
+                    if (ad.empty()) continue;
+                    const double sc = surface_and_phonetic_score(stripped_q, sq_phon, ad, phonetic_phrase(ad));
+                    if (sc >= 0.88) {
+                        c_surf = std::max(c_surf, sc * 0.99);
+                        matched_explicit_multiword_alias = true;
+                    }
+                }
             }
 
             // Relational & trade aliases
@@ -1613,7 +2069,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
             }
 
             // Multi-word given-name consistency guard (prevents "Gilbert Miller" -> "Cecily Miller")
-            if (q_toks.size() >= 2 && !matched_role_or_trade) {
+            if (q_toks.size() >= 2 && !matched_role_or_trade && !matched_explicit_multiword_alias) {
                 const std::string c_full = strip_determiners(c.full_name);
                 const std::vector<std::string> c_toks = split_words(c_full);
                 const std::string c_gn = strip_determiners(c.given_name);
@@ -1631,7 +2087,18 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
             }
 
             if (c_surf < 0.79) continue;
-            const double total = c_surf + salience_bonus_for(c, recent, record);
+            double priority_bonus = 0.0;
+            if (!matched_role_or_trade && c_surf >= 0.86) {
+                if (strip_determiners(c.full_name) == q_det) {
+                    priority_bonus += 0.035;
+                }
+                if (c.is_major_friend) {
+                    priority_bonus += 0.09;
+                } else if (c.is_game_named || !c.quest_ids.empty()) {
+                    priority_bonus += 0.05;
+                }
+            }
+            const double total = c_surf + priority_bonus + salience_bonus_for(c, recent, record);
             scored.push_back({total, c_surf, &c});
         }
 
@@ -1717,14 +2184,18 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
     }
 
     if (extracted.action == CommandAction::LocateNpc) {
-        const std::vector<RoutineSpot> spots = graph_.spots_of(winner->soul_name);
+        const std::vector<RoutineSpot> spots =
+            guard_location.empty()
+                ? graph_.spots_of(winner->soul_name)
+                : graph_.spots_of_in_location(winner->soul_name, guard_location, guard_presence);
         out.directive = format_locate_directive(winner->soul_name, spots);
         const SoulWhereabouts wb = graph_.whereabouts_of(winner->soul_name);
 
         const std::string how_known =
             !town_name.empty()
-                ? ("As a guard here in " + town_name + ", you know everyone in " + town_name +
-                   ", including " + winner->full_name + " — do not say you do not know them.")
+                ? ("As a guard here in " + town_name + ", you know everyone currently in " +
+                   town_name + ", including " + winner->full_name +
+                   " — do not say you do not know them.")
                 : ((winner->hop > 1 && !winner->via_name.empty())
                        ? ("You know of " + winner->full_name + " through " + winner->via_name +
                           " — do not say you do not know them.")
@@ -1741,10 +2212,19 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         if (facts.empty()) {
             facts = winner->full_name;
             if (!winner->trade.empty()) facts += " is a " + winner->trade;
-            if (!winner->settlement.empty()) {
-                facts += (winner->trade.empty() ? " keeps in " : " in ") + winner->settlement;
+            const std::string clean_sett =
+                !town_name.empty() ? town_name : sanitize_settlement_label(winner->settlement);
+            if (!clean_sett.empty()) {
+                facts += (winner->trade.empty() ? " is here in " : " here in ") + clean_sett;
             } else if (winner->trade.empty()) {
                 facts += " keeps nearby";
+            }
+            if (!town_name.empty() && guard_presence && !spots.empty()) {
+                const std::string bearing = compass_bearing_phrase(
+                    guard_presence->guard_x, guard_presence->guard_y, spots.front().x, spots.front().y);
+                if (!bearing.empty()) {
+                    facts += ", " + bearing;
+                }
             }
             facts += ".";
         }
@@ -1806,7 +2286,8 @@ CommandOutcome CommandDirector::resolve_guard_lookup(
     std::string_view said,
     const std::vector<Message>& history,
     const SoulRecord& record,
-    const std::function<std::string(std::string_view)>& retranscribe_fn) {
+    const std::function<std::string(std::string_view)>& retranscribe_fn,
+    const GuardPresence* guard_presence) {
     const std::string subject = clean_guard_subject_mention(said);
     if (subject.empty()) return {};
 
@@ -1815,16 +2296,17 @@ CommandOutcome CommandDirector::resolve_guard_lookup(
     ext.target_mention = subject;
     ext.is_pronoun = is_pronoun_mention(subject);
 
-    CommandOutcome out =
-        link(guard_soul, guard_name, ext, history, record, KbGate::Open, guard_location);
+    CommandOutcome out = link(
+        guard_soul, guard_name, ext, history, record, KbGate::Open, guard_location, guard_presence);
 
     if (retranscribe_fn && !ext.is_pronoun &&
         (out.status == CommandStatus::UnknownToNpc ||
          out.status == CommandStatus::AmbiguousSoul ||
          out.confidence < 0.88)) {
         const std::string p2_terms =
-            guard_location.empty() ? pass2_keyterms(guard_soul, history, record)
-                                   : location_keyterms(guard_location, 95, subject);
+            guard_location.empty()
+                ? pass2_keyterms(guard_soul, history, record)
+                : location_keyterms(guard_location, 95, subject, guard_presence);
         const std::string retx = trim_ws(retranscribe_fn(p2_terms));
         const std::string subject2 = clean_guard_subject_mention(retx);
         if (!subject2.empty() && command_normalize(subject2) != command_normalize(subject)) {
@@ -1832,8 +2314,8 @@ CommandOutcome CommandDirector::resolve_guard_lookup(
             ext2.action = CommandAction::LocateNpc;
             ext2.target_mention = subject2;
             ext2.is_pronoun = is_pronoun_mention(subject2);
-            CommandOutcome out2 =
-                link(guard_soul, guard_name, ext2, history, record, KbGate::Open, guard_location);
+            CommandOutcome out2 = link(guard_soul, guard_name, ext2, history, record, KbGate::Open,
+                                       guard_location, guard_presence);
             if ((out.status != CommandStatus::ResolvedSoul &&
                  out2.status == CommandStatus::ResolvedSoul) ||
                 out2.confidence > out.confidence) {
@@ -1854,7 +2336,8 @@ CommandOutcome CommandDirector::resolve(
     const SoulRecord& record,
     KbGate kb_gate,
     const std::function<std::string(std::string_view)>& retranscribe_fn,
-    std::string_view guard_location) {
+    std::string_view guard_location,
+    const GuardPresence* guard_presence) {
     if (said.empty() || !extractor_) return {};
 
     // Stage 1: Fast EmbeddingGemma-300M 768-d linear intent gate
@@ -1870,22 +2353,22 @@ CommandOutcome CommandDirector::resolve(
     if (ext.action == CommandAction::None) return {};
 
     // Stage 3: Salience-ranked social-graph (or Burgher settlement) entity resolution
-    CommandOutcome out =
-        link(speaker_soul, speaker_name, ext, history, record, kb_gate, guard_location);
+    CommandOutcome out = link(
+        speaker_soul, speaker_name, ext, history, record, kb_gate, guard_location, guard_presence);
 
     // Stage 4: Conditional STT Pass-2 buffered PCM replay on unresolved/low-confidence voice commands
     if (retranscribe_fn && !ext.is_pronoun &&
         (out.status == CommandStatus::UnknownToNpc || out.confidence < 0.88)) {
         const std::string p2_terms =
             (!guard_location.empty() && ext.action == CommandAction::LocateNpc)
-                ? location_keyterms(guard_location, 95, ext.target_mention)
+                ? location_keyterms(guard_location, 95, ext.target_mention, guard_presence)
                 : pass2_keyterms(speaker_soul, history, record);
         const std::string retx = trim_ws(retranscribe_fn(p2_terms));
         if (!retx.empty() && command_normalize(retx) != command_normalize(said)) {
             ExtractedCommand ext2 = run_extractor(speaker_name, speaker_settlement, retx, history);
             if (ext2.action != CommandAction::None) {
-                CommandOutcome out2 =
-                    link(speaker_soul, speaker_name, ext2, history, record, kb_gate, guard_location);
+                CommandOutcome out2 = link(speaker_soul, speaker_name, ext2, history, record,
+                                           kb_gate, guard_location, guard_presence);
                 if ((out.status == CommandStatus::UnknownToNpc &&
                      out2.status != CommandStatus::UnknownToNpc) ||
                     out2.confidence > out.confidence) {

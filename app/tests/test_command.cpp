@@ -405,8 +405,12 @@ TEST_CASE("guard town/village directory: clean_guard_subject_mention, Burgher bo
     CHECK(game.whole(9).find("@locate soul_benesh 26:360,1260,3050.0,760.0,42.0") != std::string::npos);
 
     // 6. Real npcs.sqlite Burgher settlement boundary check (if present on disk)
-    if (std::filesystem::exists("data/kcd2/npcs.sqlite")) {
-        CommandGraph real_graph("data/kcd2/npcs.sqlite");
+    std::filesystem::path real_db = "data/kcd2/npcs.sqlite";
+    if (!std::filesystem::exists(real_db) && std::filesystem::exists("../../data/kcd2/npcs.sqlite")) {
+        real_db = "../../data/kcd2/npcs.sqlite";
+    }
+    if (std::filesystem::exists(real_db)) {
+        CommandGraph real_graph(real_db);
         REQUIRE(real_graph.ok());
         const auto kut_cands = real_graph.candidates_in_location("location_kutnaHora");
         const auto tro_cands = real_graph.candidates_in_location("location_troskovice");
@@ -421,6 +425,115 @@ TEST_CASE("guard town/village directory: clean_guard_subject_mention, Burgher bo
         const CommandOutcome wrong_town = real_dir.resolve_guard_lookup(
             "ttro_catchpole", "Bailiff Thrush", "location_troskovice", "Benesh Bell", {}, {});
         CHECK(wrong_town.status == CommandStatus::UnknownToNpc);
+
+        // 7. Major friendly / main-story NPC resolution in the same settlement:
+        //    - "Katherine" resolves directly to ttro_katerina (NOT AmbiguousSoul against background
+        //      extras "Katherine Wald" / "Katherine Braun") when she is currently in Kuttenberg!
+        //    - "Katherine Wald" still resolves to the specific townswoman kkut_extras_woman_21!
+        //    - Zero-routine major friendly NPCs (Rosa Ruthard, Hans Capon, Godwin) resolve when
+        //      currently inside Kuttenberg via GuardPresence, including noble/priest honorifics
+        //      and surname aliases ("Capon", "Lord Capon", "Sir Hans", "Father Godwin").
+        //    - Traveling NPCs like Katherine do NOT falsely resolve in Suchdol when live scan
+        //      shows she is NOT currently in Suchdol!
+        GuardPresence kut_live;
+        kut_live.has_live_scan = true;
+        kut_live.guard_x = 3002.0;
+        kut_live.guard_y = 750.0;
+        kut_live.live_souls = {
+            {"ttro_katerina", {3163.7, 655.1, 53.0}},
+            {"kkut_rozaRuthard", {2993.1, 665.1, 51.1}},
+            {"tkop_ptacek", {2995.0, 667.0, 51.1}},
+            {"tneb_bohuta", {2996.0, 668.0, 51.1}},
+        };
+
+        const CommandOutcome kat = real_dir.resolve_guard_lookup(
+            "kkut_man_131", "Guard", "location_kutnaHora", "Katherine.", {}, {}, {}, &kut_live);
+        CHECK(kat.status == CommandStatus::ResolvedSoul);
+        CHECK(kat.soul_name == "ttro_katerina");
+        CHECK(kat.display_name == "Katherine");
+        CHECK(kat.directive == "@locate ttro_katerina 24:0,1440,3163.7,655.1,53.0");
+        CHECK(kat.direction.find("Kuttenberg") != std::string::npos);
+        CHECK(kat.direction.find("southeast") != std::string::npos);
+        CHECK(kat.direction.find("katerina") == std::string::npos);
+
+        const CommandOutcome kat_wald = real_dir.resolve_guard_lookup(
+            "kkut_man_131", "Guard", "location_kutnaHora", "Katherine Wald", {}, {}, {}, &kut_live);
+        CHECK(kat_wald.status == CommandStatus::ResolvedSoul);
+        CHECK(kat_wald.soul_name == "kkut_extras_woman_21");
+
+        const CommandOutcome rosa = real_dir.resolve_guard_lookup(
+            "kkut_man_131", "Guard", "location_kutnaHora", "Rosa", {}, {}, {}, &kut_live);
+        CHECK(rosa.status == CommandStatus::ResolvedSoul);
+        CHECK(rosa.soul_name == "kkut_rozaRuthard");
+        CHECK(rosa.directive.find("@locate kkut_rozaRuthard ") == 0);
+        CHECK(rosa.directive.find("0,1440,2993.1,665.1,51.1") != std::string::npos);
+
+        for (const char* q : {"Hans Capon", "Capon", "Lord Capon", "Sir Hans"}) {
+            const CommandOutcome hans = real_dir.resolve_guard_lookup(
+                "kkut_man_131", "Guard", "location_kutnaHora", q, {}, {}, {}, &kut_live);
+            INFO("query=" << q);
+            CHECK(hans.status == CommandStatus::ResolvedSoul);
+            CHECK(hans.soul_name == "tkop_ptacek");
+            CHECK(hans.direction.find("ptacek") == std::string::npos);
+        }
+
+        for (const char* q : {"Godwin", "Father Godwin"}) {
+            const CommandOutcome godwin = real_dir.resolve_guard_lookup(
+                "kkut_man_131", "Guard", "location_kutnaHora", q, {}, {}, {}, &kut_live);
+            INFO("query=" << q);
+            CHECK(godwin.status == CommandStatus::ResolvedSoul);
+            CHECK(godwin.soul_name == "tneb_bohuta");
+            CHECK(godwin.direction.find("bohuta") == std::string::npos);
+        }
+
+        // Title-prefixed resident ("Blacksmith Radovan" in Tachov) resolves on bare "Radovan"
+        // without colliding with possessive-prefixed "Radovan's wife Milena" (ttac_woman_1),
+        // while "Milena" resolves directly to ttac_woman_1!
+        const CommandOutcome radovan = real_dir.resolve_guard_lookup(
+            "ttac_guard", "Guard", "location_tachov", "Radovan", {}, {});
+        CHECK(radovan.status == CommandStatus::ResolvedSoul);
+        CHECK(radovan.soul_name == "ttac_blacksmith");
+
+        const CommandOutcome milena = real_dir.resolve_guard_lookup(
+            "ttac_guard", "Guard", "location_tachov", "Milena", {}, {});
+        CHECK(milena.status == CommandStatus::ResolvedSoul);
+        CHECK(milena.soul_name == "ttac_woman_1");
+
+        // When Katherine is in Kuttenberg (NOT Suchdol), a Suchdol guard does NOT falsely
+        // report Katherine in Suchdol despite her static Suchdol routine rows in npcs.sqlite!
+        GuardPresence suchdol_live;
+        suchdol_live.has_live_scan = true;
+        const CommandOutcome kat_absent = real_dir.resolve_guard_lookup(
+            "ksuc_guard", "Guard", "location_suchdol", "Katherine", {}, {}, {}, &suchdol_live);
+        CHECK(kat_absent.soul_name != "ttro_katerina");
+
+        // End-to-end Session integration with BRIDGE guard_present markers before BRIDGE begin:
+        StubLlm real_dlg_llm;
+        FakeGame real_game;
+        TurnWriter real_writer(real_game.paths());
+        Prefiller real_prefiller(real_dlg_llm, opts);
+        Session real_session(real_dlg_llm, real_writer, real_prefiller, opts);
+        real_session.set_world("Bohemia, 1403.");
+        real_session.set_stream_interval(std::chrono::hours(1));
+        real_session.set_menu(true);
+        real_session.set_persona_source(
+            [](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+                return Persona{"Guard", "You are a Kuttenberg guard.", "God be with you."};
+            });
+        real_session.set_commands(&real_dir);
+
+        real_session.handle(classify("<12:10:00> [moonshine_names] BRIDGE guard_present reset loc=location_kutnaHora"));
+        real_session.handle(classify(
+            "<12:10:00> [moonshine_names] BRIDGE guard_present add ttro_katerina@3163.7,655.1,53.0;tkop_ptacek@2995.0,667.0,51.1"));
+        real_session.handle(classify(
+            "<12:10:00> [moonshine_names] BRIDGE begin npc=kkut_man_131 x=3002.0 y=750.0 mode=guard_find loc=location_kutnaHora"));
+        real_session.handle(classify("<12:10:01> BRIDGE played turn=1 -- Who are you looking for?"));
+        real_session.handle(classify("<12:10:01> BRIDGE played turn=2 -- (directives only)"));
+
+        real_dlg_llm.replies.push_back("You'll find Katherine down at the Hangman's Halter tavern to the southeast.");
+        real_session.say("Katherine.", true);
+        CHECK(real_game.whole(3).find("@locate ttro_katerina 24:0,1440,3163.7,655.1,53.0") != std::string::npos);
+        CHECK(real_dlg_llm.calls.back().messages.back().content.find("katerina") == std::string::npos);
     }
 }
 

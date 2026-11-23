@@ -621,6 +621,9 @@ private:
     std::optional<GreetingGuess> take_kept_greeting(std::string_view soul, std::string_view sheet);
 
     std::string guard_location_;
+    std::string pending_guard_present_loc_;
+    GuardPresence pending_guard_presence_;
+    GuardPresence guard_presence_;
     bool awaiting_guard_subject_ = false;
 };
 
