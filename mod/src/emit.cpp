@@ -20029,33 +20029,48 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "end\n";
     s += "\n";
     // Scans all game-named friendly NPCs (`storySouls`) in the active level and reports
-    // those whose live entity is currently inside the guard's Burgher settlement `loc`.
+    // those whose live entity is currently inside the guard's Burgher settlement `loc`
+    // (`add`), plus loaded entities confirmed outside `loc` (`out`, e.g. in another
+    // settlement or off-map `holdingWait`). Do NOT skip `e:IsHidden()` -- WHengine marks
+    // distant NPCs (>~50m from Henry) as hidden while `e:GetWorldPos()` still holds their
+    // true world position; unloaded `layers/*.xml` entities return `nil` from
+    // `GetEntityByName` and are emitted in neither `add` nor `out`.
     s += "function " + g + ".ScanGuardPresent(npc, loc)\n";
     s += "\tif type(loc) ~= \"string\" or loc == \"\" or System.GetEntityByName == nil then return end\n";
     s += "\tlocal lvl = " + g + ".CurrentLevel(npc)\n";
     s += "\t" + g + ".Log(\"BRIDGE guard_present reset loc=\" .. loc)\n";
     s += "\tlocal list = " + g + ".storySouls or {}\n";
     s += "\tlocal chunk = \"\"\n";
+    s += "\tlocal outChunk = \"\"\n";
     s += "\tfor i = 1, #list do\n";
     s += "\t\tlocal sn = list[i]\n";
     s += "\t\tlocal okE, e = pcall(function() return System.GetEntityByName(sn) end)\n";
     s += "\t\tif okE and e ~= nil and e.GetWorldPos ~= nil then\n";
-    s += "\t\t\tlocal hidden = false\n";
-    s += "\t\t\tpcall(function() if e.IsHidden ~= nil and e:IsHidden() then hidden = true end end)\n";
     s += "\t\t\tlocal dead = false\n";
     s += "\t\t\tpcall(function() if e.actor ~= nil and e.actor:IsDead() then dead = true end end)\n";
-    s += "\t\t\tif not hidden and not dead then\n";
+    s += "\t\t\tif not dead then\n";
     s += "\t\t\t\tlocal okP, pos = pcall(function() return e:GetWorldPos() end)\n";
     s += "\t\t\t\tif okP and type(pos) == \"table\" and type(pos.x) == \"number\" and type(pos.y) == \"number\" then\n";
-    s += "\t\t\t\t\tif (math.abs(pos.x) > 1.0 or math.abs(pos.y) > 1.0) and " + g + ".SettlementAt(lvl, pos.x, pos.y, 0) == loc then\n";
-    s += "\t\t\t\t\t\tlocal item = string.format(\"%s@%.1f,%.1f,%.1f\", sn, pos.x, pos.y, pos.z or 0)\n";
-    s += "\t\t\t\t\t\tif chunk ~= \"\" and (#chunk + 1 + #item) > 400 then\n";
-    s += "\t\t\t\t\t\t\t" + g + ".Log(\"BRIDGE guard_present add \" .. chunk)\n";
-    s += "\t\t\t\t\t\t\tchunk = item\n";
-    s += "\t\t\t\t\t\telseif chunk == \"\" then\n";
-    s += "\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\tif math.abs(pos.x) > 1.0 or math.abs(pos.y) > 1.0 then\n";
+    s += "\t\t\t\t\t\tif " + g + ".SettlementAt(lvl, pos.x, pos.y, 0) == loc then\n";
+    s += "\t\t\t\t\t\t\tlocal item = string.format(\"%s@%.1f,%.1f,%.1f\", sn, pos.x, pos.y, pos.z or 0)\n";
+    s += "\t\t\t\t\t\t\tif chunk ~= \"\" and (#chunk + 1 + #item) > 400 then\n";
+    s += "\t\t\t\t\t\t\t\t" + g + ".Log(\"BRIDGE guard_present add \" .. chunk)\n";
+    s += "\t\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\t\telseif chunk == \"\" then\n";
+    s += "\t\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\t\telse\n";
+    s += "\t\t\t\t\t\t\t\tchunk = chunk .. \";\" .. item\n";
+    s += "\t\t\t\t\t\t\tend\n";
     s += "\t\t\t\t\t\telse\n";
-    s += "\t\t\t\t\t\t\tchunk = chunk .. \";\" .. item\n";
+    s += "\t\t\t\t\t\t\tif outChunk ~= \"\" and (#outChunk + 1 + #sn) > 400 then\n";
+    s += "\t\t\t\t\t\t\t\t" + g + ".Log(\"BRIDGE guard_present out \" .. outChunk)\n";
+    s += "\t\t\t\t\t\t\t\toutChunk = sn\n";
+    s += "\t\t\t\t\t\t\telseif outChunk == \"\" then\n";
+    s += "\t\t\t\t\t\t\t\toutChunk = sn\n";
+    s += "\t\t\t\t\t\t\telse\n";
+    s += "\t\t\t\t\t\t\t\toutChunk = outChunk .. \";\" .. sn\n";
+    s += "\t\t\t\t\t\t\tend\n";
     s += "\t\t\t\t\t\tend\n";
     s += "\t\t\t\t\tend\n";
     s += "\t\t\t\tend\n";
@@ -20063,6 +20078,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tif chunk ~= \"\" then " + g + ".Log(\"BRIDGE guard_present add \" .. chunk) end\n";
+    s += "\tif outChunk ~= \"\" then " + g + ".Log(\"BRIDGE guard_present out \" .. outChunk) end\n";
     s += "end\n";
     s += "\n";
     // Entered from `guard_talk.xml`'s `ask_find` ExitScript ("Can you help me find someone?").

@@ -6982,8 +6982,11 @@ case("Guard find: scans live storySouls inside settlement and locates cross-leve
     end
     player:SetWorldPos({ x = 3000, y = 750, z = 40 })
     local guard = E.soul(guardName, { pos = { x = 3002, y = 750, z = 40 } })
-    -- Spawn Katherine & Rosa inside Kuttenberg's Burgher boundary, and Hans off-map in holdingWait (~395, 202)
-    E.soul("ttro_katerina", { pos = { x = 3163.7, y = 655.1, z = 53.0 } })
+    -- Spawn Katherine & Rosa inside Kuttenberg's Burgher boundary (with Katherine marked
+    -- visually hidden as WHengine does for distant NPCs >50m from Henry), and Hans off-map
+    -- in holdingWait (~395, 202)
+    local katEnt = E.soul("ttro_katerina", { pos = { x = 3163.7, y = 655.1, z = 53.0 } })
+    katEnt.IsHidden = function() return true end
     E.soul("kkut_rozaRuthard", { pos = { x = 2993.1, y = 665.1, z = 51.1 } })
     E.soul("tkop_ptacek", { pos = { x = 395.0, y = 202.0, z = 10.0 } })
 
@@ -6991,15 +6994,19 @@ case("Guard find: scans live storySouls inside settlement and locates cross-leve
     E.guardAskFind(guard)
     local resetLine, resetIdx = E.find("BRIDGE guard_present reset loc=location_kutnaHora", mark)
     local addLine, addIdx = E.find("BRIDGE guard_present add ", mark)
+    local outLine, outIdx = E.find("BRIDGE guard_present out ", mark)
     local beginLine, beginIdx = E.find("BRIDGE begin npc=" .. guardName, mark)
-    check(resetLine ~= nil and addLine ~= nil and beginLine ~= nil, "guard_present reset + add + begin all logged")
-    check(resetIdx < beginIdx and addIdx < beginIdx, "guard_present lines precede BRIDGE begin")
+    check(resetLine ~= nil and addLine ~= nil and outLine ~= nil and beginLine ~= nil,
+          "guard_present reset + add + out + begin all logged")
+    check(resetIdx < beginIdx and addIdx < beginIdx and outIdx < beginIdx, "guard_present lines precede BRIDGE begin")
     check(string.find(addLine, "ttro_katerina@3163.7,655.1,53.0", 1, true) ~= nil,
-          "Katherine reported live inside Kuttenberg: " .. tostring(addLine))
+          "distant visually-hidden Katherine still reported live inside Kuttenberg: " .. tostring(addLine))
     check(string.find(addLine, "kkut_rozaRuthard@2993.1,665.1,51.1", 1, true) ~= nil,
           "Rosa Ruthard reported live inside Kuttenberg: " .. tostring(addLine))
     check(string.find(addLine, "tkop_ptacek@", 1, true) == nil,
-          "Hans Capon in off-map holdingWait excluded from Kuttenberg guard_present: " .. tostring(addLine))
+          "Hans Capon in off-map holdingWait excluded from Kuttenberg guard_present add: " .. tostring(addLine))
+    check(string.find(outLine, "tkop_ptacek", 1, true) ~= nil,
+          "Hans Capon in off-map holdingWait reported in guard_present out: " .. tostring(outLine))
 
     -- Placing @locate for Katherine in Kuttenberg selects the kutnohorsko (level 2) shard!
     local kutEntry = M.locateSouls["ttro_katerina"].byLvl[2]

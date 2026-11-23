@@ -322,6 +322,12 @@ Event classify(std::string_view line) {
             event.said = std::string(trim(rest.substr(4)));
             return event;
         }
+        if (rest.rfind("out ", 0) == 0) {
+            Event event{Marker::GuardPresent};
+            event.intent = "out";
+            event.said = std::string(trim(rest.substr(4)));
+            return event;
+        }
     }
 
     // "BRIDGE played turn=N", or "BRIDGE skipped turn=N": the player's tap on the skip

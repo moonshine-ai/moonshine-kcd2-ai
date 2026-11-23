@@ -499,12 +499,47 @@ TEST_CASE("guard town/village directory: clean_guard_subject_mention, Burgher bo
         CHECK(milena.status == CommandStatus::ResolvedSoul);
         CHECK(milena.soul_name == "ttac_woman_1");
 
+        // "Katharine" (and "Catherine" / "Catharine" / "Katerina") also resolves directly
+        // to main-story Katherine (`ttro_katerina`), BOTH when live-loaded AND when her
+        // `layers/katerina_*.xml` entity is unloaded at a distant Kuttenberg gate!
+        for (const char* q : {"Katharine.", "Katharine", "Catherine", "Catharine", "Katerina"}) {
+            const CommandOutcome kat_sp = real_dir.resolve_guard_lookup(
+                "kkut_man_306", "Franz", "location_kutnaHora", q, {}, {}, {}, &kut_live);
+            INFO("query=" << q);
+            CHECK(kat_sp.status == CommandStatus::ResolvedSoul);
+            CHECK(kat_sp.soul_name == "ttro_katerina");
+            CHECK(kat_sp.display_name == "Katherine");
+        }
+
+        // Exact reproduction of wl1 West Gate (`kkut_man_306` at 2989,722) when only nearby
+        // `objects_mission0.xml` `kkut_gerda` is loaded and `layers/katerina_*.xml` is unloaded:
+        GuardPresence kut_gate_unloaded;
+        kut_gate_unloaded.has_live_scan = true;
+        kut_gate_unloaded.guard_x = 2989.0;
+        kut_gate_unloaded.guard_y = 722.0;
+        kut_gate_unloaded.live_souls = {{"kkut_gerda", {2961.9, 743.4, 56.0}}};
+        kut_gate_unloaded.absent_souls = {"tkop_ptacek"};
+
+        const CommandOutcome kat_from_gate = real_dir.resolve_guard_lookup(
+            "kkut_man_306", "Franz", "location_kutnaHora", "Katharine.", {}, {}, {}, &kut_gate_unloaded);
+        CHECK(kat_from_gate.status == CommandStatus::ResolvedSoul);
+        CHECK(kat_from_gate.soul_name == "ttro_katerina");
+        CHECK(kat_from_gate.display_name == "Katherine");
+
+        // Conversely, if Katherine's entity WAS loaded and observed outside Kuttenberg
+        // (`absent_souls` contains `ttro_katerina`), she is excluded from Kuttenberg:
+        GuardPresence kut_kat_moved_away = kut_gate_unloaded;
+        kut_kat_moved_away.absent_souls.insert("ttro_katerina");
+        const CommandOutcome kat_moved = real_dir.resolve_guard_lookup(
+            "kkut_man_306", "Franz", "location_kutnaHora", "Katherine", {}, {}, {}, &kut_kat_moved_away);
+        CHECK(kat_moved.soul_name != "ttro_katerina");
+
         // When Katherine is in Kuttenberg (NOT Suchdol), a Suchdol guard does NOT falsely
         // report Katherine in Suchdol despite her static Suchdol routine rows in npcs.sqlite!
         GuardPresence suchdol_live;
         suchdol_live.has_live_scan = true;
         const CommandOutcome kat_absent = real_dir.resolve_guard_lookup(
-            "ksuc_guard", "Guard", "location_suchdol", "Katherine", {}, {}, {}, &suchdol_live);
+            "ksuc_guard", "Guard", "location_suchdol", "Katharine", {}, {}, {}, &suchdol_live);
         CHECK(kat_absent.soul_name != "ttro_katerina");
 
         // End-to-end Session integration with BRIDGE guard_present markers before BRIDGE begin:

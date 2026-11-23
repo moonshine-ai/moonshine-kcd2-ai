@@ -782,6 +782,24 @@ std::optional<CommandCandidate> CommandGraph::candidate_by_soul(std::string_view
 std::vector<CommandCandidate> CommandGraph::candidates_for_guard(
     std::string_view location_id,
     const GuardPresence* guard_presence) {
+    auto is_default_traveling_home = [](std::string_view soul, std::string_view loc) {
+        if (soul == "ttro_katerina") {
+            return loc == "location_kutnaHora" || loc == "location_hradTrosky";
+        }
+        if (soul == "kkut_samuel" || soul == "kkut_lichtenstejn") {
+            return loc == "location_kutnaHora";
+        }
+        if (soul == "kmis_hansZUher") return loc == "location_miskovice";
+        if (soul == "tsem_racek" || soul == "tsem_hanus") {
+            return loc == "location_suchdol" || loc == "location_troskovice";
+        }
+        if (soul == "tneb_zizka") return loc == "location_suchdol";
+        if (soul == "tneb_bohuta" || soul == "kcer_suchyCert" || soul == "kcer_kubenka") {
+            return loc == "location_certovka";
+        }
+        return false;
+    };
+
     std::vector<CommandCandidate> base = candidates_in_location(location_id);
     if (!guard_presence || !guard_presence->has_live_scan) return base;
 
@@ -789,8 +807,16 @@ std::vector<CommandCandidate> CommandGraph::candidates_for_guard(
     out.reserve(base.size() + guard_presence->live_souls.size());
     std::set<std::string, std::less<>> seen;
     for (CommandCandidate& c : base) {
+        // Loaded entity confirmed outside `location_id` (e.g. in another settlement or off-map holdingWait).
+        if (guard_presence->absent_souls.find(c.soul_name) != guard_presence->absent_souls.end()) {
+            continue;
+        }
+        // Unloaded `layers/*.xml` entity (`GetEntityByName == nil`): keep traveling NPCs only in
+        // their level-default home settlement (e.g. Katherine at Hangman's Halter in Kuttenberg),
+        // not in conditional campaign settlements like Suchdol unless live-loaded there.
         if (c.is_traveling &&
-            guard_presence->live_souls.find(c.soul_name) == guard_presence->live_souls.end()) {
+            guard_presence->live_souls.find(c.soul_name) == guard_presence->live_souls.end() &&
+            !is_default_traveling_home(c.soul_name, location_id)) {
             continue;
         }
         seen.insert(c.soul_name);
@@ -1017,6 +1043,16 @@ void populate_canonical_name_parts(CommandCandidate& c, std::string_view occupat
             }
         }
     }
+
+    // Special-case spelling variants for main-story Katherine (`ttro_katerina`), since STT
+    // frequently transcribes "Katherine" as "Katharine" (or "Catherine" / "Catharine").
+    if (c.soul_name == "ttro_katerina" ||
+        (c.is_major_friend && command_normalize(c.full_name) == "katherine")) {
+        c.extra_aliases.push_back("Katharine");
+        c.extra_aliases.push_back("Catherine");
+        c.extra_aliases.push_back("Catharine");
+        c.extra_aliases.push_back("Katerina");
+    }
 }
 
 std::string sanitize_settlement_label(std::string_view raw) {
@@ -1099,6 +1135,8 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
                 c.gender = col_str(st, 5);
                 c.settlement = col_str(st, 6);
                 c.trade = col_str(st, 7);
+                if (c.soul_name == "ttro_katerina") c.is_major_friend = true;
+                populate_canonical_name_parts(c);
             }
             sqlite3_finalize(st);
         }
@@ -1998,6 +2036,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         struct Scored {
             double total = 0.0;
             double surf = 0.0;
+            bool exact_full = false;
             const CommandCandidate* cand = nullptr;
         };
         std::vector<Scored> scored;
@@ -2006,6 +2045,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
             double c_surf = 0.0;
             bool matched_role_or_trade = false;
             bool matched_explicit_multiword_alias = false;
+            bool exact_full = (strip_determiners(c.full_name) == q_det);
 
             // Name aliases
             std::vector<std::string> name_aliases = {c.full_name, c.given_name, c.ui_name};
@@ -2016,7 +2056,13 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
                 name_aliases.push_back(c.byname);
                 if (!c.given_name.empty()) name_aliases.push_back(c.given_name + " " + c.byname);
             }
-            for (const std::string& ea : c.extra_aliases) name_aliases.push_back(ea);
+            for (const std::string& ea : c.extra_aliases) {
+                name_aliases.push_back(ea);
+                if (c.is_major_friend && strip_determiners(ea) == q_det &&
+                    split_words(strip_determiners(c.full_name)).size() == 1) {
+                    exact_full = true;
+                }
+            }
 
             for (const std::string& al : name_aliases) {
                 const std::string ad = strip_determiners(al);
@@ -2089,7 +2135,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
             if (c_surf < 0.79) continue;
             double priority_bonus = 0.0;
             if (!matched_role_or_trade && c_surf >= 0.86) {
-                if (strip_determiners(c.full_name) == q_det) {
+                if (exact_full) {
                     priority_bonus += 0.035;
                 }
                 if (c.is_major_friend) {
@@ -2099,7 +2145,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
                 }
             }
             const double total = c_surf + priority_bonus + salience_bonus_for(c, recent, record);
-            scored.push_back({total, c_surf, &c});
+            scored.push_back({total, c_surf, exact_full, &c});
         }
 
         if (scored.empty()) {
@@ -2123,7 +2169,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         if (!guard_location.empty() && scored.size() >= 2 &&
             scored[0].cand->soul_name != scored[1].cand->soul_name &&
             (scored[0].total - scored[1].total) < 0.035 &&
-            strip_determiners(scored[0].cand->full_name) != q_det) {
+            !scored[0].exact_full) {
             out.status = CommandStatus::AmbiguousSoul;
             out.confidence = scored[0].surf;
             std::string choices;

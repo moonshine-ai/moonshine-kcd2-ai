@@ -218,6 +218,22 @@ void Session::handle(const Event& event) {
                         pending_guard_presence_.live_souls[sn] = {px, py, pz};
                     }
                 }
+            } else if (event.intent == "out" && pending_guard_presence_.has_live_scan) {
+                std::string_view rest = event.said;
+                while (!rest.empty()) {
+                    const std::size_t semi = rest.find(';');
+                    std::string_view item = rest.substr(0, semi);
+                    rest = (semi == std::string_view::npos) ? std::string_view() : rest.substr(semi + 1);
+                    while (!item.empty() && std::isspace(static_cast<unsigned char>(item.front()))) {
+                        item.remove_prefix(1);
+                    }
+                    while (!item.empty() && std::isspace(static_cast<unsigned char>(item.back()))) {
+                        item.remove_suffix(1);
+                    }
+                    if (!item.empty()) {
+                        pending_guard_presence_.absent_souls.emplace(item);
+                    }
+                }
             }
             break;
         case Marker::Quit:

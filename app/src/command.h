@@ -22,6 +22,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -67,6 +68,7 @@ struct GuardPresence {
     double guard_x = -1.0;
     double guard_y = -1.0;
     std::map<std::string, LiveSoulSpot, std::less<>> live_souls;
+    std::set<std::string, std::less<>> absent_souls;
 };
 
 struct CommandCandidate {
