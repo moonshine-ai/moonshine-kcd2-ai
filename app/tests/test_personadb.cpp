@@ -1271,6 +1271,70 @@ TEST_CASE("a story's later scene is locked until the scene before is done, open 
     CHECK(back.quest.rows[0].command == kQuestComplete);
 }
 
+TEST_CASE("a scene has a second way in on another's flag, is void once another is done, and is never locked once taken up") {
+    // bugs.txt 23 Nov 2026 (In the Stocks): the duel is open on the deliver's warning
+    // promised (open_on "<quest> warned") whatever the witness scene did, the witness scene
+    // is gone once the duel is fought (void_if_done), and a scene Henry already has -- the
+    // duel taken up at the holder's door -- is his, locked or not.
+    Db db;
+    db.exec("INSERT INTO npc_quest_lines VALUES ('scene-letter','open_on','quest-ondra-axe warned'),"
+            " ('scene-letter','void_if_done','quest-wenzel');");
+    PersonaDb personas(db.path());
+    const std::optional<Soul> marta = personas.find("ksuc_woman_12");
+    REQUIRE(marta.has_value());
+    REQUIRE(marta->quests.size() == 1);
+    CHECK(marta->quests[0].open_on_quest_id == "quest-ondra-axe");
+    CHECK(marta->quests[0].open_on_flag == "warned");
+    CHECK(marta->quests[0].void_if_done_quest_id == "quest-wenzel");
+
+    // The scene before untouched: locked, as ever.
+    Standing first;
+    first.met = 1;
+    Persona locked = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, first);
+    CHECK(locked.quest.question.empty());
+    CHECK(locked.scripted.offer.empty());
+    // The flag set on the other quest (the save's R): open, the scene before still untouched.
+    Standing flagged = first;
+    flagged.quests["quest-ondra-axe"] = "accepted";
+    flagged.flags["quest-ondra-axe"] = "R";
+    Persona open = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, flagged);
+    CHECK(open.quest.on_yes == kQuestAccept);
+    CHECK(open.scripted.offer == "Now Hugo knows, take him this.");
+    // Open on the flag even where the scene before ended the other way.
+    Standing past = flagged;
+    past.quests["scene-ask"] = "done";
+    past.hows["scene-ask"] = "lied";
+    CHECK(personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, past).scripted.offer == "Now Hugo knows, take him this.");
+    // Another letter on that quest is not the flag.
+    Standing other = first;
+    other.quests["quest-ondra-axe"] = "accepted";
+    other.flags["quest-ondra-axe"] = "n";
+    CHECK(personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, other).scripted.offer.empty());
+
+    // The voiding quest done: the scene is gone, though its scene before ended as it wants.
+    Standing told;
+    told.met = 1;
+    told.quests["scene-ask"] = "done";
+    told.hows["scene-ask"] = "persuaded";
+    CHECK(personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, told).scripted.offer == "Now Hugo knows, take him this.");
+    Standing voided = told;
+    voided.quests["quest-wenzel"] = "done";
+    Persona gone = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, voided);
+    CHECK(gone.quest.block.empty());
+    CHECK(gone.scripted.offer.empty());
+    // Unless Henry has it already: taken up, it is his to finish.
+    Standing taken = voided;
+    taken.quests["scene-letter"] = "accepted";
+    CHECK_FALSE(personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, taken).quest.block.empty());
+    // And taken up with the scene before untouched (the duel at the door), neither locked
+    // nor void: the paragraph is the errand's under way, not "one thing at a time".
+    Standing door = first;
+    door.quests["scene-letter"] = "accepted";
+    Persona under_way = personas.persona("ksuc_woman_12", {}, {}, true, {}, {}, door);
+    CHECK_FALSE(under_way.quest.block.empty());
+    CHECK(under_way.quest.block.find("one thing at a time") == std::string::npos);
+}
+
 TEST_CASE("a database from before the pipeline has no written answers, and says nothing of it") {
     Db db;
     db.exec("DROP TABLE npc_person; DROP TABLE npc_knowledge; DROP TABLE npc_seed_answer;"

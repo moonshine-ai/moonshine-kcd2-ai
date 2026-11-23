@@ -798,6 +798,35 @@ struct Quest {
     std::string offer_threat, offer_threat_reply;
     std::string holder_turn, holder_turn_reply;
     std::string holder_abandon, holder_abandon_reply;
+    // The duel at the door (bugs.txt 23 Nov 2026, In the Stocks): an unyielding holder
+    // threatened to his face mocks Henry (`threaten_no`, as before) and then, where
+    // `duel_quest` names a duel of this run whose giver he is, offers the duel there and
+    // then (`duel_offer`); Henry takes it up (`duel_yes` / `duel_yes_reply`: the duel
+    // quest is accepted on the spot, by the Lua's QuestDoorDuel and the duel's door token,
+    // with its journal entry and its marker, and the store's `door`, letter D, on it) or
+    // will not (`duel_no` / `duel_no_reply`). Either way the row is the refusal it was:
+    // the `rebuffed` port fires and the retrieve goes on to the chest.
+    std::string duel_quest_id;
+    std::string holder_duel_offer;
+    std::string holder_duel_yes, holder_duel_yes_reply;
+    std::string holder_duel_no, holder_duel_no_reply;
+    // A deliver's promised warning (bugs.txt 23 Nov 2026: "I'll take it back. And then I'll
+    // find Paul Schmidt..."): the app's `warn` directive beside the accept on the accept_warn
+    // row -- the store's `warned`, letter R, and the warn token -- opens the optional
+    // objective `objective_warn` with the marker on `warn_soul` (resolved to `warn_guid`,
+    // named `warn_name`) and the journal's `log_warn`. It is done when the scene that opens
+    // on the warning (open_on_quest_id, below, on that scene) is taken up or refused at
+    // the man -- the Lua's warned-off token -- or with the errand.
+    std::string warn_soul, warn_name, warn_guid;
+    std::string objective_warn, log_warn;
+    // A second way in for a scene's link (npc_quest_lines "open_on": "<quest id> <flag>"):
+    // the scene is open -- offered, marked, not locked -- while the quest named has the
+    // store flag named (`warned`...), whether or not `after_quest_id` is done. The duel
+    // opens on the warning promised as well as on the priest's scene ending threatened.
+    std::string open_on_quest_id, open_on_flag;
+    // A scene voided once another is done (npc_quest_lines "void_if_done": a quest id):
+    // the priest has no witness to ask for once Paul has answered to Henry in the yard.
+    std::string void_if_done_quest_id;
     // A reward that is a thing (npc_quest_lines "reward_class": one item class guid): made
     // in Henry's pocket at the hand-in beside whatever the words promise and the groschen,
     // by PayReward (Heinz's digestive potion in *Barking Stew*). Empty for a reward in
@@ -967,6 +996,19 @@ struct Quest {
         return is_ask() && !log_completed_threatened.empty() && !holder_turn.empty() && !holder_turn_reply.empty();
     }
     bool has_holder_abandon() const { return has_turn() && !holder_abandon.empty() && !holder_abandon_reply.empty(); }
+    // The duel offered at an unyielding holder's door (above): the duel's id resolved by the
+    // loader (a duel of this run, this holder its giver) and the five lines written. A
+    // woman's menu has no threat row, so no door duel either.
+    bool has_door_duel() const {
+        return is_unyielding() && target_gender != "female" && !duel_quest_id.empty() && !holder_duel_offer.empty() &&
+               !holder_duel_yes.empty() && !holder_duel_yes_reply.empty() && !holder_duel_no.empty() &&
+               !holder_duel_no_reply.empty();
+    }
+    // A deliver's promised warning (above): the one to be warned resolved and the objective
+    // written; the accept_warn row itself is the app's.
+    bool has_warn() const { return is_deliver() && !warn_soul.empty() && !warn_guid.empty() && !objective_warn.empty(); }
+    // A second way for the scene's link to be open (above).
+    bool has_open_on() const { return !open_on_quest_id.empty() && !open_on_flag.empty(); }
     // The same turn at the offer (the app's row); the journal's line is wanted for it too.
     bool has_offer_threat() const {
         return is_ask() && !log_completed_threatened.empty() && !offer_threat.empty() && !offer_threat_reply.empty();

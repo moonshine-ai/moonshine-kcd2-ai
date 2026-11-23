@@ -930,6 +930,37 @@ std::string cowed_class(const Quest& quest) {
 
 std::string cowed_name(const Quest& quest) { return "cowed_" + quest_node(quest.id); }
 
+std::string door_accept_class(const Quest& quest) {
+    // A duel taken up at the door (bugs.txt 23 Nov 2026): the same shape under 41, the
+    // letter A.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4100-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string door_accept_name(const Quest& quest) { return "door_" + quest_node(quest.id); }
+
+std::string warn_class(const Quest& quest) {
+    // A deliver's warning promised: the same shape under 57, the letter W.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-5700-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string warn_name(const Quest& quest) { return "warn_" + quest_node(quest.id); }
+
+std::string warned_off_class(const Quest& quest) {
+    // And the warning given: the same shape under 44, the letter D.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-4400-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string warned_off_name(const Quest& quest) { return "warned_" + quest_node(quest.id); }
+
 std::string sprung_class(const Quest& quest) {
     // A duel's sprung token: the same shape under its own prefix (53, the letter S).
     require_identifier(quest.id, "quest id");
@@ -2319,6 +2350,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // port): Updated, log_counselled, the marker back on the holder it is to be put to.
     const bool counselled = quest.has_counsel();
     if (counselled) s += t(5) + "<Edge From=\"counselTalk.asked\" To=\"SetCounselled\" />\r\n";
+    // The warning promised (npcdb.hpp warn_soul): its own optional objective, below; the
+    // fetch objective has no line of it.
+    const bool warned = quest.has_warn();
     // A dictated letter written (the Lua's token on the app's `wrote_<digits>` directive,
     // the naming's shape): Updated, log_written, the marker on the receiver.
     const bool written = quest.has_written_log();
@@ -3516,6 +3550,50 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "</Rewards>\r\n";
         s += t(4) + "</AddReward>\r\n";
     }
+    // The warning promised (npcdb.hpp warn_soul; bugs.txt 23 Nov 2026: "the Paul objective
+    // never seemed to appear"): the Lua's warn token on the app's `warn` -- said beside the
+    // accept when the accept_warn row is picked -- opens the optional objective with the
+    // marker on the one to be warned (the journal's log_warn on its Started), and the
+    // warned-off token, which the Lua makes when the scene that opens on the warning is
+    // taken up or refused at him (QuestCommand accept), closes it; so does the errand's
+    // end either way, the thing carried home being the first of the two promises.
+    if (warned) {
+        s += t(4) + "<ObjectProperties Name=\"warnPlayerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+        s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+        s += t(4) + "</ObjectProperties>\r\n";
+        s += t(4) + "<Function Name=\"warnClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                    "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(warn_class(quest)) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"warn\">\r\n";
+        s += t(5) + "<Edge From=\"warnClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"warnPlayerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"" + active_bool + "\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
+        s += t(4) + "<Function Name=\"warnedOffClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                    "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(warned_off_class(quest)) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"warnedOff\">\r\n";
+        s += t(5) + "<Edge From=\"warnedOffClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"warnPlayerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"warnState.Active\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
+        s += t(4) + "<State Name=\"warnState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
+        s += t(5) + "<Edge From=\"warn.OnAcquire\" To=\"SetActive\" />\r\n";
+        s += t(5) + "<Edge From=\"warnedOff.OnAcquire\" To=\"SetDone\" />\r\n";
+        for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
+        for (const std::string& how : ways) {
+            s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetDone\" />\r\n";
+        }
+        s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetCanceled\" />\r\n";
+        s += t(4) + "</State>\r\n";
+        s += t(4) + "<" + std::string(kWarnObjective) + " Name=\"objectiveVisual10\"" + rfo + ">\r\n";
+        s += t(5) + "<Edge From=\"warnState.State\" To=\"Progress\" />\r\n";
+        s += t(4) + "</" + std::string(kWarnObjective) + ">\r\n";
+    }
     // The holder gone for good once he has given in (routine_gone_target; bugs.txt 19 Nov
     // 2026: Benesh up from his prayers and away to Ellen's camp): the gone tag on from the
     // handover, which the scheduler override's added link on his NPC hub reads
@@ -3725,6 +3803,10 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (counselled) {
         s += t(4) + "<SoulAsset Name=\"counsel\" SharedSoulGuids=\"" + xml_escape(quest.counsel_guid) + "\" />\r\n";
     }
+    // The one to be warned, for the warning's objective marker.
+    if (warned) {
+        s += t(4) + "<SoulAsset Name=\"warn\" SharedSoulGuids=\"" + xml_escape(quest.warn_guid) + "\" />\r\n";
+    }
     if (named || caught) {
         std::string guids;
         for (const std::string& g : quest.holder_household_guids) {
@@ -3734,7 +3816,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "<SoulAsset Name=\"holderHousehold\" SharedSoulGuids=\"" + xml_escape(guids) + "\" />\r\n";
     }
     out.assets_a = s;
-    out.wants_player = seen || prayed || left || found || ambushed || gathered || named || written || caught;
+    out.wants_player = seen || prayed || left || found || ambushed || gathered || named || written || caught || warned;
     s.clear();
     // (A duel's brawl_with are the Lua's to make (DuelSpring); the asset is the same, and
     // emit_brawl joins them to the target as the side set on the player.)
@@ -4046,6 +4128,27 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "</Logs>\r\n";
         s += t(4) + "</Objective>\r\n";
     }
+    // The warning promised, "Find <warn_name> and warn him off": IsOptional, tracked with
+    // the marker on him from the promise until he has had it or the errand is over, with
+    // the journal's log_warn as its Started line where one is written.
+    if (warned) {
+        s += t(4) + "<Objective TypeT=\"ProgressFailable\" Name=\"" + std::string(kWarnObjective) + "\" IsOptional=\"true\">\r\n";
+        s += t(5) + "<LocalizedName StringName=\"" + key("objective_warn") + "\" Text=\"" +
+             xml_escape(quest.objective_warn) + "\" />\r\n";
+        s += t(5) + "<Logs>\r\n";
+        s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
+        if (quest.log_warn.empty()) {
+            s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"warn\" />\r\n";
+        } else {
+            s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"warn\">\r\n";
+            s += t(7) + "<Log StringName=\"" + key("log_warn") + "\" Text=\"" + xml_escape(quest.log_warn) + "\" />\r\n";
+            s += t(6) + "</EnumLog>\r\n";
+        }
+        s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
+        s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
+        s += t(5) + "</Logs>\r\n";
+        s += t(4) + "</Objective>\r\n";
+    }
     // A seek's clue-holders' objectives, "Ask <name> about the <animal>": IsOptional, one
     // each, tracked with the marker on the holder from the accept until Henry has asked
     // them or the animal is found (askState<i> above).
@@ -4110,7 +4213,7 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
             names.insert((*it)[2].str());
         }
     }
-    for (const char* alias : {"target", "onward", "keepsake", "searchmark", "brawlers", "helper", "holderHousehold", "counsel"}) {
+    for (const char* alias : {"target", "onward", "keepsake", "searchmark", "brawlers", "helper", "holderHousehold", "counsel", "warn"}) {
         names.insert(alias);
     }
     // A seek's clue-holders' assets, clue1, clue2... (one each, so they are not a fixed list).
@@ -4118,7 +4221,7 @@ std::string suffix_leg(LegOut& leg, const std::string& sfx) {
     for (std::sregex_iterator it(leg.assets_a.begin(), leg.assets_a.end(), clue_re), end; it != end; ++it) {
         names.insert((*it)[1].str());
     }
-    std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kArrangedObjective, kHelperObjective, kCounselObjective};
+    std::vector<std::string> objectives = {"fetch", kReturnObjective, kOnwardObjective, kArrangedObjective, kHelperObjective, kCounselObjective, kWarnObjective};
     static const std::regex objective_re("<Objective TypeT=\"[^\"]*\" Name=\"([A-Za-z_0-9]+)\"");
     for (std::sregex_iterator it(leg.objectives.begin(), leg.objectives.end(), objective_re), end; it != end; ++it) {
         if (std::find(objectives.begin(), objectives.end(), (*it)[1].str()) == objectives.end()) {
@@ -4256,6 +4359,12 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
     const std::string rfo = " RequiredForOutput=\"" + xml_escape(head.level) + "\"";
     s += t(4) + "<State Name=\"questState\"" + rfo + " TypeT=\"wh::questmodule::QuestProgress\">\r\n";
     s += t(5) + "<Edge From=\"" + legs.front().in_ports.front() + "\" To=\"SetActive\" />\r\n";
+    // A duel taken up at an earlier scene's door (npcdb.hpp duel_quest_id; bugs.txt 23 Nov
+    // 2026): the Lua's door token (QuestDoorDuel) sets it Active as the talk's accept
+    // would, through the doorAccepted trigger below. A duel of one scene only: a run's leg
+    // has no port of its own for a token to stand in for.
+    const bool door = head.is_duel() && !multi;
+    if (door) s += t(5) + "<Edge From=\"doorAccepted.OnAcquire\" To=\"SetActive\" />\r\n";
     // `onward` is a beat in the middle (the giver told and paid, Henry sent on), not an
     // end: the quest stays Active until the word is said where it is going. In a run, a
     // hand-in whose ending leads on to another scene is not an end either: the run is
@@ -4410,6 +4519,23 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
         s += t(5) + "<Edge From=\"questState.None\" To=\"A\" />\r\n";
         s += t(5) + "<Edge From=\"giverMarkerLink.bool\" To=\"B\" />\r\n";
         s += t(4) + "</Function>\r\n";
+    }
+    // The duel's door token (door_accept_class; questState above): watched for while the
+    // quest is None, the link's trigger's shape.
+    if (door) {
+        s += t(4) + "<ObjectProperties Name=\"doorPlayerSoul\" DeclaringType=\"wh::rpgmodule::I_Soul\">\r\n";
+        s += t(5) + "<Asset Name=\"I_Soul\" Alias=\"player\" />\r\n";
+        s += t(4) + "</ObjectProperties>\r\n";
+        s += t(4) + "<Function Name=\"doorClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                    "DeclaringType=\"wh::entitymodule\">\r\n";
+        s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(door_accept_class(head)) + "\" />\r\n";
+        s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+        s += t(4) + "</Function>\r\n";
+        s += t(4) + "<ItemDescriptorTrigger Name=\"doorAccepted\">\r\n";
+        s += t(5) + "<Edge From=\"doorClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+        s += t(5) + "<Edge From=\"doorPlayerSoul.Inventory\" To=\"Inventory\" />\r\n";
+        s += t(5) + "<Edge From=\"questState.None\" To=\"IsActive\" />\r\n";
+        s += t(4) + "</ItemDescriptorTrigger>\r\n";
     }
     if (head.has_hail_hours()) {
         s += t(4) + "<TimeOfDayInterval Name=\"giverDayInterval\">\r\n";
@@ -4916,6 +5042,11 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
         const Quest filled = with_holder_lines(quest);
         rows.emplace_back(quest_key(modid, quest.id, "log_counselled"), filled.log_counselled);
         rows.emplace_back(quest_key(modid, quest.id, "objective_counsel"), filled.objective_counsel);
+    }
+    // The warning promised (npcdb.hpp warn_soul): the optional objective and its line.
+    if (quest.has_warn()) {
+        rows.emplace_back(quest_key(modid, quest.id, "objective_warn"), quest.objective_warn);
+        if (!quest.log_warn.empty()) rows.emplace_back(quest_key(modid, quest.id, "log_warn"), quest.log_warn);
     }
     // A seek's clue-holders' objectives (emit.hpp clue_objective).
     if (quest.is_seek()) {
@@ -5867,7 +5998,56 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     if (quest.has_debate()) {
     } else if (quest.is_unyielding()) {
         s += rebuff("persuade", "persuade", quest.holder_persuade, "persuade_no", quest.holder_persuade_no);
-        if (quest.target_gender != "female") {
+        if (quest.has_door_duel()) {
+            // The duel at the door (npcdb.hpp duel_quest_id; bugs.txt 23 Nov 2026): the
+            // threat is the refusal it was -- the `rebuffed` port and QuestRebuffed on the
+            // row's exit, so the retrieve goes on to the chest -- and then the holder,
+            // having mocked Henry, offers the duel, and the nested decision is Henry's yes
+            // (the Lua's QuestDoorDuel: the duel quest accepted on the spot, its door token
+            // for its graph) or no. Each ends the talk. Offered every time, as the plain
+            // refusal is; once the duel is taken up, its row is the refusal alone again.
+            const std::string open_when = "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "duel_open")) + "')==1";
+            s += t(9) + "<Sequence EntryCondition=\"" + open_when + "\" EndType=\"Decision\" Name=\"threaten\" ExitScript=\"Moonshine.QuestRebuffed('" +
+                 quest.id + "', 'threaten')\">\r\n";
+            s += prompt(10, "threaten", quest.holder_threaten);
+            s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"rebuffed\" />\r\n" + t(10) + "</Triggers>\r\n";
+            s += t(10) + "<Elements>\r\n";
+            s += line(11, "HENRY", "threaten", quest.holder_threaten);
+            s += line(11, role, "threaten_no", quest.holder_threaten_no);
+            s += line(11, role, "duel_offer", quest.holder_duel_offer);
+            s += t(10) + "</Elements>\r\n";
+            s += t(10) + "<Decision Name=\"threaten_duel\" Priority=\"General\">\r\n";
+            s += t(11) + "<Sequences>\r\n";
+            s += t(12) + "<Sequence EndType=\"EndDialogue\" Name=\"duel_yes\" ExitScript=\"Moonshine.QuestDoorDuel('" +
+                 quest.id + "', '" + quest.duel_quest_id + "')\">\r\n";
+            s += prompt(13, "duel_yes", quest.holder_duel_yes);
+            s += t(13) + "<Elements>\r\n";
+            s += line(14, "HENRY", "duel_yes", quest.holder_duel_yes);
+            s += line(14, role, "duel_yes_reply", quest.holder_duel_yes_reply);
+            s += t(13) + "</Elements>\r\n";
+            s += t(12) + "</Sequence>\r\n";
+            s += t(12) + "<Sequence EndType=\"EndDialogue\" Name=\"duel_no\">\r\n";
+            s += prompt(13, "duel_no", quest.holder_duel_no);
+            s += t(13) + "<Elements>\r\n";
+            s += line(14, "HENRY", "duel_no", quest.holder_duel_no);
+            s += line(14, role, "duel_no_reply", quest.holder_duel_no_reply);
+            s += t(13) + "</Elements>\r\n";
+            s += t(12) + "</Sequence>\r\n";
+            s += t(11) + "</Sequences>\r\n";
+            s += t(10) + "</Decision>\r\n";
+            s += t(9) + "</Sequence>\r\n";
+            // And the plain refusal, for when the duel is not there to be offered (taken up
+            // already, done, or the duel's scene off): its row's name kept apart.
+            s += t(9) + "<Sequence EntryCondition=\"" + open_when.substr(0, open_when.size() - 3) + "!=1\" EndType=\"EndDialogue\" Name=\"threaten_plain\" ExitScript=\"Moonshine.QuestRebuffed('" +
+                 quest.id + "', 'threaten')\">\r\n";
+            s += prompt(10, "threaten", quest.holder_threaten);
+            s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"rebuffed\" />\r\n" + t(10) + "</Triggers>\r\n";
+            s += t(10) + "<Elements>\r\n";
+            s += line(11, "HENRY", "threaten", quest.holder_threaten);
+            s += line(11, role, "threaten_no", quest.holder_threaten_no);
+            s += t(10) + "</Elements>\r\n";
+            s += t(9) + "</Sequence>\r\n";
+        } else if (quest.target_gender != "female") {
             s += rebuff("threaten", "threaten", quest.holder_threaten, "threaten_no", quest.holder_threaten_no);
         }
     } else {
@@ -6327,6 +6507,14 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
     if (!quest.requires_quest_id.empty()) {
         rows.emplace_back(key("nested"), quest.holder_nested);
         rows.emplace_back(key("nested_yes"), quest.holder_nested_yes);
+    }
+    // The duel at the door (has_door_duel): the offer after the refusal, and the yes and no.
+    if (quest.has_door_duel()) {
+        rows.emplace_back(key("duel_offer"), quest.holder_duel_offer);
+        rows.emplace_back(key("duel_yes"), quest.holder_duel_yes);
+        rows.emplace_back(key("duel_yes_reply"), quest.holder_duel_yes_reply);
+        rows.emplace_back(key("duel_no"), quest.holder_duel_no);
+        rows.emplace_back(key("duel_no_reply"), quest.holder_duel_no_reply);
     }
     if (quest.has_expose()) {
         rows.emplace_back(key("expose"), quest.holder_expose);
@@ -7227,6 +7415,16 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         // And its third, the men made and the brawl loosed after the taunt (sprung_class).
         if (q->has_duel_taunt()) token_row(sprung_name(*q), sprung_class(*q));
     }
+    // A duel taken up at an earlier scene's door (door_accept_class): every duel has the
+    // token and the trigger, whether or not a holder's menu offers it. And a deliver's
+    // warning promised and given (warn_class, warned_off_class).
+    for (const Quest& q : quests) {
+        if (q.is_duel()) token_row(door_accept_name(q), door_accept_class(q));
+        if (q.has_warn()) {
+            token_row(warn_name(q), warn_class(q));
+            token_row(warned_off_name(q), warned_off_class(q));
+        }
+    }
     // One key per chest: the shipped chest keys' row (poi_vuzVJezirku_key: Type 4, the
     // general key icon and model), under the quest's own key class, which the Lua's Stash
     // is keyed to (behaviors.md §6.3). Made in Henry's pocket by the helper's key row.
@@ -7494,6 +7692,19 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
         } else {
             rows.emplace_back(item_ui_key(modid, token_name(q)), "A thing left");
             rows.emplace_back(item_info_key(modid, token_name(q)), "A thing left for " + q.giver_name + ".");
+        }
+    }
+    // A duel taken up at the door, and a warning promised and given (emit_item_table).
+    for (const Quest& q : quests) {
+        if (q.is_duel()) {
+            rows.emplace_back(item_ui_key(modid, door_accept_name(q)), "A duel taken up");
+            rows.emplace_back(item_info_key(modid, door_accept_name(q)), q.giver_name + "'s challenge, taken up at his door.");
+        }
+        if (q.has_warn()) {
+            rows.emplace_back(item_ui_key(modid, warn_name(q)), "A warning promised");
+            rows.emplace_back(item_info_key(modid, warn_name(q)), "Henry promised " + q.giver_name + " a word with " + q.warn_name + ".");
+            rows.emplace_back(item_ui_key(modid, warned_off_name(q)), "A warning given");
+            rows.emplace_back(item_info_key(modid, warned_off_name(q)), q.warn_name + " has had Henry's word.");
         }
     }
     for (const Quest& q : quests) {
@@ -8737,6 +8948,11 @@ std::string state_lua(const std::string& g) {
     // The counsel asked (QuestCounsel; the letter C): the holder's learned row opens, through
     // the quest's counsel global (QuestFlags).
     s += "\tif command == \"counselled\" then facts.counselled = true end\n";
+    // The warning promised (the app's `warn` beside the accept; the letter R): a later
+    // scene's second way in (QuestLinkState openOn) and the warn objective's token.
+    s += "\tif command == \"warn\" then facts.warned = true end\n";
+    // A duel taken up at the holder's door of an earlier scene (QuestDoorDuel; the letter D).
+    s += "\tif command == \"door\" then facts.door = true end\n";
     // A stage of the disputation won (QuestDebateSound): debate_<k>, the count kept.
     s += "\tlocal won = string.match(command, \"^debate_(%d+)$\")\n";
     s += "\tif won ~= nil then facts.debate = math.max(facts.debate or 0, tonumber(won)) end\n";
@@ -8771,7 +8987,9 @@ std::string state_lua(const std::string& g) {
     // was denounced and Henry walked out with nothing; v, a seek's family has gone from the
     // place (the morning after the hand-in, fetched home); j, the chest's paper is in
     // Henry's pocket; M, the wedding that follows a handover is reckoned to have happened
-    // (WedReckoned); one z per clue-holder a seek's
+    // (WedReckoned); S, the helper was frightened rather than paid; C, the counsel has been
+    // asked; R, a deliver's warning has been promised (the app's `warn`); D, a duel was
+    // taken up at the holder's door (QuestDoorDuel); one z per clue-holder a seek's
     // Henry has asked; W followed by three
     // digits, a dictated letter is written, each digit a part's outcome (0 as said, 1 left
     // out, 2 softened, 3 made larger), last so the digits run to the end of the letters.
@@ -8793,6 +9011,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t.. (facts.denounced and \"d\" or \"\") .. (facts.gone and \"v\" or \"\")\n";
     s += "\t\t.. (facts.paper and \"j\" or \"\")\n";
     s += "\t\t.. (facts.scared and \"S\" or \"\") .. (facts.counselled and \"C\" or \"\")\n";
+    s += "\t\t.. (facts.warned and \"R\" or \"\") .. (facts.door and \"D\" or \"\")\n";
     s += "\t\t.. (" + g + ".WedReckoned(id, facts) and \"M\" or \"\")\n";
     s += "\t\t.. string.rep(\"z\", " + g + ".CountKeys(facts.clues))\n";
     s += "\t\t.. (facts.wrote and (\"W\" .. facts.wrote) or \"\")\n";
@@ -8923,6 +9142,14 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif q.followedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.followedVar, (f.followed and not f.followedSaid) and 1 or 0) end)\n";
     s += "\t\tend\n";
+    // The duel at the door (npcdb.hpp duel_quest_id): the holder's threat row offers the
+    // duel while that quest is on and not yet taken up or done -- its own way in, so the
+    // duel's link is not asked (QuestOfferable would say locked).
+    s += "\t\tif q.duelOpenVar ~= nil and q.duelQuest ~= nil then\n";
+    s += "\t\t\tlocal d = quests[q.duelQuest] or {}\n";
+    s += "\t\t\tlocal open = " + g + ".QuestOn(q.duelQuest) and not d.accepted and not d.done\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelOpenVar, open and 1 or 0) end)\n";
+    s += "\t\tend\n";
     // The one asked's persuasion failed (QuestStage): the turn and the giving up read it.
     s += "\t\tif q.refusedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.refusedVar, f.refused and 1 or 0) end)\n";
@@ -9043,6 +9270,9 @@ std::string state_lua(const std::string& g) {
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tif q.after ~= nil and q.after ~= \"\" and " + g + ".QuestLinkState(id) ~= \"open\" then return false end\n";
+    // A scene voided once another is done (npcdb.hpp void_if_done_quest_id): the priest has
+    // no witness to ask for once Paul has answered to Henry in the yard.
+    s += "\tif q.voidIfDone ~= nil and (" + g + ".state.quests[q.voidIfDone] or {}).done then return false end\n";
     s += "\treturn true\n";
     s += "end\n";
     s += "\n";
@@ -9075,9 +9305,19 @@ std::string state_lua(const std::string& g) {
     s += "\treturn false\n";
     s += "end\n";
     s += "\n";
+    // A link's second way in (npcdb.hpp open_on_quest_id): open while the quest named has
+    // the store flag named -- the duel on the warning promised to the bell-ringer -- whatever
+    // the favour before has come to. And a scene already taken up is open, whichever way it
+    // was (a duel accepted at the door, QuestDoorDuel).
     s += "function " + g + ".QuestLinkState(id)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tif q == nil or q.after == nil or q.after == \"\" then return \"open\" end\n";
+    s += "\tlocal own = " + g + ".state.quests[id] or {}\n";
+    s += "\tif own.accepted or own.done then return \"open\" end\n";
+    s += "\tif q.openOn ~= nil and q.openOnFlag ~= nil then\n";
+    s += "\t\tlocal on = " + g + ".state.quests[q.openOn] or {}\n";
+    s += "\t\tif on[q.openOnFlag] == true then return \"open\" end\n";
+    s += "\tend\n";
     s += "\tlocal before = " + g + ".state.quests[q.after] or {}\n";
     s += "\tif not before.done then return \"locked\" end\n";
     s += "\tif " + g + ".QuestHowMatches(before.how, q.afterHow, q.after) then return \"open\" end\n";
@@ -10386,6 +10626,25 @@ std::string emit_conversation_lua(const std::string& modid,
         // An unyielding holder (In the Stocks): the menu's rows are refusals, and the store
         // notes the rebuff (QuestRebuffed) for the app's giver to send Henry at the chest.
         if (q.is_unyielding()) s += ", unyielding = true";
+        // The duel at his door (npcdb.hpp duel_quest_id): the duel's id, and the global the
+        // threat row reads for whether it is there to be offered (QuestFlags).
+        if (q.has_door_duel()) {
+            s += ", duelQuest = \"" + lua_escape(q.duel_quest_id) + "\", duelOpenVar = \"" +
+                 lua_escape(quest_flag_variable(modid, q.id, "duel_open")) + "\"";
+        }
+        // A duel's door token (QuestDoorDuel; emit.hpp door_accept_class).
+        if (q.is_duel()) s += ", doorAccept = \"" + lua_escape(door_accept_class(q)) + "\"";
+        // A deliver's warning promised (npcdb.hpp warn_soul): the two tokens (QuestCommand
+        // warn, and the accept of the scene that opens on it).
+        if (q.has_warn()) {
+            s += ", warnToken = \"" + lua_escape(warn_class(q)) + "\", warnedOff = \"" + lua_escape(warned_off_class(q)) + "\"";
+        }
+        // A link's second way in, and a scene voided once another is done (QuestLinkState,
+        // QuestOfferable; npcdb.hpp open_on_quest_id, void_if_done_quest_id).
+        if (q.has_open_on()) {
+            s += ", openOn = \"" + lua_escape(q.open_on_quest_id) + "\", openOnFlag = \"" + lua_escape(q.open_on_flag) + "\"";
+        }
+        if (!q.void_if_done_quest_id.empty()) s += ", voidIfDone = \"" + lua_escape(q.void_if_done_quest_id) + "\"";
         // Off in a new game (QuestOn; npcdb.hpp off_by_default): the store's switch can turn it on.
         if (q.off_by_default) s += ", off = true";
         if (q.takes_letter_of()) {
@@ -17274,7 +17533,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal linked = q.after ~= nil and q.after ~= \"\"\n";
     s += "\tlocal linkOpen = linked and " + g + ".QuestLinkState(id) == \"open\"\n";
     s += "\tif linkOpen and q.linkOpen ~= nil and not (type(f) == \"table\" and f.linkOpened == true) then\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" link open: \" .. q.after .. \" is done its way\")\n";
+    s += "\t\tlocal byFlag = q.openOn ~= nil and not (" + g + ".state.quests[q.after] or {}).done\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" link open: \" .. (byFlag and (q.openOn .. \" \" .. q.openOnFlag) or (q.after .. \" is done its way\")))\n";
     s += "\t\tpcall(" + g + ".StateQuest, id, \"linkopen\")\n";
     s += "\t\t" + g + ".Token(q, q.linkOpen)\n";
     s += "\tend\n";
@@ -18711,6 +18971,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tend\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    // The warning promised (the app's `warn`, beside the accept on the accept_warn row;
+    // bugs.txt 23 Nov 2026): the store has it (StateQuest, the letter R, which opens the
+    // scene that waits on it: QuestLinkState openOn), and the token for the graph's warn
+    // objective, with the marker on the man. No beat: the graph hears it through the token.
+    s += "\tif command == \"warn\" then\n";
+    s += "\t\tif quest.warnToken ~= nil then " + g + ".Token(quest, quest.warnToken) end\n";
+    s += "\t\tpcall(" + g + ".WatchArm, \"warn\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     // A seek's clue asked (the app's `clue`, said as the clue topic is picked at one of the
     // holders): the token of that holder's class (quest.clues; emit.hpp clue_class) for the
     // graph's asked<i> trigger, which closes their objective and takes their marker off.
@@ -18812,6 +19081,18 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tif command == \"accept\" then\n";
     // (A duel's target is its giver, with no holder menu to be granted.)
     s += "\t\tif quest.target ~= \"\" and quest.kind ~= \"travel\" and quest.kind ~= \"duel\" then " + g + ".GrantHolderByName(quest) end\n";
+    // A scene opening on a warning promised (quest.openOn; npcdb.hpp open_on_quest_id),
+    // taken up -- or refused, which the app says as accept and abandon in one breath -- is
+    // the man warned: the warned-off token for that scene's graph closes its warn
+    // objective and takes the marker off him. And the duel's door globals follow.
+    s += "\t\tif quest.openOn ~= nil then\n";
+    s += "\t\t\tlocal on = " + g + ".quests[quest.openOn]\n";
+    s += "\t\t\tif on ~= nil and on.warnedOff ~= nil and ((" + g + ".state.quests[quest.openOn] or {}).warned == true) then\n";
+    s += "\t\t\t\t" + g + ".Log(\"BRIDGE quest \" .. quest.openOn .. \" warning given: \" .. id .. \" taken up at the man\")\n";
+    s += "\t\t\t\t" + g + ".Token(on, on.warnedOff)\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\t\tif quest.kind == \"duel\" then pcall(" + g + ".QuestFlags) end\n";
     // A dictated letter is not written yet at accept (it comes with `wrote_<digits>`), so
     // Henry gets nothing; the reading's globals start at nothing written.
     s += "\t\tif quest.kind == \"deliver\" and not quest.dictated then " + g + ".GiveLetter(quest) end\n";
@@ -19517,6 +19798,32 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".QuestStage(id, \"rebuffed \" .. tostring(row))\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" rebuffed on \" .. tostring(row) .. \" -- \" .. quest.name)\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"rebuffed\")\n";
+    s += "end\n";
+    s += "\n";
+    // Named in the ExitScript of the unyielding holder's duel_yes row (npcdb.hpp
+    // duel_quest_id; bugs.txt 23 Nov 2026): the duel the holder offered at his door, taken
+    // up on the spot. The duel quest is accepted as the app's accept would have it
+    // (QuestCommand with the row's own port fired, so no beat is queued: the duel's graph
+    // hears it through the door token, which sets it Active with its journal entry and its
+    // marker), and the store notes the way in (door; the letter D). The threat row itself
+    // has already done the refusal's work (QuestRebuffed, the rebuffed port).
+    s += "function " + g + ".QuestDoorDuel(id, duelId)\n";
+    s += "\tlocal quest = " + g + ".quests[id]\n";
+    s += "\tlocal duel = " + g + ".quests[duelId]\n";
+    s += "\tif quest == nil or duel == nil or duel.doorAccept == nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest unknown id=\" .. tostring(id) .. \" door duel \" .. tostring(duelId))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal f = " + g + ".state.quests[duelId] or {}\n";
+    s += "\tif f.accepted or f.done then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. duelId .. \" door duel already taken up\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\t" + g + ".QuestStage(id, \"door duel \" .. duelId)\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. duelId .. \" taken up at the door of \" .. id .. \" -- \" .. duel.name)\n";
+    s += "\t" + g + ".QuestCommand(duelId, \"accept\", true)\n";
+    s += "\tpcall(" + g + ".StateQuest, duelId, \"door\")\n";
+    s += "\t" + g + ".Token(duel, duel.doorAccept)\n";
     s += "end\n";
     s += "\n";
     // Named in the ExitScript of the helper menu's two winning rows. 'door': her price in

@@ -89,6 +89,13 @@ struct Quest {
     int chain_order = 0;
     std::string after_quest_id, after_item_name, after_how;
     std::string requires_quest_id;
+    // A scene's second way in (bugs.txt 23 Nov 2026, In the Stocks' duel): open as well
+    // when the quest `open_on_quest_id` has the flag `open_on_flag` set in the save (the
+    // duel on the deliver's `warned`, Henry having promised Benesh he would find Paul),
+    // whatever became of the scene before. And a scene gone past once another is done
+    // (`void_if_done_quest_id`: the witness scene once the duel is fought), never offered.
+    std::string open_on_quest_id, open_on_flag;
+    std::string void_if_done_quest_id;
     bool dispute = false;
     // What the giver has to give when the reward is something in kind rather than money:
     // a loaf, a rumour, or -- where they have nothing else -- what help they can give, which
@@ -578,6 +585,13 @@ struct QuestFacts {
     // opens the holder's learned row in the mod).
     bool scared = false;
     bool counselled = false;
+    // A deliver taken on the warning row (R; kQuestWarn): Henry has promised to find the
+    // one named and warn him off, which the mod carries as an optional objective on the
+    // man. And a duel taken up at the holder's own door (D; the mod's QuestDoorDuel) in
+    // place of at a meeting: he threw the challenge back at a threat, before the
+    // thing was retrieved, so the duel paragraph is told from that.
+    bool warned = false;
+    bool door = false;
     // A holder caught in the night and denounced at the bedside (flag d; notes.md 22 Oct
     // 2026): Henry walked out with nothing, and the thing is lost to the giver, who has
     // only his report to hear (the `denounced` how, settled by the mod at the row).
@@ -693,6 +707,10 @@ inline constexpr std::string_view kQuestPlead = "plead";
 // man himself. The errand completes the way `threatened` (the mod's complete_threatened
 // beat), unpaid again since the plea paid; the duel scene opens from it.
 inline constexpr std::string_view kQuestThreaten = "threaten";
+// A deliver taken on its warning row (Quest::accept_warn_row; bugs.txt 23 Nov 2026): sent
+// after kQuestAccept, so the mod opens the optional objective on the one to be warned off
+// (its warn token) and the store's R; nothing is said back.
+inline constexpr std::string_view kQuestWarn = "warn";
 // An unyielding holder's retrieve: Henry has told the giver the holder refused (the telling
 // row, rebuffed_row); the mod sets the store's T, and the giver's speech naming the one who
 // keeps the holder's house answers it.

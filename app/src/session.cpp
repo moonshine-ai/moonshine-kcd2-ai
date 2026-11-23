@@ -1833,6 +1833,10 @@ std::optional<Session::WrittenAnswer> Session::written_answer(std::string_view i
                                                             : "the written answer to his agreeing";
             }
             out.commands.push_back(persona_.quest.on_yes);
+            // The warning promised rides after the yes (kQuestWarn; bugs.txt 23 Nov 2026:
+            // "the Paul objective never seemed to appear"): the mod opens the optional
+            // objective on the one to be warned off, and the duel scene on it.
+            if (warned) out.commands.emplace_back(kQuestWarn);
         }
         out.spent.emplace_back("accept");
         if (warned) out.spent.emplace_back("accept_warn");

@@ -1417,10 +1417,19 @@ QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach&
         // The carry's hours are the dark ones (fast_travel_hours; bugs.txt 21 Nov 2026).
         const bool dark = approach.hour != kUnread && approach.hour >= quest.fast_travel_from &&
                           approach.hour < quest.fast_travel_to;
-        plan.block = "This person came to you knowing the church's cup came out of your chest, and "
-                     "threatened you with the bailiff over it. You did not give an inch: you offered "
-                     "them a fight, man to man, in " + yard + ", and they "
-                     "took you up on it. You have two men who will be waiting there to see it goes "
+        // Taken up at your own door (the store's D; bugs.txt 23 Nov 2026): they came for
+        // the cup and threatened you over your chest, and you threw the yard at them there
+        // and then, before anything was carried back to the church.
+        plan.block = (facts.door
+                          ? "This person came to your door after the church's cup, threatened to break "
+                            "your chest open and your nose with it, and you laughed at them -- and then "
+                            "offered them a fight, man to man, in " + yard + ", and they "
+                            "took you up on it on the spot. The cup is still where it was. "
+                          : "This person came to you knowing the church's cup came out of your chest, and "
+                            "threatened you with the bailiff over it. You did not give an inch: you offered "
+                            "them a fight, man to man, in " + yard + ", and they "
+                            "took you up on it. ") +
+                     "You have two men who will be waiting there to see it goes "
                      "your way, which this person does not know. " +
                      (dark ? "It is dark and you are ready to go now, this moment, if they are; you say so."
                            : "It is not dark yet; you tell them to find you here after dark, and you "

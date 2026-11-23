@@ -2499,6 +2499,15 @@ int main(int argc, char** argv) try {
                     if (q.id != found->quest.id && q.giver_soul == found->quest.giver_soul && q.chain_order > 0 &&
                         found->quest.chain_order > 0 && q.chain_order < found->quest.chain_order &&
                         !standing.quests.count(q.id)) {
+                        // Not one the story went past: a sibling off the same gate that opens on
+                        // the other ending (Hush Money's twin on the truth, with --before lied)
+                        // was never offered, so a save cannot have it done. (A quest taken up
+                        // is never void -- the duel taken up at the door -- so a done one here
+                        // would be planned as done.)
+                        const auto how = standing.hows.find(q.after_quest_id);
+                        if (!q.after_quest_id.empty() && how != standing.hows.end() &&
+                            !how_matches(how->second, q.after_how))
+                            continue;
                         standing.quests[q.id] = "done";
                     }
                 }

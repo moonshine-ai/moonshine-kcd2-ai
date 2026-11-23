@@ -933,6 +933,75 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
         }
         ++it;
     }
+    // The references between scenes (npcdb.hpp duel_quest_id, warn_soul, open_on_quest_id,
+    // void_if_done_quest_id; bugs.txt 23 Nov 2026), once every quest that will be read is:
+    // a reference to a quest not among them is let go -- the door row is the plain refusal
+    // again, the link has its one way in, the scene is never voided -- and a reference that
+    // names the wrong kind of quest is an error in the data.
+    auto known = [&](const std::string& id) -> const Quest* {
+        for (const Quest& o : quests) {
+            if (o.id == id) return &o;
+        }
+        return nullptr;
+    };
+    for (Quest& q : quests) {
+        if (!q.duel_quest_id.empty()) {
+            if (!q.is_unyielding()) {
+                throw std::runtime_error("quest " + q.id + " names duel_quest but its holder can be moved; "
+                                         "the duel at the door goes with unyielding");
+            }
+            if (q.holder_duel_offer.empty() || q.holder_duel_yes.empty() || q.holder_duel_yes_reply.empty() ||
+                q.holder_duel_no.empty() || q.holder_duel_no_reply.empty()) {
+                throw std::runtime_error("quest " + q.id + " names duel_quest but lacks duel_offer, duel_yes, "
+                                         "duel_yes_reply, duel_no or duel_no_reply");
+            }
+            const Quest* duel = known(q.duel_quest_id);
+            if (duel == nullptr) {
+                q.duel_quest_id.clear();
+            } else if (!duel->is_duel() || duel->giver_soul != q.target_soul) {
+                throw std::runtime_error("quest " + q.id + " duel_quest names " + q.duel_quest_id +
+                                         ", which is not a duel with this holder as its giver");
+            }
+        }
+        if (!q.warn_soul.empty()) {
+            if (!q.is_deliver()) throw std::runtime_error("quest " + q.id + " names warn_soul but is a " + q.kind);
+            if (q.objective_warn.empty()) {
+                throw std::runtime_error("quest " + q.id + " names warn_soul but lacks objective_warn");
+            }
+            if (q.warn_soul == q.giver_soul || q.warn_soul == q.target_soul) {
+                throw std::runtime_error("quest " + q.id + " names one of its own parties as warn_soul");
+            }
+            if (q.warn_name.empty()) q.warn_name = q.warn_soul;
+            sqlite3_reset(stmt.get());
+            sqlite3_bind_text(stmt.get(), 1, q.warn_soul.c_str(), -1, SQLITE_TRANSIENT);
+            const int rc = sqlite3_step(stmt.get());
+            if (rc == SQLITE_DONE) {
+                throw std::runtime_error("quest " + q.id + " warn_soul names " + q.warn_soul + ", which npc does not have");
+            }
+            if (rc != SQLITE_ROW) fail(db, "reading warn soul failed");
+            const unsigned char* p = sqlite3_column_text(stmt.get(), 0);
+            q.warn_guid = p ? reinterpret_cast<const char*>(p) : "";
+            // Not renamed: nobody to be marked, so no objective (has_warn is false).
+            if (!renamed.count(q.warn_soul)) q.warn_guid.clear();
+        }
+        if (!q.open_on_quest_id.empty()) {
+            for (char c : q.open_on_flag) {
+                if (!std::isalpha(static_cast<unsigned char>(c))) {
+                    throw std::runtime_error("quest " + q.id + " open_on flag '" + q.open_on_flag +
+                                             "' is not a store flag's name");
+                }
+            }
+            if (known(q.open_on_quest_id) == nullptr) {
+                q.open_on_quest_id.clear();
+                q.open_on_flag.clear();
+            } else if (!q.is_link()) {
+                throw std::runtime_error("quest " + q.id + " has open_on but no after_quest_id for it to be a second way into");
+            }
+        }
+        if (!q.void_if_done_quest_id.empty() && known(q.void_if_done_quest_id) == nullptr) {
+            q.void_if_done_quest_id.clear();
+        }
+    }
 }
 
 void read_onward(sqlite3* db, std::vector<Quest>& quests, const std::set<std::string>& renamed) {
@@ -1228,6 +1297,20 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "turn_reply") return &q.holder_turn_reply;
         if (field == "abandon") return &q.holder_abandon;
         if (field == "abandon_reply") return &q.holder_abandon_reply;
+        // The duel at the door, the promised warning and the link's second way in
+        // (npcdb.hpp duel_quest_id, warn_soul, open_on_quest_id, void_if_done_quest_id);
+        // the ids are checked against the quests read once every line is in (read_helper).
+        if (field == "duel_quest") return &q.duel_quest_id;
+        if (field == "duel_offer") return &q.holder_duel_offer;
+        if (field == "duel_yes") return &q.holder_duel_yes;
+        if (field == "duel_yes_reply") return &q.holder_duel_yes_reply;
+        if (field == "duel_no") return &q.holder_duel_no;
+        if (field == "duel_no_reply") return &q.holder_duel_no_reply;
+        if (field == "warn_soul") return &q.warn_soul;
+        if (field == "warn_name") return &q.warn_name;
+        if (field == "objective_warn") return &q.objective_warn;
+        if (field == "log_warn") return &q.log_warn;
+        if (field == "void_if_done") return &q.void_if_done_quest_id;
         // An ambush's, a buy's and a duel's Document pages go where a deliver's letter does:
         // one page per quest, whatever the kind calls it (the duel's is the note on the man).
         if (field == "directions" || field == "charm" || field == "note") return &q.letter;
@@ -1374,6 +1457,14 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
             } else if (field == "unyielding") {
                 // A holder who cannot be moved: the menu's rows are refusals (In the Stocks).
                 q.unyielding = words == "1" || words == "yes" || words == "true";
+            } else if (field == "open_on") {
+                // The link's second way in, "<quest id> <flag>" (npcdb.hpp open_on_quest_id).
+                char other[64] = {}, flag[64] = {};
+                if (std::sscanf(words.c_str(), "%63s %63s", other, flag) != 2) {
+                    throw std::runtime_error("quest " + q.id + " open_on wants '<quest id> <flag>', got '" + words + "'");
+                }
+                q.open_on_quest_id = other;
+                q.open_on_flag = flag;
             } else if (field == "chest_lock") {
                 // The chest's lock difficulty on the engine's 0..1; blank or out of range is
                 // the very hard one the sacristan boasts of.

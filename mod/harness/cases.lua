@@ -7023,4 +7023,106 @@ case("Guard find: scans live storySouls inside settlement and locates cross-leve
           "Locate selected kutnohorsko (lvl=2) shard for Katherine, got lvl=" .. tostring(M.state.locate and M.state.locate.lvl) .. " shard=" .. tostring(M.state.locate and M.state.locate.shard))
 end)
 
+-- bugs.txt 23 Nov 2026 (In the Stocks: Paul should mock Henry's threat and then offer the
+-- duel): the holder's threaten row carries the offer while the duel is on and not yet
+-- taken up (the duel_open global), and the yes under it takes the duel up in the store,
+-- marks it door, and makes the door token its graph opens on; the duel's own accept port
+-- is not fired. Taken up, the offer is gone, and the yes a second time does nothing.
+case("Door duel: the holder's threaten row offers the duel while it is open, the yes takes it up with a door token, once", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil then check(true, "no In the Stocks in this data"); return end
+    local duelId, duel = byName(M, "Under the Light of the Moon")
+    check(q.duelQuest == duelId and q.duelOpenVar == "moonshine_names_q_" .. id .. "_duel_open", "the duel and its open global are in the table")
+    check(duel.doorAccept == "6d6f6f6e-7368-4100-8000-" .. duelId, "the door token is the duel's class under the A prefix")
+    check(duel.giver == q.target, "the duel is the holder's own")
+    M.npc = E.soul(q.giver)
+    M.state.quests[id] = { accepted = true }
+    M.QuestFlags()
+    check(E.gvar(q.duelOpenVar) == 1, "the offer is open while the duel is untouched")
+    -- The no: nothing changes.
+    local mark = E.mark()
+    M.npc = E.soul(q.target)
+    M.QuestRebuffed(id, "threaten")
+    check(M.state.quests[id].rebuffed == true, "rebuffed as before")
+    check(M.state.quests[duelId] == nil, "the no leaves the duel alone")
+    -- The yes.
+    M.QuestDoorDuel(id, duelId)
+    local f = M.state.quests[duelId]
+    check(f ~= nil and f.accepted == true and f.door == true and not f.done, "the duel taken up in the store, door")
+    check(M.QuestFlagLetters(f):find("D", 1, true) ~= nil, "the letter D, got " .. M.QuestFlagLetters(f))
+    check(E.find("BRIDGE quest " .. duelId .. " taken up at the door of " .. id, mark), "said")
+    check(M.Count(player, duel.doorAccept) == 1, "the door token in the pocket")
+    check(not E.find("BRIDGE quest " .. duelId .. " accept queued", mark), "the duel's own accept port is not fired")
+    check(E.gvar(q.duelOpenVar) == 0, "the offer is gone once taken up")
+    E.advance(2000)
+    check(M.Count(player, duel.doorAccept) == 0, "the token gone a moment later")
+    -- A second yes does nothing.
+    mark = E.mark()
+    M.QuestDoorDuel(id, duelId)
+    check(E.find("BRIDGE quest " .. duelId .. " door duel already taken up", mark), "already taken up")
+    check(M.Count(player, duel.doorAccept) == 0, "no second token")
+    -- Done, the offer stays gone.
+    M.state.quests[duelId] = { accepted = true, done = true, how = "truth" }
+    M.QuestFlags()
+    check(E.gvar(q.duelOpenVar) == 0, "no offer once the duel is done")
+    -- And the duel done voids the witness scene, which the threatened ending led to.
+    local askId, ask = byName(M, "A Witness Before the Bailiff")
+    check(ask ~= nil and ask.voidIfDone == duelId, "the witness scene is voided by the duel")
+    M.state.quests[ask.after] = { accepted = true, done = true, how = "truth" }
+    check(M.QuestOfferable(askId) == false, "not offerable with the duel done")
+    M.state.quests[duelId] = nil
+    check(M.QuestOfferable(askId) == true, "offerable with the duel untouched")
+end)
+
+-- bugs.txt 23 Nov 2026 (In the Stocks: "I'll take it back. And then I'll find Paul
+-- Schmidt" never put Paul on the map): the app's accept_warn sends `warn` after the
+-- accept, which makes the warn token the deliver leg's optional objective opens on; the
+-- duel scene is a second way open on that flag, and taking it up at Paul makes the
+-- warned-off token that closes the objective.
+case("Warn: the warn command makes its token, the duel is open on the warned flag, and taking it up gives the warning", function(E, M, check)
+    local id, q = byName(M, "Back on the Altar")
+    if q == nil then check(true, "no Back on the Altar in this data"); return end
+    local duelId, duel = byName(M, "Under the Light of the Moon")
+    check(q.warnToken == "6d6f6f6e-7368-5700-8000-" .. id and q.warnedOff == "6d6f6f6e-7368-4400-8000-" .. id, "the warn and warned-off tokens under W and D")
+    check(duel.openOn == id and duel.openOnFlag == "warned", "the duel opens on this scene's warned flag")
+    M.npc = E.soul(q.giver)
+    M.state.quests[q.after] = { accepted = true, done = true, how = "truth" }
+    M.QuestCommand(id, "accept")
+    E.soul(duel.giver, { pos = { x = 100, y = 100, z = 0 } })
+    player:SetWorldPos({ x = 500, y = 500, z = 0 })
+    M.WatchArm("world")
+    local mark = E.mark()
+    M.QuestCommand(id, "warn")
+    check(M.Count(player, q.warnToken) == 1, "the warn token in the pocket")
+    E.advance(2000)
+    check(M.Count(player, q.warnToken) == 0, "and gone a moment later")
+    -- The promise is in the store from the command itself (QuestCommand's StateQuest).
+    check(M.state.quests[id].warned == true, "warned in the store")
+    check(M.QuestFlagLetters(M.state.quests[id]):find("R", 1, true) ~= nil, "the letter R, got " .. M.QuestFlagLetters(M.state.quests[id]))
+    -- The duel's link: shut on its own after (the witness scene untouched), open on the flag.
+    check(M.state.quests[duel.after] == nil, "the witness scene untouched")
+    check(M.QuestLinkState(duelId) == "open" and M.QuestOfferable(duelId), "the duel open on the warned flag")
+    -- And its giver's marker told open by the link token, said as the flag's doing, once.
+    E.advance(2100)
+    check(E.count("BRIDGE quest " .. duelId .. " link open: " .. id .. " warned", mark) == 1, "the link told open on the flag, once")
+    check(M.state.quests[duelId].linkOpened == true, "in the store")
+    M.state.quests[id].warned = nil
+    check(M.QuestLinkState(duelId) == "locked", "and locked without it")
+    M.state.quests[id].warned = true
+    -- Taken up at Paul: the warned-off token.
+    mark = E.mark()
+    M.npc = E.soul(duel.giver)
+    M.QuestCommand(duelId, "accept")
+    check(E.find("BRIDGE quest " .. id .. " warning given: " .. duelId .. " taken up at the man", mark), "the warning given")
+    check(M.Count(player, q.warnedOff) == 1, "the warned-off token in the pocket")
+    E.advance(2000)
+    check(M.Count(player, q.warnedOff) == 0, "and gone")
+    -- Without the warning promised, taking the duel up makes none.
+    M.state.quests[id].warned = nil
+    M.state.quests[duelId] = nil
+    mark = E.mark()
+    M.QuestCommand(duelId, "accept")
+    check(not E.find("warning given", mark) and M.Count(player, q.warnedOff) == 0, "no warned-off token without the promise")
+end)
+
 return { cases = cases, order = order }

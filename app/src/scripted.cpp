@@ -150,6 +150,8 @@ QuestFacts Standing::facts_of(std::string_view quest_id, int fallback) const {
         facts.keyed = at->second.find('q') != std::string::npos;
         facts.scared = at->second.find('S') != std::string::npos;
         facts.counselled = at->second.find('C') != std::string::npos;
+        facts.warned = at->second.find('R') != std::string::npos;
+        facts.door = at->second.find('D') != std::string::npos;
         facts.denounced = at->second.find('d') != std::string::npos;
         facts.checks = static_cast<int>(std::count(at->second.begin(), at->second.end(), 'c'));
         // W and the digits after it: a dictated letter's outcomes (the mod's QuestFlagLetters

@@ -84,6 +84,18 @@ std::string cowed_name(const Quest& quest);
 // (emit_leg's sprung trigger, emit_brawl's start; DuelLoose).
 std::string sprung_class(const Quest& quest);
 std::string sprung_name(const Quest& quest);
+// A duel's fourth: taken up at the holder's door of an earlier scene (npcdb.hpp
+// duel_quest_id; the Lua's QuestDoorDuel), for the duel node's doorAccepted trigger, which
+// sets the quest Active as the talk's accept port would.
+std::string door_accept_class(const Quest& quest);
+std::string door_accept_name(const Quest& quest);
+// A deliver's promised warning (npcdb.hpp warn_soul): the token on the app's `warn` that
+// opens the optional objective on the one to be warned, and the one that closes it once
+// the scene opening on the warning is taken up or refused at him (QuestCommand accept).
+std::string warn_class(const Quest& quest);
+std::string warn_name(const Quest& quest);
+std::string warned_off_class(const Quest& quest);
+std::string warned_off_name(const Quest& quest);
 std::string token_name(const Quest& quest);
 // A chest's second token: made when the thing has left the chest for Henry's pocket
 // (WatchChest), for the trigger that completes the fetch objective (taken_q_<id>).
@@ -225,6 +237,9 @@ constexpr const char* kHelperObjective = "speak_helper";
 // The counsel's optional objective (Blind Pride's Brother Thomas): "Ask <counsel> for the
 // argument", marker on them from the accept until asked.
 constexpr const char* kCounselObjective = "ask_counsel";
+// The warning promised (npcdb.hpp warn_soul; bugs.txt 23 Nov 2026): "Find <name> and warn
+// him off", marker on him from the promise until he has had it or the errand is over.
+constexpr const char* kWarnObjective = "warn_off";
 std::string helper_metarole(const std::string& quest_id);
 std::string helper_role(const std::string& quest_id);
 std::string helper_node(const std::string& quest_id);

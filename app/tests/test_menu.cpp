@@ -2786,6 +2786,41 @@ TEST_CASE("an offer's written threat and decline are laid with the accepting row
         CHECK(f.game.directives().back() == "@end");
         CHECK(f.llm.calls.empty());
     }
+    SUBCASE("taken up at the holder's door: the paragraph is told from that, not from the threat carried") {
+        // bugs.txt 23 Nov 2026: Henry threatened Paul at his door after the cup, Paul mocked
+        // him and offered the yard, and Henry took it there and then (the store's D).
+        Quest duel = witness;
+        duel.id = "40b49f90c3fc";
+        duel.kind = "duel";
+        duel.role = QuestRole::Giver;
+        duel.spot_text = "the empty yard behind the gravedigger's";
+        duel.fast_travel_from = 21;
+        duel.fast_travel_to = 24;
+        Approach approach;
+        approach.hour = 22;
+        QuestFacts plain;
+        plain.accepted = true;
+        const QuestPlan met = plan_quest(duel, plain, approach, 3);
+        CHECK(met.block.find("knowing the church's cup came out of your chest") != std::string::npos);
+        CHECK(met.block.find("at your own door") == std::string::npos);
+        QuestFacts door = plain;
+        door.door = true;
+        const QuestPlan at_door = plan_quest(duel, door, approach, 3);
+        CHECK(at_door.block.find("came to your door after the church's cup") != std::string::npos);
+        CHECK(at_door.block.find("The cup is still where it was") != std::string::npos);
+        CHECK(at_door.block.find("knowing the church's cup came out of your chest") == std::string::npos);
+        // Either way the two men wait, and the dark hour has him ready to go.
+        CHECK(at_door.block.find("two men who will be waiting") != std::string::npos);
+        CHECK(at_door.block.find("ready to go now") != std::string::npos);
+        // The letters: R the warning promised, D the door.
+        Standing standing;
+        standing.quests[duel.id] = "accepted";
+        standing.flags[duel.id] = "RD";
+        CHECK(standing.facts_of(duel.id).warned);
+        CHECK(standing.facts_of(duel.id).door);
+        standing.flags[duel.id] = "W12";
+        CHECK_FALSE(standing.facts_of(duel.id).door);
+    }
 }
 
 TEST_CASE("a giver who wants a story told may be refused the lie and still have the errand taken, with a warning promised") {
@@ -2855,8 +2890,11 @@ TEST_CASE("a giver who wants a story told may be refused the lie and still have 
     f.offered.clear();
     f.game.picked(2, "accept_warn", altar.accept_warn);
     f.drain(tailer);
-    REQUIRE(f.recorded.size() == 1);
+    // The yes owed, and the warning promised after it (kQuestWarn; bugs.txt 23 Nov 2026:
+    // the mod opens the objective on Paul from it).
+    REQUIRE(f.recorded.size() == 2);
     CHECK(f.recorded[0] == std::make_pair(altar.id, std::string(kQuestAccept)));
+    CHECK(f.recorded[1] == std::make_pair(altar.id, std::string(kQuestWarn)));
     f.play_all(tailer);
     CHECK(f.session.history().back().content == altar.accept_warn_reply);
     CHECK(f.llm.calls.empty());

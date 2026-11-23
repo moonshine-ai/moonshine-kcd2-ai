@@ -160,6 +160,8 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
                 if (facts.letin) f.letin = true;
                 if (facts.keyed) f.keyed = true;
                 if (facts.denounced) f.denounced = true;
+                if (facts.warned) f.warned = true;
+                if (facts.door) f.door = true;
                 if (facts.checks > f.checks) f.checks = facts.checks;
                 if (facts.cannot_pray) f.cannot_pray = true;
                 if (!facts.how.empty()) f.how = facts.how;
@@ -174,20 +176,43 @@ Persona persona_for(const Soul& soul, Approach approach, const Doing& doing,
         // scene before and how it ended. The one before is read from the save (the dump's
         // quests= list, with its /how), or from this soul's own list when it is theirs too --
         // with the caller's word on it -- which is why this is a second pass.
+        // The facts of another quest of the slate: this soul's own list, with the caller's
+        // word on it, where it is theirs; the save's otherwise.
+        const auto facts_elsewhere = [&](const std::string& id) {
+            for (std::size_t j = 0; j < all.size(); ++j)
+                if (quests[j].id == id) return all[j];
+            return known.facts_of(id);
+        };
         for (std::size_t i = 0; i < quests.size(); ++i) {
             const Quest& q = quests[i];
+            // A scene gone past once another is done (void_if_done_quest_id; bugs.txt 23 Nov
+            // 2026: the witness scene once the duel is fought), unless Henry already has it.
+            if (!q.void_if_done_quest_id.empty() && !all[i].accepted && !all[i].done
+                && facts_elsewhere(q.void_if_done_quest_id).done)
+                all[i].voided = true;
             if (q.after_quest_id.empty()) continue;
-            bool before_done = known.is_done(q.after_quest_id);
-            std::string before_how = known.facts_of(q.after_quest_id).how;
-            for (std::size_t j = 0; j < all.size(); ++j) {
-                if (quests[j].id != q.after_quest_id) continue;
-                before_done = all[j].done;
-                before_how = all[j].how;
-            }
-            all[i].locked = !before_done;
+            const QuestFacts before = facts_elsewhere(q.after_quest_id);
+            all[i].locked = !before.done;
             // Voided already when the quest is off (Standing::facts_of); a scene the story went
             // past is voided as well.
-            all[i].voided = all[i].voided || (before_done && !how_matches(before_how, q.after_how));
+            all[i].voided = all[i].voided || (before.done && !how_matches(before.how, q.after_how));
+            // Its second way in (open_on_quest_id, open_on_flag): the flag set opens it
+            // whatever the scene before did, as the mod's QuestLinkState does.
+            if (!q.open_on_quest_id.empty()) {
+                const QuestFacts on = facts_elsewhere(q.open_on_quest_id);
+                const bool flagged = (q.open_on_flag == "warned" && on.warned)
+                                     || (q.open_on_flag == "door" && on.door);
+                if (flagged) {
+                    all[i].locked = false;
+                    all[i].voided = false;
+                }
+            }
+            // And one Henry has taken up, by whatever way, is neither locked nor void: the
+            // duel taken up at the holder's door is his before the scene before is done.
+            if (all[i].accepted || all[i].done) {
+                all[i].locked = false;
+                all[i].voided = false;
+            }
         }
         const std::size_t at = pick_quest(quests, all);
         chosen = quests[at];
@@ -1032,6 +1057,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'told_denounced', 'told_reply_denounced', "
                 "'unyielding', 'helper_name', 'greet_rebuffed', 'greet_rebuffed_ask', 'rebuffed_row', 'named_row', 'decline_row', 'decline_reply', 'named_more', 'named_more_reply', "
                 "'offer_threat', 'offer_threat_reply', 'offer_no', 'offer_no_reply', 'truth_settles', "
+                "'open_on', 'void_if_done', "
                 "'named_reply', 'give_up_reply', "
                 "'seen_with_name', 'item_of', 'greet_unwritten', 'wed_soul', 'wed_name', "
                 "'greet_gone_target', 'greet_wed_target', 'greet_wed', 'wed_more_target', 'wed_more_target_reply', "
@@ -1050,7 +1076,8 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "SELECT field, text FROM npc_quest_lines WHERE quest_id = ? "
                 "AND (field IN ('onward_soul', 'onward_name', 'unyielding', 'seen_with_name', 'item_of', "
                 "'wed_soul', 'wed_name', 'greet_gone_target', 'greet_wed_target', 'greet_wed', "
-                "'wed_more_target', 'wed_more_target_reply', 'wed_more', 'wed_more_reply') "
+                "'wed_more_target', 'wed_more_target_reply', 'wed_more', 'wed_more_reply', "
+                "'open_on', 'void_if_done') "
                 "OR field LIKE 'since%')";
             if (sqlite3_prepare_v2(db_, giver ? kLines : kPartyLines, -1, &row, nullptr) != SQLITE_OK) break;
             // As a string_view in so many words: passed a std::string, the unqualified call
@@ -1185,6 +1212,15 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 if (matched) continue;
 
                 if (field == "truth_settles") quest.truth_settles = std::atoi(text_at(row, 1).c_str()) != 0;
+                else if (field == "open_on") {
+                    // "<quest id> <flag>": the scene's second way in (Quest::open_on_quest_id).
+                    char on[64] = {0}, flag[64] = {0};
+                    if (std::sscanf(text_at(row, 1).c_str(), "%63s %63s", on, flag) == 2) {
+                        quest.open_on_quest_id = on;
+                        quest.open_on_flag = flag;
+                    }
+                }
+                else if (field == "void_if_done") quest.void_if_done_quest_id = text_at(row, 1);
                 else if (field == "fast_travel_hours") {
                     // "from-to", hours of the day; the written default stands over a bad one.
                     double from = 0, to = 0;
