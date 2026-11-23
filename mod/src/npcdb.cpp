@@ -652,6 +652,8 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
     auto slot = [](Quest& q, const std::string& field) -> std::string* {
         if (field == "open") return &q.holder_open;
         if (field == "refuse") return &q.holder_refuse;
+        if (field == "refuse_fop") return &q.holder_refuse_fop;
+        if (field == "refuse_soldier") return &q.holder_refuse_soldier;
         if (field == "persuade") return &q.holder_persuade;
         if (field == "persuade_yes") return &q.holder_persuade_yes;
         if (field == "persuade_no") return &q.holder_persuade_no;
@@ -860,7 +862,6 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "log_onward") return &q.log_onward;
         if (field == "objective_onward") return &q.objective_onward;
         if (field == "objective_arranged") return &q.objective_arranged;
-        if (field == "log_arranged") return &q.log_arranged;
         if (field == "log_completed_fallen") return &q.log_completed_fallen;
         if (field == "offer_threat") return &q.offer_threat;
         if (field == "offer_threat_reply") return &q.offer_threat_reply;
@@ -878,6 +879,8 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "log_directed") return &q.log_directed;
         if (field == "log_ambushed") return &q.log_ambushed;
         if (field == "log_cowed") return &q.log_cowed;
+        if (field == "taunt") return &q.duel_taunt;
+        if (field == "taunt_reply") return &q.duel_taunt_reply;
         if (field == "carry_class") return &q.carry_class;
         if (field == "carry_name") return &q.carry_name;
         if (field == "routine") return &q.routine;

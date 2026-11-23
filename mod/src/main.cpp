@@ -502,6 +502,14 @@ int main(int argc, char** argv) {
                     data_pak.add(level_dir + kcd2::self_node(q.id, line) + ".xml",
                                  kcd2::emit_self_dialogue(o.modid, q, line));
                 }
+                // A duel's man's word as Henry lands, forced on him before the blows
+                // (emit_taunt_dialogue), and its rows.
+                if (q.has_duel_taunt()) {
+                    data_pak.add(level_dir + kcd2::taunt_node(q.id) + ".xml", kcd2::emit_taunt_dialogue(o.modid, q));
+                    for (auto& row : kcd2::taunt_localization(o.modid, q)) {
+                        loc_extras.push_back(std::move(row));
+                    }
+                }
                 // And the holder's menu beside it, which the quest file lists as its own
                 // definition, with the twelve lines it says. A find has no holder.
                 if (!q.has_holder()) continue;

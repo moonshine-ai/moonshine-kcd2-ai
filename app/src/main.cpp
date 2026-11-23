@@ -636,8 +636,10 @@ Args parse(int argc, char** argv, bool* stop) {
                 else if (state == "seen") args.facts.seen = args.facts.accepted = true;
                 // A seek's: the family gone from the place the morning after the hand-in.
                 else if (state == "gone") args.facts.gone = args.facts.seen = args.facts.done = args.facts.accepted = true;
-                // A beat's wedding reckoned (the mod's M): the handover some hours behind.
-                else if (state == "wed") args.facts.wed = args.facts.handed = args.facts.accepted = true;
+                // A beat's wedding reckoned (the mod's M): the handover some hours behind,
+                // with the stage beside it as the store has it ("handed,wed" before the
+                // giver is told, "done,wed,how:persuaded" after).
+                else if (state == "wed") args.facts.wed = args.facts.accepted = true;
                 // A beat's, a pray's and a mind's: the man down, the prayer said, the man
                 // dead, one visit made (checked, once per visit).
                 else if (state == "beaten") args.facts.beaten = args.facts.accepted = true;

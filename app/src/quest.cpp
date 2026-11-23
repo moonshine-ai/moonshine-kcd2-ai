@@ -1098,12 +1098,14 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
                      "no more, and God forgive me, I will not try. Go carefully.");
             return plan;
         }
-        if (quest.has_fall() && facts.arranged) {
+        // The yes is the arrangement (the mod's handover sets A; bugs.txt 22 Nov 2026): the
+        // morning not yet come, the giver has heard and sends this person back for it.
+        if (quest.has_fall() && (facts.arranged || facts.handed)) {
             plan.block = "This person got " + who + " to agree to stand before the bailiff, on condition they "
-                         "come along, and you have arranged it: tomorrow morning, the three of you, from here. "
-                         "Nothing more is to be said tonight; if they come back before the morning, tell them "
-                         "to be here at first light, and that you will pay them when it is done. You do not pay "
-                         "yet.";
+                         "come along; word of it has reached you, and it is arranged: tomorrow, once it is "
+                         "light, the three of you go to the bailiff from here. Nothing more is to be said "
+                         "before then; if they ask, tell them to come back tomorrow in daylight, and that you "
+                         "will pay them when it is done. You do not pay yet.";
             return plan;
         }
         if (facts.accepted) {
@@ -1124,16 +1126,7 @@ QuestPlan plan_ask(const Quest& quest, const QuestFacts& facts) {
                               "them to carry it to " + to + ", since you will not go yourself; "
                               "that is in your written answer.";
             }
-            if (facts.handed && quest.has_fall()) {
-                // The yes with its condition: the telling arranges the morning rather than
-                // ending the errand, and the giver pays nothing until it is done.
-                plan.block += " When they tell you " + who + " has agreed, you do not pay yet: you name the "
-                              "morning, first light, here, the three of you to the bailiff together.";
-                rows.add("tell", quest.tell, quest.arrange_reply, kQuestArrange,
-                         "He'll do it. On one condition: I go with you both.",
-                         "Then he shall have his condition. Tomorrow at first light, here, and we go to the "
-                         "bailiff together. You will have your " + pay + " when it is done.");
-            } else if (facts.handed) {
+            if (facts.handed) {
                 rows.add("tell", quest.tell, quest.thanks, onward ? kQuestOnward : kQuestComplete,
                          "I got it out of " + who + ". Here is the truth of it.",
                          onward ? "So that is how it was. Here, " + pay + ", as I said. One thing more: "
@@ -1533,10 +1526,9 @@ std::string visit_greeting(const Quest& quest, const QuestFacts& facts, const Qu
     // An ask's one asked fallen before the morning's meeting (Quest::has_fall): the giver
     // breaks the news before Henry asks.
     if (quest.has_fall() && facts.fallen && !facts.done) return quest.greet_fallen;
-    // The morning's meeting arranged and not yet come: the giver's word to be there.
-    if (quest.has_fall() && facts.arranged && !facts.done) {
-        return quest.greet_arranged.empty() ? "Tomorrow, at first light. Be here, and we go together." : quest.greet_arranged;
-    }
+    // The morning's meeting arranged at the yes and not yet come: the giver sends Henry back
+    // for the morning (bugs.txt 22 Nov 2026).
+    if (quest.has_fall() && (facts.arranged || facts.handed) && !facts.done) return quest.greet_arranged;
     // A duel's man on his knees (facts.cowed): his begging opens the talk.
     if (quest.is_duel() && facts.cowed && !facts.done) {
         return quest.beg.empty() ? "Don't -- don't! Mercy, for the love of God. I'll give you anything. Anything!"
@@ -1584,7 +1576,16 @@ QuestPlan plan_kind(const Quest& quest, const QuestFacts& facts, const Approach&
 }  // namespace
 
 bool wed_party(const Quest& quest, const QuestFacts& facts) {
-    return quest.has_wed() && quest.exists() && quest.role != QuestRole::Giver && !facts.voided && facts.handed &&
+    // The store keeps the furthest stage only, so once the giver has been told (done) the
+    // handover no longer reads as handed; done one of the yielding ways (his word given at
+    // his menu, by whatever means) is the handover and more (bugs.txt 22 Nov 2026: Benesh,
+    // wed and back, asked after Sedletz because his done letter was picked over the
+    // wedding). Not a lie told to the giver, not given up, not knocked out of him or dead.
+    const bool yielded_done = facts.done && (facts.how.empty() || facts.how == "persuaded" ||
+                                             facts.how == "threatened" || facts.how == "paid" ||
+                                             facts.how == "brokered");
+    const bool yielded = facts.handed || yielded_done;
+    return quest.has_wed() && quest.exists() && quest.role != QuestRole::Giver && !facts.voided && yielded &&
            !facts.beaten && !facts.dead;
 }
 

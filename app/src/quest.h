@@ -245,15 +245,16 @@ struct Quest {
     // scene follows and the witness scene (gated `plain`) does not. Laid only where written.
     std::string plea_threat, plea_threat_reply;
     // An ask with a fall (bugs.txt 20 Nov 2026, In the Stocks' witness): the one asked said
-    // yes on the condition Henry comes along in the morning, so the telling arranges the
-    // meeting rather than ending the errand (kQuestArrange, on `arrange_reply`), and the
-    // morning finds the one asked fallen from scaffolding. `greet_fallen` opens the giver's
-    // Talk then, `fallen` is Henry's row and `fallen_reply` the giver's last word, which
+    // yes on the condition Henry comes along in the morning, and the yes is the meeting
+    // arranged (the mod's handover sets the store's A and the clock; bugs.txt 22 Nov 2026:
+    // Henry is not sent back to tell the giver first). Until the morning the giver's Talk
+    // opens on `greet_arranged` ("come back tomorrow") with nothing to say; the morning
+    // finds the one asked fallen from scaffolding. `greet_fallen` opens the giver's Talk
+    // then, `fallen` is Henry's row and `fallen_reply` the giver's last word, which
     // completes the errand the way `fallen`, unpaid. Written only where the story has it.
-    std::string arrange_reply, greet_fallen, fallen, fallen_reply;
-    std::string greet_arranged;   // the giver's opening while the morning is still to come
+    std::string greet_arranged, greet_fallen, fallen, fallen_reply;
     bool has_fall() const {
-        return is_ask() && !carries_on() && !arrange_reply.empty() && !greet_fallen.empty() && !fallen.empty() &&
+        return is_ask() && !carries_on() && !greet_arranged.empty() && !greet_fallen.empty() && !fallen.empty() &&
                !fallen_reply.empty();
     }
     // A find's keepsake (npc_quest_lines `keepsake_class`, `keepsake_name`; Forget Me Not's
@@ -683,10 +684,6 @@ inline constexpr std::string_view kQuestPlead = "plead";
 // man himself. The errand completes the way `threatened` (the mod's complete_threatened
 // beat), unpaid again since the plea paid; the duel scene opens from it.
 inline constexpr std::string_view kQuestThreaten = "threaten";
-// An ask with a fall (Quest::has_fall; bugs.txt 20 Nov 2026): the telling arranges the
-// morning's meeting rather than completing -- the mod opens the meeting's objective and
-// sets the clock the one asked falls at; nothing is paid. The letter A in the dump.
-inline constexpr std::string_view kQuestArrange = "arrange";
 // An unyielding holder's retrieve: Henry has told the giver the holder refused (the telling
 // row, rebuffed_row); the mod sets the store's T, and the giver's speech naming the one who
 // keeps the holder's house answers it.
@@ -792,7 +789,8 @@ struct QuestPlan {
 };
 
 // Whether this soul is one of the two a wedding joins (Quest::has_wed), from the handover
-// on: his word given at his menu (handed), not knocked out of him or dead. Before the
+// on: his word given at his menu (handed, or done a yielding way once the giver has been
+// told -- the store keeps the furthest stage only), not knocked out of him or dead. Before the
 // wedding is reckoned (QuestFacts::wed) each is on the road: `wed_road_block` is the
 // paragraph for that, his or hers by the role.
 bool wed_party(const Quest& quest, const QuestFacts& facts);

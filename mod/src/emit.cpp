@@ -542,6 +542,10 @@ std::string emit_metarole_table(const std::string& modid, const std::string& met
         if (q.has_counsel()) {
             s += "\t\t<metarole metarole_name=\"" + counsel_metarole(q.id) + "\" />\r\n";
         }
+        // And one for a duel's man, whose taunt is forced on Henry as he lands.
+        if (q.has_duel_taunt()) {
+            s += "\t\t<metarole metarole_name=\"" + taunt_metarole(q.id) + "\" />\r\n";
+        }
     }
     s += "\t</metaroles>\r\n";
     s += "</database>\r\n";
@@ -593,6 +597,7 @@ std::string emit_role_table(const std::string& modid,
         if (q.carries_on()) triple(onward_role(q.id), onward_metarole(q.id));
         if (q.has_helper()) triple(helper_role(q.id), helper_metarole(q.id));
         if (q.has_counsel()) triple(counsel_role(q.id), counsel_metarole(q.id));
+        if (q.has_duel_taunt()) triple(taunt_role(q.id), taunt_metarole(q.id));
     }
     s += "\t</roles>\r\n";
     s += "</database>\r\n";
@@ -653,7 +658,6 @@ std::vector<std::string> quest_commands(const Quest& quest) {
     if (quest.carries_on()) out.push_back("onward");
     // An ask with a fall has one too: the giver told, the morning's meeting arranged
     // (the fetch done, the arranged objective opened; Quest::has_fall).
-    if (quest.has_fall()) out.push_back("arrange");
     // And the errand given up to the giver's face (the app's give-up row, notes.md 13 Oct
     // 2026): the quest fails in the book with its own Canceled line, nothing is paid.
     out.push_back("abandon");
@@ -861,6 +865,10 @@ std::string followed_node(const std::string& quest_id) {
     return quest_node(quest_id) + "_followed";
 }
 
+std::string taunt_node(const std::string& quest_id) { return quest_node(quest_id) + "_taunt"; }
+std::string taunt_metarole(const std::string& quest_id) { return holder_metarole(quest_id) + "_TAUNT"; }
+std::string taunt_role(const std::string& quest_id) { return taunt_metarole(quest_id) + "_MAN"; }
+
 std::string token_class(const Quest& quest) {
     // A pray's token item class: a guid of the mod's own, made from the quest id (twelve
     // hex characters, which is the last group of a guid) under a fixed prefix, so it is
@@ -884,6 +892,16 @@ std::string cowed_class(const Quest& quest) {
 }
 
 std::string cowed_name(const Quest& quest) { return "cowed_" + quest_node(quest.id); }
+
+std::string sprung_class(const Quest& quest) {
+    // A duel's sprung token: the same shape under its own prefix (53, the letter S).
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-5300-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string sprung_name(const Quest& quest) { return "sprung_" + quest_node(quest.id); }
 
 std::string key_class(const Quest& quest) {
     // A chest's key item class: the token's shape under its own prefix (6b, the letter k),
@@ -1508,7 +1526,11 @@ std::string emit_brawl(const Quest& quest, bool seen) {
         throw std::runtime_error("quest " + quest.id + " stages a brawl but has no " +
                                  ((ambush || duel) ? "log_ambushed" : "log_seen") + " to hang it on");
     }
-    const std::string start = (ambush || duel) ? "ambushed.OnAcquire" : "seen.OnMatch";
+    // A duel with a taunt waits for the sprung token (the taunt said, the men made:
+    // DuelLoose) rather than the spring's.
+    const std::string start = (duel && quest.has_duel_taunt()) ? "sprung.OnAcquire"
+                              : (ambush || duel)               ? "ambushed.OnAcquire"
+                                                               : "seen.OnMatch";
     const std::string victim = (ambush || duel) ? "player" : "target";
     // A duel's side is the man and the friends the Lua makes behind Henry (the `brawlers`
     // asset, their souls; a SoulAsset binds to a soul spawned after the module started,
@@ -2073,7 +2095,7 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     out.untrue_ways = untrue_ways;
     for (const std::string& command : commands) {
         out.in_ports.push_back(P(command));
-        if (command != "accept" && command != "onward" && command != "arrange" && command != "abandon") out.complete_ports.push_back(P(command));
+        if (command != "accept" && command != "onward" && command != "abandon") out.complete_ports.push_back(P(command));
     }
     // What fires the leg's reward and save: the quest's Done in a quest of one scene, the
     // leg's own hand-in ports in a run (the run is done only at its last).
@@ -2104,6 +2126,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (holder) out.definitions += t(4) + "<Definition File=\"" + xml_escape(holder_node(quest.id) + ".xml") + "\" />\r\n";
     if (quest.has_follow()) {
         out.definitions += t(4) + "<Definition File=\"" + xml_escape(followed_node(quest.id) + ".xml") + "\" />\r\n";
+    }
+    if (quest.has_duel_taunt()) {
+        out.definitions += t(4) + "<Definition File=\"" + xml_escape(taunt_node(quest.id) + ".xml") + "\" />\r\n";
     }
     if (onward) out.definitions += t(4) + "<Definition File=\"" + xml_escape(onward_node(quest.id) + ".xml") + "\" />\r\n";
     if (quest.has_helper()) {
@@ -2305,8 +2330,11 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     if (directed) {
         s += t(5) + "<Edge From=\"holder.directed\" To=\"SetDirected\" />\r\n";
     }
+    // A duel with a taunt (npcdb.hpp duel_taunt) is sprung at the taunt's end, when the men
+    // are made (DuelLoose's sprung token), and its journal line and brawl hang off that.
+    const std::string sprung_port = quest.has_duel_taunt() ? "sprung.OnAcquire" : "ambushed.OnAcquire";
     if (ambushed) {
-        s += t(5) + "<Edge From=\"ambushed.OnAcquire\" To=\"SetAmbushed\" />\r\n";
+        s += t(5) + "<Edge From=\"" + sprung_port + "\" To=\"SetAmbushed\" />\r\n";
     }
     // A duel's two made ones down and the man begging (the Lua's cowed token: Updated,
     // log_cowed, the brawl stopped).
@@ -2347,6 +2375,9 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
     // EnumLogs are what 274 of the shipped objectives write where there is nothing to say.
     const std::string return_from = [&]() -> std::string {
         if (checks > 0) return "holder.check" + std::to_string(checks);
+        // An ask with a fall sends Henry nowhere: the yes is the morning's meeting arranged
+        // (arrangedState below opens off the same port; bugs.txt 22 Nov 2026).
+        if (fall) return "";
         if (told || handed) return "holder.handover";
         if (seen) return "seen.OnMatch";
         if (beaten) return "beaten.OnUnconscious";
@@ -2378,8 +2409,6 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         }
         // Henry is back, and sent on: the return is done and the last leg opens.
         if (onward) s += t(5) + "<Edge From=\"" + P("onward") + "\" To=\"SetDone\" />\r\n";
-        // Or back, and the morning's meeting arranged (the fall's objective opens).
-        if (fall) s += t(5) + "<Edge From=\"" + P("arrange") + "\" To=\"SetDone\" />\r\n";
         s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetCanceled\" />\r\n";
         s += t(4) + "</State>\r\n";
         s += t(4) + "<" + std::string(kReturnObjective) + " Name=\"objectiveVisual2\"" + rfo + ">\r\n";
@@ -2413,13 +2442,15 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(5) + "<Edge From=\"carried.State\" To=\"handed\" />\r\n";
         s += t(4) + "</" + onward_node(quest.id) + ">\r\n";
     }
-    // The morning's meeting, for an ask with a fall (Quest::has_fall): "Meet <giver> in the
-    // morning", open from the `arrange` port (the giver told, the return done) with the
-    // marker on the giver, done with the quest -- the giver's Talk the morning after, which
-    // is the fallen ending -- and cancelled if the giver dies first.
+    // The morning's meeting, for an ask with a fall (Quest::has_fall): "Accompany <giver>
+    // and <the one asked> to the bailiff", open from the holder's handover (the yes with its
+    // condition is the arrangement; bugs.txt 22 Nov 2026) with the marker on the giver, done
+    // with the quest -- the giver's Talk the morning after, which is the fallen ending --
+    // and cancelled if the giver dies first. Its Started entry says nothing: the first
+    // objective's Updated line (log_told) is the journal's word of the moment.
     if (fall) {
         s += t(4) + "<State Name=\"arrangedState\"" + rfo + " TypeT=\"ProgressFailable\">\r\n";
-        s += t(5) + "<Edge From=\"" + P("arrange") + "\" To=\"SetActive\" />\r\n";
+        s += t(5) + "<Edge From=\"holder.handover\" To=\"SetActive\" />\r\n";
         for (const std::string& src : plain_completes) s += t(5) + "<Edge From=\"" + src + "\" To=\"SetDone\" />\r\n";
         for (const std::string& how : ways) {
             s += t(5) + "<Edge From=\"" + P("complete_" + how) + "\" To=\"SetDone\" />\r\n";
@@ -2464,9 +2495,41 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
             s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
             s += t(5) + "<Edge From=\"watching.State\" To=\"IsActive\" />\r\n";
             s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            if (quest.has_duel_taunt()) {
+                // His word first (emit_taunt_dialogue; bugs.txt 22 Nov 2026): the spring
+                // token enqueues the forced dialogue, the followed one's shape, the two
+                // turned to each other; its ExitScript has the Lua make the men and send
+                // the sprung token, which the brawl, the journal line and the cowing wait
+                // on. WatchDuel sends it itself (kDuelTauntSeconds) if the dialogue never
+                // plays.
+                s += t(4) + "<Function Name=\"tauntParams\" MethodName=\"wh::dialogmodule::CreateDialogParams\" "
+                            "DeclaringType=\"wh::dialogmodule\">\r\n";
+                s += t(5) + "<Asset Name=\"Participants\" Alias=\"target\" />\r\n";
+                s += t(5) + "<Constant Name=\"RotateParticipants\" Value=\"true\" />\r\n";
+                s += t(4) + "</Function>\r\n";
+                s += t(4) + "<" + taunt_node(quest.id) + " Name=\"tauntTalk\">\r\n";
+                s += t(5) + "<Edge From=\"ambushed.OnAcquire\" To=\"EnqueueDialogue\" />\r\n";
+                s += t(5) + "<Edge From=\"tauntParams.DialogParams\" To=\"DialogParams\" />\r\n";
+                s += t(4) + "</" + taunt_node(quest.id) + ">\r\n";
+                s += t(4) + "<State Name=\"loosing\" TypeT=\"bool\">\r\n";
+                s += t(5) + "<Edge From=\"ambushed.OnAcquire\" To=\"SetTrue\" />\r\n";
+                s += t(5) + "<Edge From=\"sprung.OnAcquire\" To=\"SetFalse\" />\r\n";
+                s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<Function Name=\"sprungClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                            "DeclaringType=\"wh::entitymodule\">\r\n";
+                s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(sprung_class(quest)) + "\" />\r\n";
+                s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+                s += t(4) + "</Function>\r\n";
+                s += t(4) + "<ItemDescriptorTrigger Name=\"sprung\">\r\n";
+                s += t(5) + "<Edge From=\"sprungClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+                s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+                s += t(5) + "<Edge From=\"loosing.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            }
             if (cowed) {
                 s += t(4) + "<State Name=\"cowing\" TypeT=\"bool\">\r\n";
-                s += t(5) + "<Edge From=\"ambushed.OnAcquire\" To=\"SetTrue\" />\r\n";
+                s += t(5) + "<Edge From=\"" + sprung_port + "\" To=\"SetTrue\" />\r\n";
                 s += t(5) + "<Edge From=\"cowed.OnAcquire\" To=\"SetFalse\" />\r\n";
                 s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
                 s += t(4) + "</State>\r\n";
@@ -3878,17 +3941,14 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         s += t(4) + "</Objective>\r\n";
     }
     // The morning's meeting (Quest::has_fall): tracked with the marker on the giver from the
-    // arrangement, its Started line the journal's word of it.
+    // yes, with no line of its own (the first objective's Updated entry is the journal's).
     if (fall) {
         s += t(4) + "<Objective TypeT=\"ProgressFailable\" Name=\"" + std::string(kArrangedObjective) + "\">\r\n";
         s += t(5) + "<LocalizedName StringName=\"" + key("objective_arranged") + "\" Text=\"" +
              xml_escape(quest.objective_arranged) + "\" />\r\n";
         s += t(5) + "<Logs>\r\n";
         s += t(6) + "<EnumLog Type=\"None\" Name=\"None\" />\r\n";
-        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"giver\">\r\n";
-        s += t(7) + "<Log StringName=\"" + key("log_arranged") + "\" Text=\"" +
-             xml_escape(quest.log_arranged) + "\" />\r\n";
-        s += t(6) + "</EnumLog>\r\n";
+        s += t(6) + "<EnumLog Type=\"Started\" Name=\"Active\" IsTracked=\"true\" Marker=\"giver\" />\r\n";
         s += t(6) + "<EnumLog Type=\"Completed\" Name=\"Done\" />\r\n";
         s += t(6) + "<EnumLog Type=\"Canceled\" Name=\"Canceled\" />\r\n";
         s += t(5) + "</Logs>\r\n";
@@ -4149,7 +4209,7 @@ std::string emit_quest(const std::string& modid, const QuestRun& run) {
             return false;
         };
         for (const std::string& command : quest_commands(leg)) {
-            if (command == "accept" || command == "onward" || command == "arrange" || command == "abandon") continue;
+            if (command == "accept" || command == "onward" || command == "abandon") continue;
             const std::string how = command == "complete" ? "" : command.substr(std::string("complete_").size());
             if (leads_on(how)) continue;
             s += t(5) + "<Edge From=\"" + (multi ? quest_port({leg.id, command, 0}) : command) + "\" To=\"SetDone\" />\r\n";
@@ -4770,7 +4830,6 @@ std::vector<std::pair<std::string, std::string>> quest_localization(const std::s
         rows.emplace_back(quest_key(modid, quest.id, "objective_onward"), filled.objective_onward);
     }
     if (quest.has_fall()) {
-        rows.emplace_back(quest_key(modid, quest.id, "log_arranged"), quest.log_arranged);
         rows.emplace_back(quest_key(modid, quest.id, "objective_arranged"), quest.objective_arranged);
     }
     // The unyielding holder's journal (In the Stocks): the rebuff, and with a helper the
@@ -5470,9 +5529,34 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     const std::string followed_var = xml_escape(quest_flag_variable(modid, quest.id, "followed"));
     // With the street written (has_follow), the day door is shut for the night he has
     // caught Henry behind him: his Talk opens on his own line instead (open_followed).
-    s += t(6) + "<Sequence EntryCondition=\"" + door_when +
-         (quest.has_bedside() ? " AND gvar('" + seen_var + "')!=1" : "") +
-         (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "") +
+    const std::string open_when = door_when +
+                                  (quest.has_bedside() ? " AND gvar('" + seen_var + "')!=1" : "") +
+                                  (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "");
+    // His first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026): a
+    // door for the fop and one for the soldier boy, each on the quest's look global (the
+    // Lua's WatchHenryLook: 1 the fop, 2 the soldier), Henry's same line and the holder's own,
+    // going on to the one menu by name (GoTo, as a failed check comes back to it), and the
+    // plain door below for every other look.
+    std::string look_when;
+    if (quest.has_look()) {
+        const std::string look_var = xml_escape(quest_flag_variable(modid, quest.id, "look"));
+        auto look_door = [&](const char* tag, int look, const char* field, const std::string& words) {
+            if (words.empty()) return;
+            s += t(6) + "<Sequence EntryCondition=\"" + open_when + " AND gvar('" + look_var + "')==" +
+                 std::to_string(look) + "\" EndType=\"GoTo\" GoToDecision=\"menu\" Name=\"" + tag +
+                 "\" ExitScript=\"" + stage("open") + "\">\r\n";
+            s += prompt(7, "open", quest.holder_open);
+            s += t(7) + "<Elements>\r\n";
+            s += line(8, "HENRY", "open", quest.holder_open);
+            s += line(8, role, field, words);
+            s += t(7) + "</Elements>\r\n";
+            s += t(6) + "</Sequence>\r\n";
+            look_when += " AND gvar('" + look_var + "')!=" + std::to_string(look);
+        };
+        look_door("open_fop", 1, "refuse_fop", quest.holder_refuse_fop);
+        look_door("open_soldier", 2, "refuse_soldier", quest.holder_refuse_soldier);
+    }
+    s += t(6) + "<Sequence EntryCondition=\"" + open_when + look_when +
          "\" EndType=\"Decision\" Name=\"open\" ExitScript=\"" + stage("open") + "\">\r\n";
     s += prompt(7, "open", quest.holder_open);
     s += t(7) + "<Elements>\r\n";
@@ -5955,6 +6039,51 @@ std::string emit_followed_dialogue(const std::string& modid, const Quest& raw) {
     return voiced_dialogue(std::move(s), quest.target_gender, quest.target_soul);
 }
 
+std::string emit_taunt_dialogue(const std::string& modid, const Quest& quest) {
+    // A duel's man turning on Henry as he lands in the yard (emit.hpp; bugs.txt 22 Nov
+    // 2026): the followed dialogue's shape, enqueued by the graph off the spring token with
+    // the two turned to each other. One sequence, his taunt and Henry's answer where one is
+    // written; no entry condition, since the token alone brings it up and the brawl waits
+    // on its end: the ExitScript is what makes the men behind Henry and looses them
+    // (DuelTaunted). Voiced as the man's own lines are.
+    if (!quest.has_duel_taunt()) throw std::runtime_error("quest " + quest.id + " has no duel taunt");
+    const std::string node = taunt_node(quest.id);
+    const std::string role = xml_escape(taunt_role(quest.id));
+    auto t = [](int n) { return std::string(static_cast<std::size_t>(n), '\t'); };
+    auto line = [&](int depth, const std::string& who, const char* field, const std::string& words) {
+        return talk_response(depth, who, xml_escape(quest_key(modid, quest.id, field)), words);
+    };
+    std::string s = skald_header(modid);
+    s += t(2) + "<ForcedDialog Name=\"" + node + "\">\r\n";
+    s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (taunt)") + "\" />\r\n";
+    s += t(3) + "<Dialogue TechnicalStatus=\"Enabled\" Initiator=\"NonPlayer\" AllowGreeting=\"false\" "
+                "AllowFarewell=\"false\">\r\n";
+    s += t(4) + "<Decision Name=\"dec1\" Priority=\"SideQuestSubmission\">\r\n";
+    s += t(5) + "<Sequences>\r\n";
+    s += t(6) + "<Sequence EndType=\"EndDialogue\" Name=\"taunt\" ExitScript=\"Moonshine.DuelTaunted('" + quest.id +
+         "')\">\r\n";
+    s += t(7) + "<Elements>\r\n";
+    s += line(8, role, "taunt", quest.duel_taunt);
+    if (!quest.duel_taunt_reply.empty()) s += line(8, "HENRY", "taunt_reply", quest.duel_taunt_reply);
+    s += t(7) + "</Elements>\r\n";
+    s += t(6) + "</Sequence>\r\n";
+    s += t(5) + "</Sequences>\r\n";
+    s += t(4) + "</Decision>\r\n";
+    s += t(3) + "</Dialogue>\r\n";
+    s += t(2) + "</ForcedDialog>\r\n";
+    s += "\t</Skald>\r\n";
+    s += "</Database>\r\n";
+    return voiced_dialogue(std::move(s), quest.target_gender, quest.target_soul);
+}
+
+std::vector<std::pair<std::string, std::string>> taunt_localization(const std::string& modid, const Quest& quest) {
+    std::vector<std::pair<std::string, std::string>> rows;
+    if (!quest.has_duel_taunt()) return rows;
+    rows.emplace_back(quest_key(modid, quest.id, "taunt"), quest.duel_taunt);
+    if (!quest.duel_taunt_reply.empty()) rows.emplace_back(quest_key(modid, quest.id, "taunt_reply"), quest.duel_taunt_reply);
+    return rows;
+}
+
 std::vector<std::pair<std::string, std::string>> holder_localization(const std::string& modid,
                                                                      const Quest& raw) {
     const Quest quest = with_holder_lines(raw);
@@ -6112,6 +6241,10 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
         {key("leave"), quest.holder_leave},
         {key("leave_reply"), quest.holder_leave_reply},
     };
+    if (quest.has_look()) {
+        if (!quest.holder_refuse_fop.empty()) rows.emplace_back(key("refuse_fop"), quest.holder_refuse_fop);
+        if (!quest.holder_refuse_soldier.empty()) rows.emplace_back(key("refuse_soldier"), quest.holder_refuse_soldier);
+    }
     if (quest.dispute) {
         rows.emplace_back(key("broker"), quest.holder_broker);
         rows.emplace_back(key("broker_reply"), quest.holder_broker_reply);
@@ -7018,6 +7151,8 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
         token_row(token_name(*q), token_class(*q));
         // A duel's second token, the man cowed (emit.hpp cowed_class).
         if (q->has_duel_cowed()) token_row(cowed_name(*q), cowed_class(*q));
+        // And its third, the men made and the brawl loosed after the taunt (sprung_class).
+        if (q->has_duel_taunt()) token_row(sprung_name(*q), sprung_class(*q));
     }
     // One key per chest: the shipped chest keys' row (poi_vuzVJezirku_key: Type 4, the
     // general key icon and model), under the quest's own key class, which the Lua's Stash
@@ -7272,6 +7407,10 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
             if (q.has_duel_cowed()) {
                 rows.emplace_back(item_ui_key(modid, cowed_name(q)), "A man cowed");
                 rows.emplace_back(item_info_key(modid, cowed_name(q)), q.giver_name + "'s friends down, and him begging.");
+            }
+            if (q.has_duel_taunt()) {
+                rows.emplace_back(item_ui_key(modid, sprung_name(q)), "A duel sprung");
+                rows.emplace_back(item_info_key(modid, sprung_name(q)), q.giver_name + "'s word said, and his friends loosed.");
             }
         } else if (q.has_helper()) {
             rows.emplace_back(item_ui_key(modid, token_name(q)), "A name given");
@@ -8220,6 +8359,22 @@ std::string state_lua(const std::string& g) {
     // With the clock at the handover (handedAt), for what waits on it: the wedding (WatchWed).
     s += "\tif command == \"handover\" then facts.handed = true\n";
     s += "\t\tif facts.handedAt == nil then facts.handedAt = " + g + ".WorldTime() end\n";
+    // An ask with a fall (In the Stocks' Benesh; bugs.txt 20 and 22 Nov 2026): the yes with
+    // its condition is the arrangement itself -- Henry is not sent back to tell the giver
+    // first -- so the handover sets the morning (the letter A) and the clock the one asked
+    // falls at: the fall hour of the next calendar day, so the meeting is never the same
+    // day's and the giver's Talk before it is "come back tomorrow" (the app's greet_arranged).
+    // Fallen (WatchAsk; the letter F, and x: he is dead) is the ending the giver's Talk
+    // completes as.
+    s += "\t\tlocal q = " + g + ".quests[id] or {}\n";
+    s += "\t\tif q.fall and not facts.arranged then\n";
+    s += "\t\t\tfacts.arranged = true\n";
+    s += "\t\t\tif facts.fallAt == nil then\n";
+    s += "\t\t\t\tlocal hour = " + g + ".HourOfDay() or 12\n";
+    s += "\t\t\t\tlocal ahead = (q.fallHour or " + std::to_string(kFallHour) + ") - hour + 24\n";
+    s += "\t\t\t\tfacts.fallAt = " + g + ".WorldTime() + ahead * 3600\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
     s += "\tend\n";
     // With the game's clock at the hand-in (doneAt), for what waits a day on it: a seek's
     // family leaves the morning after (WatchSeek).
@@ -8277,20 +8432,6 @@ std::string state_lua(const std::string& g) {
     // An ask's word carried on: the giver told and paid, Henry sent on (the app's `onward`
     // directive; the letter w). The quest is not done until the one sent to is told.
     s += "\tif command == \"onward\" then facts.accepted = true; facts.onward = true end\n";
-    // An ask with a fall (the app's `arrange`; the letter A): the giver told, the morning's
-    // meeting arranged, with the clock the one asked falls at -- the next fall hour at
-    // least an hour off (In the Stocks' Benesh; bugs.txt 20 Nov 2026). Fallen (WatchAsk;
-    // the letter F, and x: he is dead) is the ending the giver's Talk completes as.
-    s += "\tif command == \"arrange\" then\n";
-    s += "\t\tfacts.accepted = true; facts.arranged = true\n";
-    s += "\t\tif facts.fallAt == nil then\n";
-    s += "\t\t\tlocal q = " + g + ".quests[id] or {}\n";
-    s += "\t\t\tlocal hour = " + g + ".HourOfDay() or 12\n";
-    s += "\t\t\tlocal ahead = ((q.fallHour or " + std::to_string(kFallHour) + ") - hour) % 24\n";
-    s += "\t\t\tif ahead < 1 then ahead = ahead + 24 end\n";
-    s += "\t\t\tfacts.fallAt = " + g + ".WorldTime() + ahead * 3600\n";
-    s += "\t\tend\n";
-    s += "\tend\n";
     s += "\tif command == \"fallen\" then facts.fallen = true; facts.dead = true; facts.how = \"fallen\" end\n";
     // A plea begged and not yet answered (the app's `plead`; bugs.txt 19 Nov 2026: Henry
     // chooses whether to carry it): the giver has heard the truth and paid, and waits on
@@ -8502,6 +8643,11 @@ std::string state_lua(const std::string& g) {
     // An ambush's menu reads its stage: 0 before the directions, 1 after, 2 after the trap.
     s += "\t\tif q.kind == \"ambush\" then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.stageVar, f.ambushed and 2 or f.directed and 1 or 0) end)\n";
+    s += "\t\tend\n";
+    // A holder's door cut to Henry's look reads the look global; the Watch keeps it fresh.
+    s += "\t\tif q.lookVar ~= nil then\n";
+    s += "\t\t\t" + g + ".henryLookWas[id] = nil\n";
+    s += "\t\t\tpcall(" + g + ".WatchHenryLook, id, q)\n";
     s += "\t\tend\n";
     // A buy's menu reads whether the giver's thing is on Henry; the Watch keeps it fresh.
     s += "\t\tif q.kind == \"buy\" then\n";
@@ -9859,11 +10005,22 @@ std::string emit_conversation_lua(const std::string& modid,
         if (q.is_ambush()) {
             s += ", stageVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "stage")) + "\"";
         }
+        // A holder whose first excuse is cut to Henry's look: the global his door reads
+        // (WatchHenryLook; emit_holder_dialogue's open_fop and open_soldier).
+        if (q.has_look()) {
+            s += ", lookVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "look")) + "\"";
+        }
         if (q.is_duel()) {
             // The spring token, the cowed token, and the souls made behind Henry (DuelSpring,
             // WatchDuel).
             s += ", token = \"" + lua_escape(token_class(q)) + "\"";
             if (q.has_duel_cowed()) s += ", cowedToken = \"" + lua_escape(cowed_class(q)) + "\"";
+            // His word before the blows (emit_taunt_dialogue): the role it speaks through
+            // (GrantHolder) and the token its end sends (DuelTaunted, DuelLoose).
+            if (q.has_duel_taunt()) {
+                s += ", tauntMeta = \"" + lua_escape(taunt_metarole(q.id)) + "\", sprungToken = \"" +
+                     lua_escape(sprung_class(q)) + "\"";
+            }
             std::string spawn;
             for (const std::string& guid : q.brawl_guids) spawn += (spawn.empty() ? "" : ", ") + ("\"" + lua_escape(guid) + "\"");
             s += ", spawn = { " + spawn + " }";
@@ -11860,20 +12017,34 @@ std::string emit_conversation_lua(const std::string& modid,
     // A duel sprung (npcdb.hpp kind "duel"; bugs.txt 20 Nov 2026, In the Stocks): as Henry
     // lands at the yard the man who challenged him is set down on the quest's holder spot
     // facing him (SetWorldPos, as FastTravelHolder does, and turned to the landing rather
-    // than from it), the two in brawl_with are made kDuelBehindMetres behind Henry, a pace
-    // apart, out of their own souls (random-encounter bandits, at the game's own scaling),
-    // each given a sword in hand so the first blow is a blow, and the ambush token goes in
-    // Henry's pocket for the graph's trigger, which sets the man and them on him
-    // (emit_brawl: the `brawlers` asset is their souls). The spawn is the engine's own
-    // System.SpawnEntity with class NPC and guidSharedSoulId (spawn_probe.lua, 2 Oct 2026:
-    // the soul binds -- faction, class, name); the shipped CombatDebug.lua's
+    // than from it), and the ambush token goes in Henry's pocket for the graph's trigger.
+    // Then the men: with a taunt written (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) the
+    // token brings up the man's forced dialogue first, and its end (DuelTaunted) -- or
+    // kDuelTauntSeconds without it (WatchDuel) -- is when DuelLoose makes the two of
+    // brawl_with kDuelBehindMetres behind Henry, a pace apart, out of their own souls
+    // (random-encounter bandits, at the game's own scaling), each with a sword in hand so
+    // the first blow is a blow, and sends the sprung token the graph's brawl waits on, which
+    // sets the man and them on Henry together (emit_brawl: the `brawlers` asset is their
+    // souls). Without a taunt they are made and the brawl begun as he lands. The spawn is the
+    // engine's own System.SpawnEntity with class NPC and guidSharedSoulId (spawn_probe.lua,
+    // 2 Oct 2026: the soul binds -- faction, class, name); the shipped CombatDebug.lua's
     // XGenAIModule.SpawnEntity is nil in the retail build, which is how the first duel went
     // (kcd.log 21 Nov 2026: both "could not be made", and with nobody to count down the
-    // man was cowed in the same tick). Their names are kept in the store (spawned), for
-    // WatchDuel to count them down and DuelSweep to take the bodies away. A soul that will
-    // not spawn is logged and the duel goes on with those that did, or with the man alone.
+    // man was cowed in the same tick). Their names are kept in the store (spawned) and
+    // their entity ids beside it, for WatchDuel to count them down and DuelSweep to take the
+    // bodies away (the ids in memory only: an entity id is the engine's handle, not a
+    // thing for the save). A soul that will not spawn is logged and the duel goes on with
+    // those that did, or with the man alone.
     s += g + ".duelBehindMetres = " + health_text(kDuelBehindMetres) + "\n";
     s += g + ".duelSword = \"" + std::string(kDuelSwordPreset) + "\"\n";
+    s += g + ".duelTauntSeconds = " + std::to_string(kDuelTauntSeconds) + "\n";
+    s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
+    // When each duel landed and was loosed (Now, this session; a reload starts the clocks
+    // again), and which made men have been seen on their feet.
+    s += g + ".duelLandedAt = {}\n";
+    s += g + ".duelLoosedAt = {}\n";
+    s += g + ".duelStood = {}\n";
+    s += g + ".duelIds = {}\n";
     s += "function " + g + ".DuelSpring(id, q, me, to)\n";
     s += "\tlocal ft = q.fastTravel\n";
     s += "\tif ft == nil or ft.holder == nil or q.target == nil then return end\n";
@@ -11897,11 +12068,54 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".FaceFrom(me, to, spot)\n";
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s set down at %.1f %.1f %.1f, %.1fm from the landing%s\",\n";
     s += "\t\tid, q.target, spot.x, spot.y, spot.z, n, ok and \"\" or \", SetWorldPos raised\"))\n";
-    // The two behind Henry: on along the line from the man through the landing (dx, dy is
-    // the man's spot to the landing), a pace to either side of it, facing Henry's back.
+    s += "\tf.spawned = {}\n";
+    s += "\tf.loosed = nil\n";
+    s += "\t" + g + ".duelIds[id] = {}\n";
+    s += "\t" + g + ".state.quests[id] = f\n";
+    s += "\t" + g + ".duelLandedAt[id] = " + g + ".Now()\n";
+    s += "\t" + g + ".duelStood[id] = {}\n";
+    s += "\tpcall(" + g + ".StateQuest, id, \"ambushed\")\n";
+    s += "\t" + g + ".Token(q)\n";
+    s += "\t" + g + ".WatchArm(\"duel\")\n";
+    s += "\tif q.sprungToken ~= nil then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has his say first; the men wait on it\")\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".DuelLoose(id, q, me, \"landing\")\n";
+    s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // The taunt's end (emit_taunt_dialogue's ExitScript): the men made and loosed.
+    s += "function " + g + ".DuelTaunted(id)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tif q == nil then return end\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. tostring(q.target) .. \" has had his say\")\n";
+    s += "\tlocal me = " + g + ".Player()\n";
+    s += "\tif me == nil then return end\n";
+    s += "\tpcall(" + g + ".DuelLoose, id, q, me, \"taunt\")\n";
+    s += "end\n";
+    s += "\n";
+    // The two made behind Henry, on along the line from the man through him, a pace to
+    // either side of it, facing his back, and the brawl loosed (the sprung token, where
+    // the graph waits on one). Once only.
+    s += "function " + g + ".DuelLoose(id, q, me, why)\n";
+    s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\tif f.loosed then return end\n";
+    s += "\tif f.done or f.cowed then return end\n";
+    s += "\tlocal to = me:GetWorldPos()\n";
+    s += "\tlocal from = nil\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tlocal e = System.GetEntityByName(q.target)\n";
+    s += "\t\tif e ~= nil then from = e:GetWorldPos() end\n";
+    s += "\tend)\n";
+    s += "\tif from == nil then\n";
+    s += "\t\tlocal d = me:GetDirectionVector()\n";
+    s += "\t\tfrom = { x = to.x + d.x, y = to.y + d.y, z = to.z }\n";
+    s += "\tend\n";
+    s += "\tlocal dx, dy = to.x - from.x, to.y - from.y\n";
+    s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
     s += "\tlocal bx, by = dx / n, dy / n\n";
     s += "\tlocal sx, sy = -by, bx\n";
-    s += "\tlocal names = {}\n";
+    s += "\tlocal names, ids = {}, {}\n";
     s += "\tfor k, guid in ipairs(q.spawn or {}) do\n";
     s += "\t\tlocal side = (k % 2 == 1) and 1 or -1\n";
     s += "\t\tlocal x = to.x + bx * " + g + ".duelBehindMetres + sx * side\n";
@@ -11917,31 +12131,47 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif made == nil then\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. name .. \" (\" .. guid .. \") could not be made\" .. (okSpawn and \"\" or (\": \" .. tostring(err))))\n";
     s += "\t\telse\n";
-    s += "\t\t\tnames[#names + 1] = name\n";
+    // The entity's own id and the name it answers to after the soul bound (the bind may
+    // rename it; the id is what DuelDown looks it up by), both kept.
+    s += "\t\t\tlocal bound = name\n";
+    s += "\t\t\tpcall(function() bound = made:GetName() or name end)\n";
+    s += "\t\t\tnames[#names + 1] = bound\n";
+    s += "\t\t\tids[#names] = made.id\n";
     // Facing Henry's back, armed, sword out.
     s += "\t\t\tpcall(function() made:SetDirectionVector({ x = -bx, y = -by, z = 0 }) end)\n";
     s += "\t\t\tpcall(function() made.actor:EquipWeaponPreset(" + g + ".duelSword) end)\n";
     s += "\t\t\tpcall(function() made.human:DrawWeapon() end)\n";
-    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s made at %.1f %.1f %.1f behind Henry\", id, name, x, y, z))\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s made at %.1f %.1f %.1f behind Henry (id %s%s)\", id, name, x, y, z,\n";
+    s += "\t\t\t\ttostring(made.id), bound ~= name and (\", named \" .. tostring(bound)) or \"\"))\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tf.spawned = names\n";
+    s += "\tf.loosed = true\n";
+    s += "\t" + g + ".duelIds[id] = ids\n";
     s += "\t" + g + ".state.quests[id] = f\n";
-    s += "\tpcall(" + g + ".StateQuest, id, \"ambushed\")\n";
-    s += "\t" + g + ".Token(q)\n";
-    s += "\t" + g + ".WatchArm(\"duel\")\n";
+    s += "\t" + g + ".duelLoosedAt[id] = " + g + ".Now()\n";
+    s += "\t" + g + ".duelStood[id] = {}\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: loosed on the \" .. tostring(why) .. \" with \" .. #names .. \" made\")\n";
+    s += "\tif q.sprungToken ~= nil then " + g + ".Token(q, q.sprungToken) end\n";
     s += "end\n";
     s += "\n";
     // Whether a soul made for the duel is still standing: dead or unconscious is down, and
-    // gone from the world (not found) is down too.
-    s += "function " + g + ".DuelDown(name)\n";
-    s += "\tlocal e = nil\n";
-    s += "\tpcall(function() e = System.GetEntityByName(name) end)\n";
-    s += "\tif e == nil then return true, nil end\n";
+    // gone from the world (not found) is down too. Looked up by entity id first (the soul's
+    // binding may have renamed it), then by name; back: down, the entity, dead, and how it
+    // was found ("id", "name", "none") for the watch's log.
+    s += "function " + g + ".DuelDown(name, entId)\n";
+    s += "\tlocal e, how = nil, \"none\"\n";
+    s += "\tif entId ~= nil then pcall(function() e = System.GetEntity(entId) end) end\n";
+    s += "\tif e ~= nil then how = \"id\" end\n";
+    s += "\tif e == nil then\n";
+    s += "\t\tpcall(function() e = System.GetEntityByName(name) end)\n";
+    s += "\t\tif e ~= nil then how = \"name\" end\n";
+    s += "\tend\n";
+    s += "\tif e == nil then return true, nil, false, how end\n";
     s += "\tlocal dead, down = false, false\n";
     s += "\tpcall(function() dead = e.actor:IsDead() == true end)\n";
     s += "\tif not dead then pcall(function() down = e.actor:IsUnconscious() == true end) end\n";
-    s += "\treturn dead or down, e, dead\n";
+    s += "\treturn dead or down, e, dead, how\n";
     s += "end\n";
     s += "\n";
     // The duel's watch: the man dead -> the `killed` ending (the graph's own death trigger
@@ -11949,6 +12179,11 @@ std::string emit_conversation_lua(const std::string& modid,
     // alive -> the cowed token (the brawl stops, the objective's line, and he begs through
     // the app). Where none could be made he fought alone, and it is his own knock-out that
     // cows him -- not an empty list, which would cow him as he drew (the first duel).
+    // Before the men are loosed there is nothing to count: a taunt that never plays is
+    // waited out (duelTauntSeconds) and the men loosed by the watch. A man never yet seen
+    // standing is not counted down inside duelStandSeconds of the loosing (the 22 Nov run
+    // cowed the man eight seconds in with both his friends up and one of them on Henry), and
+    // each man's state is logged through that grace so the next run can be read.
     // The friends left unconscious are taken away then, so nobody wakes into a
     // second fight; the dead lie where they fell until DuelSweep (Henry gone off, or the
     // duel over) takes them. Past done: the sweep, and a spared man kept out of the world
@@ -11968,10 +12203,35 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif f.cowed then return end\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    s += "\tif not f.loosed then\n";
+    s += "\t\tif q.sprungToken == nil then return end\n";
+    s += "\t\tlocal landed = " + g + ".duelLandedAt[id]\n";
+    s += "\t\tif landed == nil then " + g + ".duelLandedAt[id] = now return end\n";
+    s += "\t\tif now - landed < " + g + ".duelTauntSeconds then return end\n";
+    s += "\t\tlocal me = " + g + ".Player()\n";
+    s += "\t\tif me == nil then return end\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \"'s say never came; the men are loosed anyway\")\n";
+    s += "\t\tpcall(" + g + ".DuelLoose, id, q, me, \"watch\")\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal loosed = " + g + ".duelLoosedAt[id]\n";
+    s += "\tif loosed == nil then loosed = now " + g + ".duelLoosedAt[id] = now end\n";
+    s += "\tlocal grace = now - loosed < " + g + ".duelStandSeconds\n";
+    s += "\tlocal stood = " + g + ".duelStood[id] or {}\n";
+    s += "\t" + g + ".duelStood[id] = stood\n";
     s += "\tlocal standing = 0\n";
-    s += "\tfor _, name in ipairs(f.spawned or {}) do\n";
-    s += "\t\tlocal down = " + g + ".DuelDown(name)\n";
-    s += "\t\tif not down then standing = standing + 1 end\n";
+    s += "\tfor k, name in ipairs(f.spawned or {}) do\n";
+    s += "\t\tlocal down, e, dead, how = " + g + ".DuelDown(name, (" + g + ".duelIds[id] or {})[k])\n";
+    s += "\t\tif not down then stood[k] = true end\n";
+    s += "\t\tif grace then\n";
+    s += "\t\t\tlocal health = nil\n";
+    s += "\t\t\tif e ~= nil then pcall(function() health = e.actor:GetHealth() end) end\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s found by %s, %s%s\", id, name, how,\n";
+    s += "\t\t\t\tdead and \"dead\" or down and \"down\" or \"standing\", health ~= nil and (\", health \" .. tostring(health)) or \"\"))\n";
+    s += "\t\tend\n";
+    // Down for the count only once seen standing, or once the grace is out.
+    s += "\t\tif not down or (grace and not stood[k]) then standing = standing + 1 end\n";
     s += "\tend\n";
     s += "\tif standing > 0 then return end\n";
     s += "\tif f.spawned == nil or #f.spawned == 0 then\n";
@@ -11991,13 +12251,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "function " + g + ".DuelSweep(id, q, pp, wakingOnly)\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif f.spawned == nil or #f.spawned == 0 then return end\n";
-    s += "\tlocal keep = {}\n";
+    s += "\tlocal keep, keepIds = {}, {}\n";
+    s += "\tlocal ids = " + g + ".duelIds[id] or {}\n";
     s += "\tlocal far = false\n";
     s += "\tif pp ~= nil and q.fastTravel ~= nil then\n";
     s += "\t\tfar = math.sqrt((pp.x - q.fastTravel.x) ^ 2 + (pp.y - q.fastTravel.y) ^ 2) > " + g + ".duelSweepMetres\n";
     s += "\tend\n";
-    s += "\tfor _, name in ipairs(f.spawned) do\n";
-    s += "\t\tlocal down, e, dead = " + g + ".DuelDown(name)\n";
+    s += "\tfor k, name in ipairs(f.spawned) do\n";
+    s += "\t\tlocal down, e, dead = " + g + ".DuelDown(name, ids[k])\n";
     s += "\t\tlocal take = e ~= nil and ((wakingOnly and down and not dead) or (not wakingOnly and (far or f.done)))\n";
     s += "\t\tif e == nil then\n";
     s += "\t\telseif take then\n";
@@ -12005,9 +12266,11 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. name .. \" taken away\")\n";
     s += "\t\telse\n";
     s += "\t\t\tkeep[#keep + 1] = name\n";
+    s += "\t\t\tkeepIds[#keep] = ids[k]\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tf.spawned = keep\n";
+    s += "\t" + g + ".duelIds[id] = keepIds\n";
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "end\n";
     s += "\n";
@@ -15513,8 +15776,9 @@ std::string emit_conversation_lua(const std::string& modid,
     // it. Past done too (bugs.txt 18 Nov 2026: the list read after the hand-in, and nothing
     // said): the graph's trigger stays armed, since the story's graph is not over with the
     // first errand, and the read token it makes would otherwise sit in his pocket unseen.
+    // And one whose holder's excuse is cut to Henry's look (WatchHenryLook), until it is handed.
     s += "\t\t\tif q.kind == \"retrieve\" and ((not f.handed and ((q.chest ~= nil and not (f.chest and f.taken))\n";
-    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen))) or (q.paper ~= nil and f.chest and not f.paperRead)) then out[#out + 1] = id end\n";
+    s += "\t\t\t\t\tor (q.seenWith ~= nil and not f.seen) or q.lookVar ~= nil)) or (q.paper ~= nil and f.chest and not f.paperRead)) then out[#out + 1] = id end\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"return\" and f.cursed and q.spot ~= nil then\n";
     s += "\t\t\tout[#out + 1] = id\n";
     s += "\t\telseif type(f) == \"table\" and f.done and q.kind == \"seek\" and q.spot ~= nil and not f.gone then\n";
@@ -15619,6 +15883,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\telseif q.kind == \"retrieve\" then\n";
     s += "\t\t\t\tif q.chest ~= nil then " + g + ".WatchChest(id, q, pp) end\n";
     s += "\t\t\t\tif q.seenWith ~= nil then " + g + ".WatchExpose(id, q, pp) end\n";
+    s += "\t\t\t\tif q.lookVar ~= nil then " + g + ".WatchHenryLook(id, q) end\n";
     s += "\t\t\tend\n";
     s += "\t\t\tend\n";
     s += "\t\tend\n";
@@ -17872,6 +18137,40 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Token(q)\n";
     s += "end\n";
     s += "\n";
+    // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look;
+    // emit.hpp kLookFopCharisma, kLookSoldierDread): 2 the soldier boy (he looks dangerous,
+    // or his weapon is out), 1 the fop (well dressed and not dangerous), 0 anyone else. The
+    // readings come back with it for the log. Unread stats are nobody in particular.
+    s += g + ".lookFopCharisma = " + health_text(kLookFopCharisma) + "\n";
+    s += g + ".lookSoldierDread = " + health_text(kLookSoldierDread) + "\n";
+    s += "function " + g + ".HenryLook()\n";
+    s += "\tlocal p = " + g + ".Player()\n";
+    s += "\tlocal rch = " + g + ".PlayerStat(p, \"rch\")\n";
+    s += "\tlocal bad = " + g + ".PlayerStat(p, \"bad\")\n";
+    s += "\tlocal drawn = false\n";
+    s += "\tif p ~= nil and p.human ~= nil and p.human.IsWeaponDrawn ~= nil then\n";
+    s += "\t\tlocal ok, got = pcall(function() return p.human:IsWeaponDrawn() end)\n";
+    s += "\t\tdrawn = ok and got == true\n";
+    s += "\tend\n";
+    s += "\tlocal look = 0\n";
+    s += "\tif drawn or (type(bad) == \"number\" and bad >= " + g + ".lookSoldierDread) then look = 2\n";
+    s += "\telseif type(rch) == \"number\" and rch >= " + g + ".lookFopCharisma then look = 1 end\n";
+    s += "\treturn look, rch, bad, drawn\n";
+    s += "end\n";
+    s += "\n";
+    // The look global kept fresh as Henry dresses and arms himself, so the holder's door
+    // opens on the right excuse; said in the log with the readings when it changes.
+    s += g + ".henryLookWas = {}\n";
+    s += "function " + g + ".WatchHenryLook(id, q)\n";
+    s += "\tlocal look, rch, bad, drawn = " + g + ".HenryLook()\n";
+    s += "\tif " + g + ".henryLookWas[id] == look then return end\n";
+    s += "\t" + g + ".henryLookWas[id] = look\n";
+    s += "\tpcall(function() Variables.SetGlobal(q.lookVar, look) end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s Henry looks %s (rch=%s bad=%s drawn=%s)\", id,\n";
+    s += "\t\tlook == 2 and \"a soldier boy\" or look == 1 and \"a fop\" or \"nobody in particular\",\n";
+    s += "\t\ttostring(rch), tostring(bad), tostring(drawn)))\n";
+    s += "end\n";
+    s += "\n";
     // A buy: the holder dead (the charm is on the body, and bringing it is the retrieve's
     // stolen), and the carry global fresh as Henry's pockets change -- sold the hood, got
     // it back -- so the menu's pay row is there exactly when he can meet the terms.
@@ -18145,12 +18444,6 @@ std::string emit_conversation_lua(const std::string& modid,
     // (the giver's lie_have row; In the Stocks) -- is the one lie that pays nothing: the
     // giver has nothing to pay for, and the thing stays where it is.
     s += "\tif command == \"threaten\" then " + g + ".Log(\"BRIDGE quest \" .. id .. \" Henry will threaten the man himself; paid at the plea\") end\n";
-    // The morning's meeting arranged (an ask with a fall): nothing paid -- the coin was for
-    // the bailiff's morning, which never comes -- and the watch armed for the fall.
-    s += "\tif command == \"arrange\" then\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" the morning's meeting arranged; nothing paid yet\")\n";
-    s += "\t\t" + g + ".WatchArm(\"arrange\")\n";
-    s += "\tend\n";
     s += "\tif command == \"lie\" then\n";
     s += "\t\tif quest.kind == \"buy\" then\n";
     s += "\t\t\tif quest.item ~= \"\" then " + g + ".TakeBack(quest) end\n";
@@ -18495,6 +18788,14 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\t\" granted to \" .. name .. \" -> \" .. tostring(" + g + ".HasMeta(npc, quest.counselMeta)))\n";
     s += "\t\t\tgranted = true\n";
     s += "\t\tend\n";
+    // And a duel's man, for the word he turns on Henry with as he lands (emit_taunt_dialogue).
+    s += "\t\tif quest ~= nil and quest.tauntMeta ~= nil and quest.target == name and not " + g + ".HasMeta(npc, quest.tauntMeta)\n";
+    s += "\t\t\t\tand npc.soul ~= nil and npc.soul.AddMetaRoleByName ~= nil then\n";
+    s += "\t\t\t" + g + ".GrantName(npc, quest.tauntMeta)\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" taunt role \" .. quest.tauntMeta ..\n";
+    s += "\t\t\t\t\" granted to \" .. name .. \" -> \" .. tostring(" + g + ".HasMeta(npc, quest.tauntMeta)))\n";
+    s += "\t\t\tgranted = true\n";
+    s += "\t\tend\n";
     // And the one who can let Henry in, for her door, her key and her way out.
     s += "\t\tif quest ~= nil and quest.helper == name and not " + g + ".HasMeta(npc, quest.helperMeta)\n";
     s += "\t\t\t\tand npc.soul ~= nil and npc.soul.AddMetaRoleByName ~= nil then\n";
@@ -18633,6 +18934,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "\tif f.how ~= nil then " + g + ".Log(\"BRIDGE quest \" .. id .. \" won by \" .. f.how) end\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"handover\")\n";
+    // An ask with a fall: the yes is the morning's meeting arranged (StateQuest), nothing
+    // paid -- the coin was for the bailiff's morning, which never comes -- and the watch
+    // armed for the fall.
+    s += "\tif quest.fall then\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" the morning's meeting arranged at the yes; nothing paid yet\")\n";
+    s += "\t\t" + g + ".WatchArm(\"arrange\")\n";
+    s += "\tend\n";
     s += "\tlocal holder = nil\n";
     s += "\tpcall(function() holder = System.GetEntityByName(quest.target) end)\n";
     s += "\tif holder == nil then\n";

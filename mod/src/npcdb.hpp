@@ -128,6 +128,13 @@ struct Quest {
     // holder has not been written yet is still finishable.
     std::string holder_open;          // Henry: what he came about
     std::string holder_refuse;        // holder: the first excuse
+    // The first excuse cut to Henry's presentation (bugs.txt 22 Nov 2026, In the Stocks'
+    // Paul): a fop in a high-charisma outfit without armour (refuse_fop), a man playing at
+    // soldier in armour (refuse_soldier), the plain refuse otherwise. The Lua reads Henry's
+    // charisma and how dangerous he looks (WatchLook; the quest's look global) and the Talk
+    // opens on the matching line. Either written alone leaves the other to the plain one.
+    std::string holder_refuse_fop;
+    std::string holder_refuse_soldier;
     std::string holder_persuade;      // Henry: the reasonable way (a persuade check)
     std::string holder_persuade_yes;  // holder: talked round
     std::string holder_persuade_no;   // holder: not moved
@@ -743,13 +750,14 @@ struct Quest {
     std::string objective_onward;
     // An ask whose yes carries a condition the giver must keep the next morning (In the
     // Stocks' witness: Benesh will stand before the bailiff with Henry beside him; bugs.txt
-    // 20 Nov 2026). The telling is the app's `arrange` rather than the complete: the fetch
-    // is done, the `arranged` objective ("Meet Father Adam in the morning") opens on the
-    // giver with `log_arranged`, and at the next fall hour the mod takes the one asked out
-    // of the world (WatchAsk: the fall from the scaffolding). The giver's Talk after that
-    // is the `fallen` ending (`log_completed_fallen`), unpaid.
+    // 20 Nov 2026). The yes is the arrangement itself (bugs.txt 22 Nov 2026: Henry is not
+    // sent back to tell the giver first): the holder's handover writes the fetch's Updated
+    // line (log_told), opens the `arranged` objective ("Accompany Father Adam and Benesh to
+    // the bailiff") on the giver in place of a return, and sets the clock; at the fall hour
+    // of the next day the mod takes the one asked out of the world (WatchAsk: the fall from
+    // the scaffolding). Until then the giver's Talk is the app's greet_arranged ("come back
+    // tomorrow"); after it, the `fallen` ending (`log_completed_fallen`), unpaid.
     std::string objective_arranged;
-    std::string log_arranged;
     std::string log_completed_fallen;
     // An ask Henry may turn from to the man behind it (In the Stocks, bugs.txt 21 Nov 2026:
     // Father Adam asks Henry to bring Benesh round to standing witness against Paul Schmidt;
@@ -835,6 +843,15 @@ struct Quest {
     // spared (log_completed): all his money to Henry, and he is gone from the game
     // (DuelGone). Henry's own death is the game's.
     std::string log_cowed;
+    // The man's word as Henry lands (bugs.txt 22 Nov 2026: "a short cut scene first where
+    // Paul calls Henry a trusting idiot before they all attack together"): a forced
+    // dialogue of the graph's (emit_taunt_dialogue), his line and Henry's answer where one
+    // is written, played off the spring token with the two of them turned to each other,
+    // and only at its end are the two made at Henry's back and the brawl begun (the sprung
+    // token; DuelTaunted / DuelLoose). Without a taunt the men are made and the brawl begun
+    // as he lands.
+    std::string duel_taunt;
+    std::string duel_taunt_reply;
 
     bool is_duel() const { return kind == "duel"; }
     bool is_deliver() const { return kind == "deliver"; }
@@ -861,6 +878,9 @@ struct Quest {
     // lines they write.
     bool has_duel_spring() const { return is_duel() && !log_ambushed.empty(); }
     bool has_duel_cowed() const { return has_duel_spring() && !log_cowed.empty(); }
+    // A duel with the man's word before the blows (above): the taunt's forced dialogue, the
+    // role it speaks through, and the sprung token the brawl waits for.
+    bool has_duel_taunt() const { return has_duel_spring() && !duel_taunt.empty(); }
     // A deliver of a thing of the game's own rather than a letter (item_kind "thing"): the
     // parish chalice carried back to the priest.
     bool carries_thing() const { return is_deliver() && !item_class.empty() && item_kind == "thing"; }
@@ -905,7 +925,7 @@ struct Quest {
     bool carries_on() const { return (is_ask() || has_interrogation()) && !onward_soul.empty(); }
     // An ask whose telling arranges a meeting the one asked never comes to (above).
     bool has_fall() const {
-        return is_ask() && !carries_on() && !objective_arranged.empty() && !log_arranged.empty() &&
+        return is_ask() && !carries_on() && !objective_arranged.empty() && !log_told.empty() &&
                !log_completed_fallen.empty();
     }
     // The plea: a deliver's word carried back to the receiver (above).
@@ -962,6 +982,10 @@ struct Quest {
     // journal's, all written, on an exposure.
     bool has_follow() const {
         return has_expose() && !holder_followed.empty() && !holder_followed_reply.empty() && !log_followed.empty();
+    }
+    // A retrieve's holder with his first excuse cut to Henry's look (above).
+    bool has_look() const {
+        return is_retrieve() && has_holder() && (!holder_refuse_fop.empty() || !holder_refuse_soldier.empty());
     }
     bool any_follow() const {
         return !holder_followed.empty() || !holder_followed_reply.empty() || !log_followed.empty();

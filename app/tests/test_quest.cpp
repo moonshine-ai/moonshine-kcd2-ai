@@ -1845,8 +1845,12 @@ TEST_CASE("a beat's holder wed to the one he went to (wed_soul): on the road fro
     QuestFacts road = at("handed");
     QuestFacts wed = at("handed");
     wed.wed = true;
-    QuestFacts told = wed;
-    told.done = true;
+    // The giver told: the store keeps the furthest stage only, so done, not handed, with
+    // the way he gave in (bugs.txt 22 Nov 2026: read as no handover, so his done letter
+    // was picked over the wedding and he asked after Sedletz).
+    QuestFacts told = at("done");
+    told.wed = true;
+    told.how = "persuaded";
 
     // Open: nothing of it yet, on either side.
     CHECK(plan_quest(his, at("accepted"), {}).block.find("Since then") == std::string::npos);
@@ -1914,9 +1918,27 @@ TEST_CASE("a beat's holder wed to the one he went to (wed_soul): on the road fro
     CHECK(her_written.greeting == hers.greet_wed);
     CHECK(her_written.rows[0].text == hers.wed_more);
     CHECK(her_written.rows[0].reply == hers.wed_more_reply);
-    // The giver told as well: the same on both sides.
+    // The giver told as well: the same on both sides, whichever way he gave in, and before
+    // the wedding is reckoned he is still on the road.
+    CHECK(wed_party(his, told));
     CHECK(plan_quest(his, told, {}).greeting == his.greet_wed_target);
     CHECK(plan_quest(hers, told, {}).rows.size() == 1);
+    for (const char* how : {"", "threatened", "paid"}) {
+        QuestFacts way = told;
+        way.how = how;
+        CHECK(wed_party(his, way));
+    }
+    QuestFacts told_road = at("done");
+    told_road.how = "persuaded";
+    CHECK(plan_quest(his, told_road, {}).greeting == his.greet_gone_target);
+    CHECK(plan_quest(his, told_road, {}).closes);
+    // Given up to the giver, or knocked down and reported: no wedding.
+    QuestFacts given_up = told;
+    given_up.how = "abandoned";
+    CHECK_FALSE(wed_party(his, given_up));
+    QuestFacts fought = told;
+    fought.beaten = true;
+    CHECK_FALSE(wed_party(his, fought));
     // As an aside, when the visit turns on another errand: the road, then the line in full.
     CHECK(quest_aside(his, road, {his}, {road}).find("on your way to Ellen this minute") != std::string::npos);
     CHECK(quest_aside(hers, road, {hers}, {road}).find("Anthony has come to you today") != std::string::npos);
@@ -1931,6 +1953,10 @@ TEST_CASE("a beat's holder wed to the one he went to (wed_soul): on the road fro
     CHECK(pick_quest({axe, his}, {at("accepted"), road}) == 1);
     CHECK(pick_quest({axe, his}, {at("accepted"), wed}) == 1);
     CHECK(pick_quest({axe, his}, {at("done"), wed}) == 1);
+    // The giver told, both favours done: the wedding, not his done letter (bugs.txt 22 Nov
+    // 2026: "You're back from Sedletz, I see").
+    CHECK(pick_quest({axe, his}, {at("done"), told}) == 1);
+    CHECK(pick_quest({axe, his}, {at("done"), told_road}) == 1);
     CHECK(pick_quest({axe, hers}, {at("done"), road}) == 1);
     CHECK(pick_quest({axe, hers}, {at("done"), wed}) == 1);
     CHECK(pick_quest({hers, axe}, {at("accepted"), QuestFacts{}}) == 1);
@@ -2413,6 +2439,55 @@ TEST_CASE("an ask wants the truth got out of somebody, and pays on Henry's word 
     CHECK(quest_aside(knows, at("handed"), {knows}, {at("handed")}).find("on Hugo's account") != std::string::npos);
     CHECK(quest_aside(quest, at("accepted"), {quest}, {at("accepted")}).find("truth of a matter out of William") != std::string::npos);
     CHECK(quest_aside(quest, at("none"), {quest}, {at("none")}).empty());
+}
+
+TEST_CASE("an ask with a fall: the yes is the morning arranged, with no telling row; the giver sends Henry back until it, and breaks the news after") {
+    // In the Stocks' witness (bugs.txt 20 and 22 Nov 2026): Benesh's yes carries the
+    // condition Henry comes along, and the mod's handover arranges the morning itself.
+    Quest quest = hugos_doubt();
+    quest.greet_arranged = "Not yet. Come back tomorrow once it's light, and the three of us go together.";
+    quest.greet_fallen = "You. Come here. ... Benesh is dead.";
+    quest.fallen = "A fall. And the watch believe that?";
+    quest.fallen_reply = "The watch believe what is cheapest to believe. Go carefully, and go now.";
+    CHECK(quest.has_fall());
+    Quest without = quest;
+    without.greet_arranged.clear();
+    CHECK_FALSE(without.has_fall());
+
+    // Handed (the yes at the one asked), the morning not come: no telling, no lie, nothing to
+    // pay; the giver's opening sends Henry back for the morning.
+    for (const bool arranged : {false, true}) {
+        QuestFacts handed = at("handed");
+        handed.arranged = arranged;
+        QuestPlan early = plan_quest(quest, handed, {});
+        for (const auto& row : early.rows) CHECK(row.intent == "give_up");
+        CHECK(early.question.empty());
+        CHECK(early.greeting == quest.greet_arranged);
+        CHECK(early.block.find("come back tomorrow in daylight") != std::string::npos);
+        CHECK(early.block.find("do not pay yet") != std::string::npos);
+    }
+    // Before the yes, the ask's own waiting rows stand.
+    CHECK(plan_quest(quest, at("accepted"), {}).rows.size() == 2);
+
+    // Fallen: the news opens the talk, and Henry's one row closes the errand unpaid.
+    QuestFacts fallen = at("handed");
+    fallen.arranged = fallen.fallen = fallen.dead = true;
+    QuestPlan news = plan_quest(quest, fallen, {});
+    CHECK(news.greeting == quest.greet_fallen);
+    REQUIRE(!news.rows.empty());
+    CHECK(news.rows[0].intent == "fallen");
+    CHECK(news.rows[0].text == quest.fallen);
+    CHECK(news.rows[0].reply == quest.fallen_reply);
+    CHECK(news.rows[0].command == kQuestComplete);
+
+    // Done that way: settled, and not gone over again.
+    QuestFacts done = at("done");
+    done.how = "fallen";
+    done.fallen = done.dead = true;
+    QuestPlan after = plan_quest(quest, done, {});
+    CHECK(after.rows.empty());
+    CHECK(after.greeting.empty());
+    CHECK(after.block.find("do not go over it again") != std::string::npos);
 }
 
 TEST_CASE("an ambush is an ask whose drinker sends Henry wrong first; the giver's rows are the ask's") {

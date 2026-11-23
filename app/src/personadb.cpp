@@ -1004,7 +1004,7 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 "'offer_2', 'agreed', 'more', 'more_reply', 'opener', 'accept', "
                 "'onward_soul', 'onward_name', 'greet_onward', 'keepsake_name', 'thanks_keepsake', 'thanks_exposed', "
                 "'plea_yes', 'plea_yes_reply', 'plea_no', 'plea_no_reply', 'plea_threat', 'plea_threat_reply', "
-                "'beg', 'spare', 'spare_reply', 'arrange_reply', 'greet_arranged', 'greet_fallen', 'fallen', 'fallen_reply', "
+                "'beg', 'spare', 'spare_reply', 'greet_arranged', 'greet_fallen', 'fallen', 'fallen_reply', "
                 "'item_kind', 'give', 'give_exposed', 'lie_have', 'lie_have_reply', 'lie_have_caught', 'more_2', 'more_2_reply', "
                 "'told_truth', 'told_pinned', 'told_covered', 'told_fibbed', 'told_evaded', 'told_caught', "
                 "'told_reply_truth', 'told_reply_pinned', 'told_reply_covered', 'told_reply_fibbed', 'told_reply_evaded', "
@@ -1058,7 +1058,6 @@ std::optional<Soul> PersonaDb::find(std::string_view soul) const {
                 {"beg", &Quest::beg},
                 {"spare", &Quest::spare},
                 {"spare_reply", &Quest::spare_reply},
-                {"arrange_reply", &Quest::arrange_reply},
                 {"greet_arranged", &Quest::greet_arranged},
                 {"greet_fallen", &Quest::greet_fallen},
                 {"fallen", &Quest::fallen},

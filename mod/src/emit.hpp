@@ -70,6 +70,10 @@ std::string token_class(const Quest& quest);
 // A duel's second token: the man cowed (emit_leg's cowed trigger; WatchDuel).
 std::string cowed_class(const Quest& quest);
 std::string cowed_name(const Quest& quest);
+// A duel's third, where the man has a taunt: the men made and the brawl to begin
+// (emit_leg's sprung trigger, emit_brawl's start; DuelLoose).
+std::string sprung_class(const Quest& quest);
+std::string sprung_name(const Quest& quest);
 std::string token_name(const Quest& quest);
 // A chest's second token: made when the thing has left the chest for Henry's pocket
 // (WatchChest), for the trigger that completes the fetch objective (taken_q_<id>).
@@ -129,6 +133,16 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
 // game itself forces a dialogue.
 std::string followed_node(const std::string& quest_id);
 std::string emit_followed_dialogue(const std::string& modid, const Quest& quest);
+// A duel's taunt, the same shape (npcdb.hpp duel_taunt): the man's word as Henry lands,
+// forced on him by the graph off the spring token, its ExitScript handing the Lua the
+// moment to make the men and loose the brawl (DuelTaunted). Spoken through the duel's own
+// role (taunt_role), granted to the man as the holder role is to a holder.
+std::string taunt_node(const std::string& quest_id);
+std::string taunt_role(const std::string& quest_id);
+std::string taunt_metarole(const std::string& quest_id);
+std::string emit_taunt_dialogue(const std::string& modid, const Quest& quest);
+// Its text rows (taunt, taunt_reply), for the localization pak.
+std::vector<std::pair<std::string, std::string>> taunt_localization(const std::string& modid, const Quest& quest);
 
 // One beat of the dialogue graph that exists to fire a quest port. The app decides
 // when -- it writes "@quest <id> <command>" ahead of a turn's words -- and the Lua
@@ -170,12 +184,14 @@ std::string return_objective(const Quest& quest);
 // the `onward` port when the giver has been told and has sent Henry on, with the marker on
 // the one sent to, and done with the quest. Its line is the generator's objective_onward.
 constexpr const char* kOnwardObjective = "tell_onward";
-// The objective an ask with a fall (Quest::has_fall) opens on the `arrange` port -- the
-// giver told, the morning's meeting arranged -- with the marker on the giver, and done with
-// the quest. Its line is the writer's objective_arranged; its Started log, log_arranged.
+// The objective an ask with a fall (Quest::has_fall) opens on the holder's handover -- the
+// yes with its condition is the morning's meeting arranged (bugs.txt 22 Nov 2026) -- with
+// the marker on the giver, in place of a return, and done with the quest. Its line is the
+// writer's objective_arranged; it has no Started log of its own (the fetch's log_told is
+// the journal's word).
 constexpr const char* kArrangedObjective = "meet_giver";
-// The hour of the game's day the one asked falls at, the morning after the arrangement
-// (WatchAsk; the next such hour at least an hour off).
+// The hour of the game's day the one asked falls at: this hour of the calendar day after
+// the yes (StateQuest handover; WatchAsk), so the meeting is never the same day's.
 constexpr int kFallHour = 6;
 // The onward soul's own dialogue: the one `hand` sequence of a word deliver's menu, under
 // a role of its own (onward_role) so only they offer it, as q_<id>_onward.xml beside the
@@ -875,6 +891,25 @@ constexpr const char* kDuelContexts[] = {
 constexpr double kDuelBehindMetres = 3.0;
 constexpr const char* kDuelSwordPreset = "b966514a-966a-4b1c-b870-755abd25bd32";
 constexpr double kDuelSweepMetres = 80.0;
+// A duel with a taunt (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) makes the men and
+// begins the brawl at the taunt dialogue's end (DuelTaunted), or this long after the
+// landing when the dialogue has not played (WatchDuel): a forced dialogue the game will
+// not open leaves the yard quiet otherwise. Long enough for the camera and two lines.
+constexpr int kDuelTauntSeconds = 20;
+// Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look; bugs.txt
+// 22 Nov 2026): a fop when his relative charisma (rch, 0..1) is at or above the first and
+// he does not look dangerous; a soldier when the game's reading of how dangerous he looks
+// (bad, 0..1: the armour and the arms on him) is at or above the second, or his weapon is
+// drawn. Read on the Windows laptop (mods/kcd2/README.md): bad 0.70 to 1.0 across four
+// outfits of a late save, rch 0.31 stripped to 1.0 dressed; the WatchLook log line carries
+// both readings for tuning these.
+constexpr double kLookFopCharisma = 0.7;
+constexpr double kLookSoldierDread = 0.85;
+// How long after the men are made WatchDuel waits before one it cannot find, or finds
+// down, counts as beaten: a fresh spawn answers IsUnconscious before it stands (the 22 Nov
+// run cowed the man eight seconds in with both his friends on their feet), and a man
+// never seen standing is not a man beaten.
+constexpr int kDuelStandSeconds = 15;
 // A pray is prayed when the player soul's praying context -- the game's own "Player
 // praying" script context, set while Henry kneels at a shrine and cleared when the prayer
 // ends (measured on the Windows laptop: false, true 8.6 s after the shrine's Pray prompt is used, false

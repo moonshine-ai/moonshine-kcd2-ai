@@ -4642,6 +4642,49 @@ case("Chest: the sheet of names in Henry's pocket is the letter j, and closing i
     -- the sheet's own clause is spent, which the second token not being seen shows.)
 end)
 
+-- The holder's first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026):
+-- In the Stocks' Paul mocks a fop and a soldier boy. The look global his doors read is set
+-- from Henry's charisma and how dangerous he looks (and whether his weapon is out), kept
+-- fresh by the watch and written once per change, with the readings in the log.
+case("Look: the holder's door reads Henry's look -- a fop well dressed and harmless, a soldier boy armed to the eyes or with his sword out, nobody in particular otherwise -- kept fresh by the watch, once per change", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    check(q and q.lookVar ~= nil, "In the Stocks' Paul has his excuses cut to Henry's look")
+    if q == nil or q.lookVar == nil then return end
+    local plain = player.soul.stats.rch
+    player.soul.stats.rch, player.soul.stats.bad = 0.5, 0.3
+    M.npc = E.soul(q.giver)
+    local mark = E.mark()
+    M.QuestCommand(id, "accept")
+    check(E.globals[q.lookVar] == 0, "nobody in particular at the accept (rch=0.5 bad=0.3)")
+    check(E.count("Henry looks nobody in particular", mark) == 1, "said once, with the readings")
+    E.advance(2100)
+    check(E.count("Henry looks", mark) == 1, "and not again for the same look")
+    player.soul.stats.rch = M.lookFopCharisma
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 1, "well dressed and harmless: a fop")
+    check(E.count("Henry looks a fop", mark) == 1, "said once")
+    player.soul.stats.bad = M.lookSoldierDread
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 2, "dangerous to look at, however well dressed: a soldier boy")
+    player.soul.stats.bad = 0.3
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 1, "the armour off, a fop again")
+    local drawn = player.human.IsWeaponDrawn
+    function player.human:IsWeaponDrawn() return true end
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 2, "his sword out makes a soldier boy of any dress")
+    player.human.IsWeaponDrawn = drawn
+    player.soul.stats.rch = 0.5
+    E.advance(2100)
+    check(E.globals[q.lookVar] == 0, "sheathed and plainly dressed: nobody in particular")
+    check(E.count("Henry looks", mark) == 6, "one line per change")
+    -- A world arriving (QuestFlags) writes the global afresh from the look of the moment.
+    E.globals[q.lookVar] = 7
+    M.QuestFlags()
+    check(E.globals[q.lookVar] == 0, "the flags' sync writes the look over")
+    player.soul.stats.rch, player.soul.stats.bad = plain, 0
+end)
+
 -- A retrieve whose unyielding holder can be caught where he should not be at night (Words
 -- Must Not Fail's Proof Against Her): the one with seenWith, in id order. The harness has
 -- no level, so the witness's bed (bedPos, the anchor of the door and the street's "at her
@@ -5664,14 +5707,29 @@ end)
 -- A duel (npcdb.hpp kind "duel"; In the Stocks, bugs.txt 20 Nov 2026): the man's carry is
 -- to the fight. Henry lands on the spot with the clock untouched, the man is set down facing
 -- him a few paces off, and the souls of brawl_with are made armed at Henry's back; the
--- spring is the store's m and the written token for the graph. His friends down is the
--- cowed token and the letter Y, their bodies taken away; the spare row hands Henry the
--- man's purse and takes him out of the world; the man dead instead is the `dead` way.
-case("Duel: the carry is to the fight -- no clock wound, the man set down facing Henry, his friends made armed behind him, the spring token; friends down is the cowed token and the letter Y; spared hands over his purse and he is gone; killed is the dead way", function(E, M, check)
+-- spring is the store's m and the written token for the graph. With a taunt written
+-- (bugs.txt 22 Nov 2026) the men wait on the man's say: the spring token brings up his
+-- forced dialogue, and its end (DuelTaunted) is when they are made and the sprung token
+-- sent for the graph's brawl. His friends down is the cowed token and the letter Y, their
+-- bodies taken away; the spare row hands Henry the man's purse and takes him out of the
+-- world; the man dead instead is the `dead` way.
+case("Duel: the carry is to the fight -- no clock wound, the man set down facing Henry, his friends made armed behind him (after his say, where a taunt is written), the spring token; friends down is the cowed token and the letter Y; spared hands over his purse and he is gone; killed is the dead way", function(E, M, check)
     local id, q = byKind(M, "duel")
     if id == nil then check(true, "no duel in this data"); return end
     check(q.fastTravel ~= nil and q.fastTravel.at < 0 and q.fastTravel.holder ~= nil, "the yard and the man's spot in the table, no hour")
     check(type(q.spawn) == "table" and #q.spawn == 2 and q.token ~= nil and q.cowedToken ~= nil, "two souls to make and both tokens")
+    local taunted = q.sprungToken ~= nil
+    check(taunted == (q.tauntMeta ~= nil), "a taunt's role and sprung token come together")
+    -- The men loosed: at once, or at the taunt's end where one is written.
+    local function loose(mark)
+        if not taunted then return end
+        local f = M.state.quests[id]
+        check(f.ambushed == true and #(f.spawned or {}) == 0 and E.find("has his say first", mark), "with a taunt written, nobody made as Henry lands: the men wait on his say")
+        check(M.state.quests[id].cowed ~= true, "and nothing to cow him with yet")
+        M.DuelTaunted(id)
+        f = M.state.quests[id]
+        check(f.loosed == true and E.find("loosed on the taunt", mark), "his say said: the men loosed")
+    end
     local ft, spot = q.fastTravel, q.fastTravel.holder
     local man = E.soul(q.giver)
     M.npc = man
@@ -5694,10 +5752,12 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     local d = man:GetDirectionVector()
     check(math.abs(d.x - (ft.x - spot.x) / gap) < 0.01 and math.abs(d.y - (ft.y - spot.y) / gap) < 0.01, "facing the landing")
     check(player.view ~= nil, "Henry's view turned to him")
+    check(M.Count(player, q.token) == 1, "the spring token for the graph")
+    loose(mark)
     local f = M.state.quests[id]
     check(f.ambushed == true and type(f.spawned) == "table" and #f.spawned == 2, "the spring in the store, two made")
     check(string.find(M.QuestFlagLetters(f), "m", 1, true) ~= nil, "the letter m")
-    check(M.Count(player, q.token) == 1, "the spring token for the graph")
+    if taunted then check(M.Count(player, q.sprungToken) == 1, "the sprung token for the graph's brawl") end
     local made = {}
     for k, name in ipairs(f.spawned) do
         local e = System.GetEntityByName(name)
@@ -5712,13 +5772,15 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         end
     end
     check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " set down at", mark) and E.count("made at", mark) == 2, "said in the log")
-    E.advance(1100)
-    check(M.Count(player, q.token) == 0, "the token gone a moment later")
+    E.advance(1600)
+    check(M.Count(player, q.token) == 0 and (not taunted or M.Count(player, q.sprungToken) == 0), "the tokens gone a moment later")
+    local landMark = mark
     -- A second carry does not spring it twice.
     mark = E.mark()
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
     check(#M.state.quests[id].spawned == 2 and E.find("duel already sprung", mark), "not sprung twice")
+    check(not taunted or E.count("found by id, standing", landMark) >= 2, "the made men looked up by their ids and seen standing")
     -- One friend down: the man still fights. Both down: cowed, the token, the letter Y, the
     -- unconscious one taken away and the dead one left lying.
     made[1].down = true
@@ -5752,9 +5814,11 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     man.alive = true
     man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
     E.hour = 21
+    mark = E.mark()
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
     check(M.state.quests[id].ambushed == true, "sprung again")
+    loose(mark)
     before = player.inventory:GetMoney()
     man.alive = false
     E.advance(2100)
@@ -5776,6 +5840,7 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     mark = E.mark()
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
+    loose(mark)
     System.SpawnEntity = spawn
     f = M.state.quests[id]
     check(f.ambushed == true and #(f.spawned or {}) == 0 and E.count("could not be made", mark) == 2, "sprung with nobody made, said in the log")
@@ -5787,6 +5852,40 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     f = M.state.quests[id]
     check(f.cowed == true and E.find("fought alone and is down; he is cowed", mark), "his own knock-out cows him")
     man.down = nil
+    if not taunted then return end
+    -- The taunt that never plays (a forced dialogue the game will not open): the watch
+    -- looses the men itself after duelTauntSeconds. And a man never seen on his feet is not
+    -- counted down inside duelStandSeconds of the loosing -- the 22 Nov run cowed the man
+    -- eight seconds in with both friends standing -- but is once the grace is out.
+    M.state.quests[id] = { accepted = true }
+    M.duelGoneDone[id] = nil
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    for k = 1, 2 do
+        local e = System.GetEntityByName("mn_duel_" .. id .. "_" .. k)
+        if e ~= nil then System.RemoveEntity(e.id) end
+    end
+    mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    E.advance((M.duelTauntSeconds - 5) * 1000)
+    f = M.state.quests[id]
+    check(f.ambushed == true and f.loosed ~= true and #(f.spawned or {}) == 0, "no say and no men yet, " .. (M.duelTauntSeconds - 5) .. " s in")
+    -- Stepped finely, so the men can be put down before the watch has seen them standing.
+    for _ = 1, 16 do
+        E.advance(500)
+        if M.state.quests[id].loosed then break end
+    end
+    f = M.state.quests[id]
+    check(f.loosed == true and #f.spawned == 2 and E.find("say never came; the men are loosed anyway", mark) and E.find("loosed on the watch with 2 made", mark),
+          "the watch looses them " .. M.duelTauntSeconds .. " s in, said in the log")
+    for _, name in ipairs(f.spawned) do
+        local e = System.GetEntityByName(name)
+        if e ~= nil then e.down = true end
+    end
+    E.advance(2100)
+    check(M.state.quests[id].cowed ~= true, "both down before either was seen standing: not cowed inside the grace")
+    E.advance((M.duelStandSeconds + 1) * 1000)
+    check(M.state.quests[id].cowed == true, "and cowed once the grace is out")
 end)
 
 -- bugs.txt 21 Nov 2026: the duel's carry asked before dark (fast_travel_wait): the clock is
@@ -5819,25 +5918,36 @@ case("Carried: fast_travel_wait winds the clock on to the window's start when it
     E.hour = was
 end)
 
-case("Fall: the telling arranges the morning (the letter A, nothing paid, the clock set to the next fall hour); at the hour the one asked is gone from the world and the store says fallen (F, x, how fallen); the giver's complete pays nothing and is the fallen beat; he is kept gone after a load", function(E, M, check)
+case("Fall: the yes arranges the morning itself (the letter A, nothing paid, the clock set to the fall hour of the next day, no telling beat); at the hour the one asked is gone from the world and the store says fallen (F, x, how fallen); the giver's complete pays nothing and is the fallen beat; he is kept gone after a load", function(E, M, check)
     local id, q = byKind(M, "ask", { fall = true })
     if id == nil then check(true, "no ask with a fall in this data"); return end
-    check(q.fallHour == 6 and M.questCodes[id .. " arrange"] ~= nil and M.questCodes[id .. " complete_fallen"] ~= nil,
-          "the fall hour in the table, and the arrange and fallen beats")
+    check(q.fallHour == 6 and M.questCodes[id .. " arrange"] == nil and M.questCodes[id .. " complete_fallen"] ~= nil,
+          "the fall hour in the table, the fallen beat, and no arrange beat (bugs.txt 22 Nov 2026: no telling leg)")
     local man = E.soul(q.target, { pos = { x = 50, y = 50, z = 10 } })
     local giver = E.soul(q.giver)
     M.npc = giver
     M.QuestCommand(id, "accept")
-    M.StateQuest(id, "handover")
     E.hour = 21
     local before = player.inventory:GetMoney()
     local mark = E.mark()
-    M.QuestCommand(id, "arrange")
+    -- The yes at the one asked (the holder's persuade row): arranged on the spot.
+    M.QuestHolderGave(id, "persuade")
     local f = M.state.quests[id]
-    check(f.arranged == true and not f.done and string.find(M.QuestFlagLetters(f), "A", 1, true) ~= nil, "arranged, open, the letter A")
+    check(f.handed == true and f.arranged == true and not f.done and string.find(M.QuestFlagLetters(f), "A", 1, true) ~= nil, "handed and arranged at the yes, open, the letter A")
     check(player.inventory:GetMoney() == before, "nothing paid at the arrangement")
     check(math.abs(f.fallAt - (E.worldTime() + 9 * 3600)) < 1, "the fall set for six the next morning: " .. tostring((f.fallAt - E.worldTime()) / 3600) .. "h ahead")
-    check(E.find("the morning's meeting arranged; nothing paid yet", mark), "said in the log")
+    check(E.find("the morning's meeting arranged at the yes; nothing paid yet", mark), "said in the log")
+    -- A yes in the small hours is still the next day's morning, not this one's.
+    do
+        local was = M.state.quests[id]
+        M.state.quests[id] = { accepted = true }
+        E.hour = 2
+        M.StateQuest(id, "handover")
+        local g2 = M.state.quests[id]
+        check(math.abs(g2.fallAt - (E.worldTime() + 28 * 3600)) < 1, "a yes at two in the morning falls at six the day after: " .. tostring((g2.fallAt - E.worldTime()) / 3600) .. "h ahead")
+        M.state.quests[id] = was
+        E.hour = 21
+    end
     -- The watch looks, and the man stands while the night lasts.
     E.advance(2100)
     check(M.state.quests[id].fallen ~= true and man:GetWorldPos().z > -500, "still standing in the night")
