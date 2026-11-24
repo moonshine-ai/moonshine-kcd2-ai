@@ -731,6 +731,14 @@ constexpr double kFollowLookLostMetres = 60.0;
 // left where he stands, and Henry turned to him there.
 constexpr double kCarryHolderStrayMetres = 30.0;
 constexpr int kCarryHolderChecks = 5;
+// And the carry itself waits this long after the clock is wound before anyone is set
+// down (FastTravelGo; bugs.txt 23 Nov 2026, the yard): the engine re-places every soul
+// for the skipped hours a moment after the time is set, and a man set down in the same
+// tick is taken off his spot by it -- Paul read 47 m from his in two seconds, and the
+// forced dialogue enqueued over him played with no model in view. Set down after the
+// re-placing, he stands where he is put until his own feet move him. A carry that winds
+// nothing (a duel in its hours) goes at once.
+constexpr int kCarryWoundSettleMs = 3000;
 // A beggar's thanks for a garment, barked in his stand-in voice once the game's item
 // selection has given it to him (AlmsDress): the conversation closed on the row that
 // offered it, so the app is not there to say the line, and the Lua says it instead.

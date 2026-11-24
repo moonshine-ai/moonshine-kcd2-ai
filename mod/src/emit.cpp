@@ -6022,10 +6022,12 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
         if (quest.has_door_duel()) {
             // The duel at the door (npcdb.hpp duel_quest_id; bugs.txt 23 Nov 2026): the
             // threat is the refusal it was -- the `rebuffed` port and QuestRebuffed on the
-            // row's exit, so the retrieve goes on to the chest -- and then the holder,
-            // having mocked Henry, offers the duel, and the nested decision is Henry's yes
-            // (the Lua's QuestDoorDuel: the duel quest accepted on the spot, its door token
-            // for its graph) or no. Each ends the talk. Offered every time, as the plain
+            // row's exit, so the retrieve goes on to the chest -- but the holder's answer
+            // is `duel_offer` alone, one screen that mocks the threat and offers the yard
+            // (not `threaten_no` and then the offer: he showed Henry the door and called
+            // him back in the next breath), and the nested decision is Henry's yes (the
+            // Lua's QuestDoorDuel: the duel quest accepted on the spot, its door token for
+            // its graph) or no. Each ends the talk. Offered every time, as the plain
             // refusal is; once the duel is taken up, its row is the refusal alone again.
             const std::string open_when = "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "duel_open")) + "')==1";
             s += t(9) + "<Sequence EntryCondition=\"" + open_when + "\" EndType=\"Decision\" Name=\"threaten\" ExitScript=\"Moonshine.QuestRebuffed('" +
@@ -6034,7 +6036,6 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"rebuffed\" />\r\n" + t(10) + "</Triggers>\r\n";
             s += t(10) + "<Elements>\r\n";
             s += line(11, "HENRY", "threaten", quest.holder_threaten);
-            s += line(11, role, "threaten_no", quest.holder_threaten_no);
             s += line(11, role, "duel_offer", quest.holder_duel_offer);
             s += t(10) + "</Elements>\r\n";
             s += t(10) + "<Decision Name=\"threaten_duel\" Priority=\"General\">\r\n";
@@ -12536,6 +12537,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // could (kCarryHolderStrayMetres): the clock has just been wound nine hours.
     s += g + ".carryHolderStrayMetres = " + health_text(kCarryHolderStrayMetres) + "\n";
     s += g + ".carryHolderChecks = " + std::to_string(kCarryHolderChecks) + "\n";
+    s += g + ".carryWoundSettleMs = " + std::to_string(kCarryWoundSettleMs) + "\n";
     s += "function " + g + ".FaceFrom(me, from, p)\n";
     s += "\tlocal dx, dy = p.x - from.x, p.y - from.y\n";
     s += "\tif dx * dx + dy * dy < 0.01 then return end\n";
@@ -12622,6 +12624,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tahead = (at - hour) % 24\n";
     s += "\t\t\tif ahead > 0.01 then pcall(function() Calendar.SetWorldTime(now + ahead * 3600) end) end\n";
     s += "\t\tend\n";
+    // The clock wound, the setting down waits for the engine's re-placing of every soul
+    // for the skipped hours (kCarryWoundSettleMs; bugs.txt 23 Nov 2026): a man set down in
+    // the same tick was taken 47 m off his spot by it. Nothing wound, nothing waited.
+    s += "\t\tlocal function land()\n";
     s += "\t\tpcall(function()\n";
     s += "\t\t\tlocal ground = System.GetTerrainElevation(to.x, to.y)\n";
     s += "\t\t\tif type(ground) == \"number\" and ground > to.z and ground - to.z <= 5 then to.z = ground end\n";
@@ -12648,6 +12654,13 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\t\tahead ~= nil and string.format(\"%.1fh\", ahead) or \"no hours\",\n";
     s += "\t\t\t\ttype(read) == \"number\" and string.format(\"%.2f\", read) or \"nil\"))\n";
     s += "\t\tend) end)\n";
+    s += "\t\tend\n";
+    s += "\t\tif ahead ~= nil and ahead > 0.01 then\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s clock wound %.1fh; the carry follows once the souls are re-placed\", id, ahead))\n";
+    s += "\t\t\tpcall(function() Script.SetTimer(" + g + ".carryWoundSettleMs, land) end)\n";
+    s += "\t\telse\n";
+    s += "\t\t\tland()\n";
+    s += "\t\tend\n";
     s += "\tend\n";
     s += "\tlocal mounted = false\n";
     s += "\tpcall(function() mounted = me.human:IsMounted() end)\n";
@@ -12739,11 +12752,21 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\n";
     // The say asked for (the spring token, which the graph's trigger turns into the forced
     // dialogue), the man first put back on his spot, and the taunt's count started from here.
-    s += "function " + g + ".DuelSay(id)\n";
+    // Should the hold have had to move him, the token waits a second more (a few times at
+    // most) rather than go in the same tick as the SetWorldPos: the 19:23 run on 23 Nov
+    // put him back from 47 m and asked in one tick, and the dialogue's stand-ins and
+    // camera were set up where he had been, not where he stood.
+    s += "function " + g + ".DuelSay(id, tries)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif q == nil or not f.ambushed or f.loosed or f.done or f.cowed then return end\n";
-    s += "\tlocal off = " + g + ".DuelHold(id, q)\n";
+    s += "\tlocal off, moved = " + g + ".DuelHold(id, q)\n";
+    s += "\ttries = tries or 0\n";
+    s += "\tif moved and tries < 3 then\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's say waits a second for the put-back to take\", id, q.target))\n";
+    s += "\t\tpcall(function() Script.SetTimer(1000, function() " + g + ".DuelSay(id, tries + 1) end) end)\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
     s += "\t" + g + ".duelLandedAt[id] = " + g + ".Now()\n";
     s += "\t" + g + ".Token(q)\n";
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's say asked for%s\", id, q.target,\n";
@@ -12755,7 +12778,8 @@ std::string emit_conversation_lua(const std::string& modid,
     // the engine takes a soul mid-routine back as FastTravelHolder's checks found). Each
     // tick of the wait he is measured from the spot and put back on it, facing the landing,
     // when he has gone more than a few paces from it (kDuelHoldMetres; the 23 Nov run had
-    // him 28 m off and out of sight); back: how far off he was read, for the watch's log.
+    // him 28 m off and out of sight); back: how far off he was read, for the watch's log,
+    // and whether he was moved.
     s += "function " + g + ".DuelHold(id, q)\n";
     s += "\tlocal ft = q.fastTravel\n";
     s += "\tif ft == nil or ft.holder == nil or q.target == nil then return nil end\n";
@@ -12765,7 +12789,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal spot = ft.holder\n";
     s += "\tlocal tp = e:GetWorldPos()\n";
     s += "\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
-    s += "\tif off <= " + g + ".duelHoldMetres then return off end\n";
+    s += "\tif off <= " + g + ".duelHoldMetres then return off, false end\n";
     s += "\tlocal me = " + g + ".Player()\n";
     s += "\tlocal to = { x = ft.x, y = ft.y, z = ft.z }\n";
     s += "\tif me ~= nil and me.GetWorldPos ~= nil then to = me:GetWorldPos() end\n";
@@ -12774,7 +12798,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
     s += "\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s put back on his spot from %.0fm off%s\", id, q.target, off, ok and \"\" or \", SetWorldPos raised\"))\n";
-    s += "\treturn off\n";
+    s += "\treturn off, true\n";
     s += "end\n";
     s += "\n";
     // The taunt's end (emit_taunt_dialogue's ExitScript): the men made and loosed.
@@ -12901,9 +12925,15 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif q.sprungToken == nil then return end\n";
     s += "\t\tlocal landed = " + g + ".duelLandedAt[id]\n";
     s += "\t\tif landed == nil then " + g + ".duelLandedAt[id] = now return end\n";
-    // While the say plays the game has him; the watch neither moves him nor counts it down.
-    s += "\t\tif " + g + ".InDialog() then return end\n";
-    s += "\t\tlocal off = " + g + ".DuelHold(id, q)\n";
+    // While the say plays the watch does not count it down -- but it still holds him (the
+    // stand-ins are what is drawn; the man himself is kept on his spot for the fight that
+    // follows) and says each tick where he reads, so the next log can be followed.
+    s += "\t\tlocal off, moved = " + g + ".DuelHold(id, q)\n";
+    s += "\t\tif " + g + ".InDialog() then\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: say playing %.0fs, %s %s\", id, now - landed, q.target,\n";
+    s += "\t\t\t\toff == nil and \"not loaded\" or moved and string.format(\"read %.1fm from his spot and put back\", off) or string.format(\"reads %.1fm from his spot\", off)))\n";
+    s += "\t\t\treturn\n";
+    s += "\t\tend\n";
     s += "\t\tif now - landed < " + g + ".duelTauntSeconds then return end\n";
     s += "\t\tlocal me = " + g + ".Player()\n";
     s += "\t\tif me == nil then return end\n";

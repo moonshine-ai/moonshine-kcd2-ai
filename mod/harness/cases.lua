@@ -5657,14 +5657,20 @@ case("Carried: the fast_travel directive waits for the Talk to close, then winds
     local pp = player:GetWorldPos()
     check(pp.x == 100 and pp.y == 100, "Henry where he was")
     check(E.hour == 12, "the clock untouched")
-    -- The Talk gone: within the second Henry is at the spot and the clock reads the hour.
+    -- The Talk gone: within the second the clock reads the hour; Henry is set down only
+    -- once the engine has re-placed the souls for the wound hours (bugs.txt 23 Nov 2026,
+    -- the yard: a man set down in the same tick was taken 47 m off his spot by it).
     E.dialog.open = false
     M.active = false
     E.advance(1100)
-    pp = player:GetWorldPos()
-    check(math.abs(pp.x - q.fastTravel.x) < 0.01 and math.abs(pp.y - q.fastTravel.y) < 0.01, "Henry at the spot")
-    check(#E.consoled == consoled, "and nothing typed at the console: SetWorldPos, with or without devmode")
     check(math.abs(E.hour - q.fastTravel.at) < 0.01, "the clock wound on to the hour: " .. tostring(E.hour))
+    pp = player:GetWorldPos()
+    check(pp.x == 100 and pp.y == 100, "Henry not yet moved while the wound clock settles")
+    check(E.find("clock wound", mark) and E.find("the carry follows once the souls are re-placed", mark), "and the wait said")
+    E.advance(M.carryWoundSettleMs + 100)
+    pp = player:GetWorldPos()
+    check(math.abs(pp.x - q.fastTravel.x) < 0.01 and math.abs(pp.y - q.fastTravel.y) < 0.01, "Henry at the spot once it has")
+    check(#E.consoled == consoled, "and nothing typed at the console: SetWorldPos, with or without devmode")
     E.advance(1100)
     check(E.find("BRIDGE quest " .. id .. " carried Henry to", mark) and E.find("0.0m off", mark), "and said so in the log, with how far off")
     check(M.state.quests[id].accepted == before and M.state.quests[id].done ~= true, "nothing in the store for it")
@@ -5675,6 +5681,15 @@ case("Carried: the fast_travel directive waits for the Talk to close, then winds
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
     check(math.abs(E.hour - q.fastTravel.at) < 0.01, "the hour the next day")
+    E.advance(M.carryWoundSettleMs + 100)
+    -- At the hour already: nothing wound, and nothing waited for.
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    pp = player:GetWorldPos()
+    check(math.abs(pp.x - q.fastTravel.x) < 0.01, "at the hour already, Henry set down within the second")
+    check(not E.find("clock wound", mark), "and no wait said")
     -- Mounted: dismounted first, and moved four seconds on.
     player:SetWorldPos({ x = 100, y = 100, z = 0 })
     E.mounted = true
@@ -5720,6 +5735,7 @@ case("Carried: the man to follow is set down in sight of the landing as Henry la
         local mark = E.mark()
         M.QuestCommand(id, "fast_travel")
         E.advance(100)
+        if E.hour ~= 12 then E.advance(M.carryWoundSettleMs + 100) end
         return mark
     end
     -- Far off: on the spot at once, turned away, and Henry looking at him.
@@ -5830,6 +5846,17 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         tp = man:GetWorldPos()
         check(math.abs(tp.x - (spot.x + 3)) < 0.01, "a few paces off is his own and left alone")
         check(not E.find("put back on his spot", holdMark), "nothing said of it")
+        -- Through the say itself (the dialogue open) he is held still, and the watch says
+        -- each tick where he reads, without counting the say down.
+        man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+        E.dialog.open = true
+        holdMark = E.mark()
+        E.advance(4100)
+        tp = man:GetWorldPos()
+        check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "held on his spot through the say as well")
+        check(E.find("duel: say playing", holdMark) and E.find("read 120.0m from his spot and put back", holdMark), "and where he reads said each tick of it")
+        check(#(M.state.quests[id].spawned or {}) == 0 and not E.find("say never came", holdMark), "the say not counted down while it plays")
+        E.dialog.open = false
         man:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z })
         M.DuelTaunted(id)
         f = M.state.quests[id]
@@ -5861,7 +5888,17 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         -- The say is asked for a moment after the landing, not in its tick (bugs.txt 23 Nov
         -- 2026: enqueued as the two were set down it played with no model in view).
         check(M.Count(player, q.token) == 0, "no spring token in the landing's tick: the say waits a moment")
-        E.advance(2000)
+        -- Taken off his spot in the meantime: put back, and the token a second later still,
+        -- never in the tick of the put-back (the 19:23 run: stand-ins where he had been).
+        local deferred = false
+        for _ = 1, 30 do
+            man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+            E.advance(100)
+            if E.find("say waits a second for the put-back to take", mark) then deferred = true break end
+        end
+        check(deferred and M.Count(player, q.token) == 0, "put back as the say is asked for: the token waits a second more")
+        check(E.find("put back on his spot from 120m off", mark), "and said")
+        E.advance(1100)
         check(M.Count(player, q.token) == 1, "the spring token a moment after, for the graph's forced dialogue")
         check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s say asked for, he stands 0.0m from his spot", mark), "and said, with him on his spot")
     else
@@ -6019,9 +6056,10 @@ case("Carried: fast_travel_wait winds the clock on to the window's start when it
     E.hour = 14
     M.QuestCommand(id, "fast_travel_wait")
     E.advance(1100)
-    local pp = player:GetWorldPos()
-    check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard")
     check(math.abs(E.hour - ft.from) < 0.01, "the clock wound to the window's start, got " .. tostring(E.hour))
+    E.advance(M.carryWoundSettleMs + 100)
+    local pp = player:GetWorldPos()
+    check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard, once the wound clock has settled")
     -- Inside the window the wait is a plain carry.
     M.state.quests[id] = { accepted = true }
     player:SetWorldPos({ x = 100, y = 100, z = 0 })
@@ -7143,7 +7181,7 @@ case("Door duel: the dark global follows the duel's hours at the holder's open, 
     M.QuestDoorDuel(id, duelId)
     check(M.state.quests[duelId] ~= nil and M.state.quests[duelId].accepted == true, "the duel taken up before the carry")
     M.QuestCommand(duelId, "fast_travel_wait", true)
-    E.advance(1100)
+    E.advance(1100 + M.carryWoundSettleMs)
     local pp = player:GetWorldPos()
     check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard from the holder's Talk")
     check(math.abs(E.hour - ft.from) < 0.01, "the clock wound to dark, got " .. tostring(E.hour))
