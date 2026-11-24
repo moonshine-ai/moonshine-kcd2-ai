@@ -5738,11 +5738,18 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     // carry to the yard, the wait for dark -- is the app's, on the giver's side of the
     // duel. He has said his piece at the door; the chalice goes on by the house-girl and
     // the chest. Fought, his door opens again as it was.
+    // And an unyielding holder's door shut once he has shown Henry it (the rebuffed global,
+    // QuestFlags; bugs.txt 23 Nov 2026: "Paul's first conversation doesn't remove the Talk
+    // option once you complete it"): his refusals are said in the one conversation -- each
+    // row's refusal brings the menu back with that row gone, so the threat and the duel it
+    // offers are there after the plea -- and after it the game's Talk is the app's again.
     const std::string duel_taken_var = xml_escape(quest_flag_variable(modid, quest.id, "duel_taken"));
+    const std::string rebuffed_var = xml_escape(quest_flag_variable(modid, quest.id, "rebuffed"));
     const std::string open_when = door_when +
                                   (quest.has_bedside() ? " AND gvar('" + seen_var + "')!=1" : "") +
                                   (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "") +
-                                  (quest.has_door_duel() ? " AND gvar('" + duel_taken_var + "')!=1" : "");
+                                  (quest.has_door_duel() ? " AND gvar('" + duel_taken_var + "')!=1" : "") +
+                                  (quest.is_unyielding() ? " AND gvar('" + rebuffed_var + "')!=1" : "");
     // His first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026): a
     // door for the soldier boy when armour is on him (the graph's `bare` port, from
     // I_Soul::CheckEquipment over the game's own five armour slots; emit.hpp), one for the
@@ -5986,15 +5993,17 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     };
     // An unyielding holder (In the Stocks' sacristan, notes.md 13 Oct 2026): the same two
     // rows with no check behind them and the refusal the only answer, however high Henry's
-    // Speech or his menace. Each ends the talk -- he is shown the door -- fires the menu's
-    // `rebuffed` port and the Lua's QuestRebuffed (the store's `rebuffed`, which the app
-    // reads to have the giver send Henry at the chest anyway), and is offered every time:
-    // a man who takes offence takes it again. No pay row: coin is the worst insult of all.
+    // Speech or his menace. Each fires the menu's `rebuffed` port and the Lua's
+    // QuestRebuffed (the store's `rebuffed`, which the app reads to have the giver send
+    // Henry at the chest anyway, and the global that shuts his door: open_when), and brings
+    // the menu back with that row gone (bugs.txt 23 Nov 2026), so the other is said in the
+    // same breath or Henry leaves; once he has been refused the Talk is not offered again.
+    // No pay row: coin is the worst insult of all.
     auto rebuff = [&](const char* tag, const char* henry, const std::string& henry_words, const char* no,
                       const std::string& no_words) {
         std::string c;
-        c += t(9) + "<Sequence EndType=\"EndDialogue\" Name=\"" + std::string(tag) + "\" ExitScript=\"Moonshine.QuestRebuffed('" +
-             quest.id + "', '" + tag + "')\">\r\n";
+        c += t(9) + "<Sequence EntryCondition=\"!ThisSequenceUsed()\" EndType=\"GoTo\" GoToDecision=\"menu\" Name=\"" +
+             std::string(tag) + "\" ExitScript=\"Moonshine.QuestRebuffed('" + quest.id + "', '" + tag + "')\">\r\n";
         c += prompt(10, henry, henry_words);
         c += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"rebuffed\" />\r\n" + t(10) + "</Triggers>\r\n";
         c += t(10) + "<Elements>\r\n";
@@ -6085,7 +6094,7 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             s += t(9) + "</Sequence>\r\n";
             // And the plain refusal, for when the duel is not there to be offered (taken up
             // already, done, or the duel's scene off): its row's name kept apart.
-            s += t(9) + "<Sequence EntryCondition=\"" + open_when.substr(0, open_when.size() - 3) + "!=1\" EndType=\"EndDialogue\" Name=\"threaten_plain\" ExitScript=\"Moonshine.QuestRebuffed('" +
+            s += t(9) + "<Sequence EntryCondition=\"" + open_when.substr(0, open_when.size() - 3) + "!=1 AND !ThisSequenceUsed()\" EndType=\"GoTo\" GoToDecision=\"menu\" Name=\"threaten_plain\" ExitScript=\"Moonshine.QuestRebuffed('" +
                  quest.id + "', 'threaten')\">\r\n";
             s += prompt(10, "threaten", quest.holder_threaten);
             s += t(10) + "<Triggers>\r\n" + t(11) + "<Port Name=\"rebuffed\" />\r\n" + t(10) + "</Triggers>\r\n";
@@ -9211,6 +9220,11 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelTakenVar, (d.accepted and not d.done) and 1 or 0) end)\n";
     s += "\t\t\tpcall(" + g + ".QuestDark, id)\n";
     s += "\t\tend\n";
+    // An unyielding holder's door shut once he has refused Henry (the holder's openers
+    // read it; bugs.txt 23 Nov 2026).
+    s += "\t\tif q.rebuffedVar ~= nil then\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.rebuffedVar, f.rebuffed and 1 or 0) end)\n";
+    s += "\t\tend\n";
     // The one asked's persuasion failed (QuestStage): the turn and the giving up read it.
     s += "\t\tif q.refusedVar ~= nil then\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.refusedVar, f.refused and 1 or 0) end)\n";
@@ -10686,7 +10700,9 @@ std::string emit_conversation_lua(const std::string& modid,
         }
         // An unyielding holder (In the Stocks): the menu's rows are refusals, and the store
         // notes the rebuff (QuestRebuffed) for the app's giver to send Henry at the chest.
-        if (q.is_unyielding()) s += ", unyielding = true";
+        if (q.is_unyielding()) {
+            s += ", unyielding = true, rebuffedVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "rebuffed")) + "\"";
+        }
         // The duel at his door (npcdb.hpp duel_quest_id): the duel's id, and the global the
         // threat row reads for whether it is there to be offered (QuestFlags).
         if (q.has_door_duel()) {
@@ -12668,6 +12684,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelBehindMetres = " + health_text(kDuelBehindMetres) + "\n";
     s += g + ".duelSword = \"" + std::string(kDuelSwordPreset) + "\"\n";
     s += g + ".duelTauntSeconds = " + std::to_string(kDuelTauntSeconds) + "\n";
+    s += g + ".duelSayDelayMs = " + std::to_string(kDuelSayDelayMs) + "\n";
+    s += g + ".duelHoldMetres = " + health_text(kDuelHoldMetres) + "\n";
     s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
     // When each duel landed and was loosed (Now, this session; a reload starts the clocks
     // again), and which made men have been seen on their feet.
@@ -12705,21 +12723,39 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".duelLandedAt[id] = " + g + ".Now()\n";
     s += "\t" + g + ".duelStood[id] = {}\n";
     s += "\tpcall(" + g + ".StateQuest, id, \"ambushed\")\n";
-    s += "\t" + g + ".Token(q)\n";
     s += "\t" + g + ".WatchArm(\"duel\")\n";
+    // With a taunt written the token -- the forced dialogue -- is asked for a moment after
+    // the landing (kDuelSayDelayMs), not in the tick that set the two down: the 23 Nov run
+    // played it with no model in view and the man 28 m off at its end. He is put back on
+    // his spot as it is asked for, should the engine have taken him in the meantime.
     s += "\tif q.sprungToken ~= nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has his say first; the men wait on it\")\n";
+    s += "\t\tpcall(function() Script.SetTimer(" + g + ".duelSayDelayMs, function() " + g + ".DuelSay(id) end) end)\n";
     s += "\telse\n";
+    s += "\t\t" + g + ".Token(q)\n";
     s += "\t\t" + g + ".DuelLoose(id, q, me, \"landing\")\n";
     s += "\tend\n";
+    s += "end\n";
+    s += "\n";
+    // The say asked for (the spring token, which the graph's trigger turns into the forced
+    // dialogue), the man first put back on his spot, and the taunt's count started from here.
+    s += "function " + g + ".DuelSay(id)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\tif q == nil or not f.ambushed or f.loosed or f.done or f.cowed then return end\n";
+    s += "\tlocal off = " + g + ".DuelHold(id, q)\n";
+    s += "\t" + g + ".duelLandedAt[id] = " + g + ".Now()\n";
+    s += "\t" + g + ".Token(q)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's say asked for%s\", id, q.target,\n";
+    s += "\t\toff ~= nil and string.format(\", he stands %.1fm from his spot\", off) or \", he is not loaded\"))\n";
     s += "end\n";
     s += "\n";
     // The man held on his spot while his say is waited on (bugs.txt 23 Nov 2026, the yard:
     // set down 5m from the landing out of his tavern seat, and Henry found no sign of him;
     // the engine takes a soul mid-routine back as FastTravelHolder's checks found). Each
     // tick of the wait he is measured from the spot and put back on it, facing the landing,
-    // when something has taken him further than his feet could (carryHolderStrayMetres);
-    // back: how far off he was read, for the watch's log.
+    // when he has gone more than a few paces from it (kDuelHoldMetres; the 23 Nov run had
+    // him 28 m off and out of sight); back: how far off he was read, for the watch's log.
     s += "function " + g + ".DuelHold(id, q)\n";
     s += "\tlocal ft = q.fastTravel\n";
     s += "\tif ft == nil or ft.holder == nil or q.target == nil then return nil end\n";
@@ -12729,7 +12765,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal spot = ft.holder\n";
     s += "\tlocal tp = e:GetWorldPos()\n";
     s += "\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
-    s += "\tif off <= " + g + ".carryHolderStrayMetres then return off end\n";
+    s += "\tif off <= " + g + ".duelHoldMetres then return off end\n";
     s += "\tlocal me = " + g + ".Player()\n";
     s += "\tlocal to = { x = ft.x, y = ft.y, z = ft.z }\n";
     s += "\tif me ~= nil and me.GetWorldPos ~= nil then to = me:GetWorldPos() end\n";
@@ -12865,6 +12901,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif q.sprungToken == nil then return end\n";
     s += "\t\tlocal landed = " + g + ".duelLandedAt[id]\n";
     s += "\t\tif landed == nil then " + g + ".duelLandedAt[id] = now return end\n";
+    // While the say plays the game has him; the watch neither moves him nor counts it down.
+    s += "\t\tif " + g + ".InDialog() then return end\n";
     s += "\t\tlocal off = " + g + ".DuelHold(id, q)\n";
     s += "\t\tif now - landed < " + g + ".duelTauntSeconds then return end\n";
     s += "\t\tlocal me = " + g + ".Player()\n";

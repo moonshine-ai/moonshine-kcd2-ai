@@ -5857,7 +5857,16 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     local d = man:GetDirectionVector()
     check(math.abs(d.x - (ft.x - spot.x) / gap) < 0.01 and math.abs(d.y - (ft.y - spot.y) / gap) < 0.01, "facing the landing")
     check(player.view ~= nil, "Henry's view turned to him")
-    check(M.Count(player, q.token) == 1, "the spring token for the graph")
+    if taunted then
+        -- The say is asked for a moment after the landing, not in its tick (bugs.txt 23 Nov
+        -- 2026: enqueued as the two were set down it played with no model in view).
+        check(M.Count(player, q.token) == 0, "no spring token in the landing's tick: the say waits a moment")
+        E.advance(2000)
+        check(M.Count(player, q.token) == 1, "the spring token a moment after, for the graph's forced dialogue")
+        check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s say asked for, he stands 0.0m from his spot", mark), "and said, with him on his spot")
+    else
+        check(M.Count(player, q.token) == 1, "the spring token for the graph")
+    end
     loose(mark)
     local f = M.state.quests[id]
     check(f.ambushed == true and type(f.spawned) == "table" and #f.spawned == 2, "the spring in the store, two made")
@@ -7060,8 +7069,10 @@ case("Door duel: the holder's threaten row offers the duel while it is open, the
     -- The no: nothing changes.
     local mark = E.mark()
     M.npc = E.soul(q.target)
+    check(q.rebuffedVar == "moonshine_names_q_" .. id .. "_rebuffed" and E.gvar(q.rebuffedVar) ~= 1, "his door open before the refusal")
     M.QuestRebuffed(id, "threaten")
     check(M.state.quests[id].rebuffed == true, "rebuffed as before")
+    check(E.gvar(q.rebuffedVar) == 1, "and his door shut on it (bugs.txt 23 Nov 2026: the Talk not offered again)")
     check(M.state.quests[duelId] == nil, "the no leaves the duel alone")
     -- The yes.
     M.QuestDoorDuel(id, duelId)

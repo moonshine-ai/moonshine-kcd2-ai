@@ -927,8 +927,19 @@ constexpr double kDuelSweepMetres = 80.0;
 // A duel with a taunt (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) makes the men and
 // begins the brawl at the taunt dialogue's end (DuelTaunted), or this long after the
 // landing when the dialogue has not played (WatchDuel): a forced dialogue the game will
-// not open leaves the yard quiet otherwise. Long enough for the camera and two lines.
-constexpr int kDuelTauntSeconds = 20;
+// not open leaves the yard quiet otherwise; a dialogue that is up is never cut (WatchDuel
+// reads InDialog). The 23 Nov run's say ran twenty seconds and the watch loosed the men a
+// breath before its end, so the count is from the token and longer than two lines.
+constexpr int kDuelTauntSeconds = 40;
+// The say is asked for this long after the landing, not in the same tick (bugs.txt 23 Nov
+// 2026: the dialogue enqueued as Henry and the man were set down played with no model in
+// view, and the man read 28 m off when it ended): the engine has them both placed and the
+// camera somewhere to be; the man is held on his spot through it (DuelSpring, DuelSay).
+constexpr int kDuelSayDelayMs = 2500;
+// How far a duel's man may stand from his spot before the watch puts him back on it,
+// while his say is waited on (DuelHold; bugs.txt 23 Nov 2026: at 28 m he was nowhere to
+// be seen): a few paces, not the carry's thirty metres, since nothing of his is near.
+constexpr double kDuelHoldMetres = 8.0;
 // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look; bugs.txt
 // 22 Nov 2026). Armour is the quest graph's to read -- I_Soul::CheckEquipment over the five
 // slots the game's own players_appearance_scan.xml asks after (body_chainmail, body_plate,
