@@ -2449,6 +2449,15 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
         return "You gave " + thing + " up to this person, who came for it on " + quest.giver_name +
                "'s behalf.";
     }
+    // An unyielding holder (Paul with the chalice; bugs.txt 23 Nov 2026, the duel taken at
+    // his door with the cup still in his chest): nothing borrowed about it, and he has
+    // already sent this person packing -- the aside says so, rather than making him a
+    // forgetful borrower beside a paragraph that has him admit nothing.
+    if (quest.unyielding) {
+        return "You also have " + thing + " in your chest; this person came for it on " + quest.giver_name +
+               "'s behalf" + (facts.rebuffed ? " and you sent them packing. " : ". ") +
+               "You admit nothing of it and will not be moved.";
+    }
     std::string out = "You also have " + thing + (quest.item_of.empty() ? ", borrowed and never given back"
                                                                         : ", brought to you and kept");
     if (const Quest* inner = inner_of(quest, all)) {

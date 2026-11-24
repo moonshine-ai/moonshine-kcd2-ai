@@ -1303,6 +1303,14 @@ TEST_CASE("an unyielding holder's giver, told of the refusal, sends Henry to the
     CHECK(plan_quest(holder, open, {}).block.find("take it as an accusation") != std::string::npos);
     CHECK(plan_quest(holder, rebuffed, {}).block.find("asked already and been told") != std::string::npos);
     CHECK(plan_quest(bartels_axe(QuestRole::Target), open, {}).block.find("offends you") == std::string::npos);
+    // And as the other favour of a soul on two (Paul with the duel taken at his door; bugs.txt
+    // 23 Nov 2026): the thing is in his chest and he admits nothing, not borrowed and forgotten.
+    const std::string aside = quest_aside(holder, rebuffed, {holder}, {rebuffed});
+    CHECK(aside.find("in your chest") != std::string::npos);
+    CHECK(aside.find("sent them packing") != std::string::npos);
+    CHECK(aside.find("borrowed") == std::string::npos);
+    CHECK(quest_aside(holder, open, {holder}, {open}).find("sent them packing") == std::string::npos);
+    CHECK(quest_aside(bartels_axe(QuestRole::Target), open, {holder}, {open}).find("borrowed") != std::string::npos);
 
     // Without the helper's name or line there is nobody to name, and the refusal changes nothing.
     Quest plain = quest;

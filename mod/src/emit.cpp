@@ -5728,9 +5728,17 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
     const std::string followed_var = xml_escape(quest_flag_variable(modid, quest.id, "followed"));
     // With the street written (has_follow), the day door is shut for the night he has
     // caught Henry behind him: his Talk opens on his own line instead (open_followed).
+    // And shut while the duel offered at this door is taken up and not yet fought
+    // (has_door_duel; the duel_taken global, QuestFlags; bugs.txt 23 Nov 2026): with his
+    // Talk up the game offers it in place of ours, and the duel's own conversation -- the
+    // carry to the yard, the wait for dark -- is the app's, on the giver's side of the
+    // duel. He has said his piece at the door; the chalice goes on by the house-girl and
+    // the chest. Fought, his door opens again as it was.
+    const std::string duel_taken_var = xml_escape(quest_flag_variable(modid, quest.id, "duel_taken"));
     const std::string open_when = door_when +
                                   (quest.has_bedside() ? " AND gvar('" + seen_var + "')!=1" : "") +
-                                  (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "");
+                                  (quest.has_follow() ? " AND gvar('" + followed_var + "')!=1" : "") +
+                                  (quest.has_door_duel() ? " AND gvar('" + duel_taken_var + "')!=1" : "");
     // His first excuse cut to Henry's look (npcdb.hpp has_look; bugs.txt 22 Nov 2026): a
     // door for the soldier boy when armour is on him (the graph's `bare` port, from
     // I_Soul::CheckEquipment over the game's own five armour slots; emit.hpp), one for the
@@ -9145,10 +9153,13 @@ std::string state_lua(const std::string& g) {
     // The duel at the door (npcdb.hpp duel_quest_id): the holder's threat row offers the
     // duel while that quest is on and not yet taken up or done -- its own way in, so the
     // duel's link is not asked (QuestOfferable would say locked).
+    // And his door shut while the duel is taken up and not fought (duelTakenVar; the
+    // holder's openers read it), so the game's Talk gives way to ours on the duel.
     s += "\t\tif q.duelOpenVar ~= nil and q.duelQuest ~= nil then\n";
     s += "\t\t\tlocal d = quests[q.duelQuest] or {}\n";
     s += "\t\t\tlocal open = " + g + ".QuestOn(q.duelQuest) and not d.accepted and not d.done\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelOpenVar, open and 1 or 0) end)\n";
+    s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelTakenVar, (d.accepted and not d.done) and 1 or 0) end)\n";
     s += "\t\tend\n";
     // The one asked's persuasion failed (QuestStage): the turn and the giving up read it.
     s += "\t\tif q.refusedVar ~= nil then\n";
@@ -10630,7 +10641,8 @@ std::string emit_conversation_lua(const std::string& modid,
         // threat row reads for whether it is there to be offered (QuestFlags).
         if (q.has_door_duel()) {
             s += ", duelQuest = \"" + lua_escape(q.duel_quest_id) + "\", duelOpenVar = \"" +
-                 lua_escape(quest_flag_variable(modid, q.id, "duel_open")) + "\"";
+                 lua_escape(quest_flag_variable(modid, q.id, "duel_open")) + "\", duelTakenVar = \"" +
+                 lua_escape(quest_flag_variable(modid, q.id, "duel_taken")) + "\"";
         }
         // A duel's door token (QuestDoorDuel; emit.hpp door_accept_class).
         if (q.is_duel()) s += ", doorAccept = \"" + lua_escape(door_accept_class(q)) + "\"";

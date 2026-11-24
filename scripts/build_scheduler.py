@@ -267,13 +267,23 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
          "(SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'helper_soul')",
          "(SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'helper_name')"),
     ):
+        # And the hour his day runs to (`<field>_until`, `HH:MM`, 24:00 for midnight; bugs.txt
+        # 23 Nov 2026: "Paul should drink until midnight"), where the story wants it later
+        # than the game's own work link; empty for the link's own end.
         rows += [(field, *row) for row in conn.execute(
             f"SELECT l.quest_id, l.text, {soul_sql}, {name_sql}, h.hub_guid, "
-            f"COALESCE((SELECT gender FROM npc WHERE soul_name = {soul_sql} LIMIT 1), '') "
+            f"COALESCE((SELECT gender FROM npc WHERE soul_name = {soul_sql} LIMIT 1), ''), "
+            f"COALESCE((SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = '{field}_until'), '') "
             "FROM npc_quest_lines l JOIN npc_quest q USING (quest_id) "
             f"LEFT JOIN npc_routine_hub h ON h.soul_name = {soul_sql} AND h.level = ? "
             f"WHERE l.field = '{field}' AND l.text <> '' ORDER BY l.quest_id", (level,)).fetchall()]
-    for field, quest_id, text, soul, name, hub, gender in rows:
+    for field, quest_id, text, soul, name, hub, gender, until in rows:
+        until_minute = None
+        if until.strip():
+            m = re.fullmatch(r"(\d{1,2}):(\d{2})", until.strip())
+            if not m or int(m.group(1)) > 24 or int(m.group(2)) > 59 or (int(m.group(1)) == 24 and int(m.group(2)) != 0):
+                raise SystemExit(f"{quest_id}: {field}_until wants HH:MM (24:00 at the latest), got {until!r}")
+            until_minute = int(m.group(1)) * 60 + int(m.group(2))
         if not soul:
             raise SystemExit(f"{quest_id}: {field} names nobody (no soul for it in npc_quest / helper_soul)")
         if not hub:
@@ -295,9 +305,12 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
             objects = [(x, y) for x, y in objects if math.hypot(x - px, y - py) <= POINT_METRES]
         if not objects:
             raise SystemExit(f"{quest_id}: no `{prefab}` object on {level} where {field} looks (npc_routine_object)")
-        specs.append({"quest_id": quest_id, "behaviour": behaviour, "prefab": prefab, "objects": objects,
-                      "every_object": every_object,
-                      "soul": soul, "name": name, "hub": hub, "gender": gender.lower(), "tag": ""})
+        spec = {"quest_id": quest_id, "behaviour": behaviour, "prefab": prefab, "objects": objects,
+                "every_object": every_object,
+                "soul": soul, "name": name, "hub": hub, "gender": gender.lower(), "tag": ""}
+        if until_minute is not None:
+            spec["until"] = until_minute
+        specs.append(spec)
     # The target's bed (routine_bed_target): the bed's prefab and point, and the guids of
     # that prefab's sides about the point, for the far side to find the wrapper by.
     # With the street written on the quest (a `followed` line; npcdb.hpp has_follow), the
@@ -1200,7 +1213,15 @@ def apply(table: bytes, specs: list[dict]) -> tuple[bytes, list[str]]:
             # bed and stay there until the home hub's own 19:00 link got her up for the
             # tavern. Urgency is how the game has a timed routine link taken up the moment
             # it opens: the innkeepers' closing-up link (prio 6, 21:00-22:30) carries Fast.
+            # The day runs to the hour the story names (`until`, from `<field>_until`) where
+            # that is later than the game's own; the all-day home link under it takes him
+            # to bed when it ends, as before. Not earlier: an early end is not written.
             ws, we = r["work_start_early"], r["work_window"][1]
+            if spec.get("until") is not None:
+                if spec["until"] <= ws:
+                    raise ValueError(f"{spec['name']} ({spec['soul']}): until {spec['until'] // 60:02d}:{spec['until'] % 60:02d} "
+                                     f"is not after the day's start {ws // 60:02d}:{ws % 60:02d}")
+                we = max(we, spec["until"])
             text = edit_hub(text, r["npc_hub"], lambda block: edit_link(
                 block, r["work_target"], r["wrapper"], {
                     "Attraction": str(ROUTINE_ATTRACTION), "TimeVariation": "0",

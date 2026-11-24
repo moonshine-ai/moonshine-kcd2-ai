@@ -7054,6 +7054,9 @@ case("Door duel: the holder's threaten row offers the duel while it is open, the
     check(M.Count(player, duel.doorAccept) == 1, "the door token in the pocket")
     check(not E.find("BRIDGE quest " .. duelId .. " accept queued", mark), "the duel's own accept port is not fired")
     check(E.gvar(q.duelOpenVar) == 0, "the offer is gone once taken up")
+    -- And his door shut (the holder's openers read duel_taken; bugs.txt 23 Nov 2026: with
+    -- his Talk up the game offered it in place of ours, and the duel's carry rows are ours).
+    check(q.duelTakenVar == "moonshine_names_q_" .. id .. "_duel_taken" and E.gvar(q.duelTakenVar) == 1, "the door shut while the duel is pending")
     E.advance(2000)
     check(M.Count(player, duel.doorAccept) == 0, "the token gone a moment later")
     -- A second yes does nothing.
@@ -7065,6 +7068,8 @@ case("Door duel: the holder's threaten row offers the duel while it is open, the
     M.state.quests[duelId] = { accepted = true, done = true, how = "truth" }
     M.QuestFlags()
     check(E.gvar(q.duelOpenVar) == 0, "no offer once the duel is done")
+    check(E.gvar(q.duelTakenVar) == 0, "and his door open again")
+    check(E.gvar(q.duelOpenVar) == 0 and M.state.quests[id].accepted == true, "the chalice errand goes on")
     -- And the duel done voids the witness scene, which the threatened ending led to.
     local askId, ask = byName(M, "A Witness Before the Bailiff")
     check(ask ~= nil and ask.voidIfDone == duelId, "the witness scene is voided by the duel")
