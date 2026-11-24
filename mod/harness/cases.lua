@@ -5813,6 +5813,24 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         local f = M.state.quests[id]
         check(f.ambushed == true and #(f.spawned or {}) == 0 and E.find("has his say first", mark), "with a taunt written, nobody made as Henry lands: the men wait on his say")
         check(M.state.quests[id].cowed ~= true, "and nothing to cow him with yet")
+        -- The man taken off his spot while his say is waited on (bugs.txt 23 Nov 2026: no
+        -- sign of him in the yard) is put back on it by the watch's next tick, facing Henry.
+        local man = E.soul(q.giver)
+        local spot = q.fastTravel.holder
+        man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+        local holdMark = E.mark()
+        E.advance(2100)
+        local tp = man:GetWorldPos()
+        check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "put back on his spot while the men wait")
+        check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " put back on his spot from 120m off", holdMark), "and said")
+        check(#(M.state.quests[id].spawned or {}) == 0, "the men still unmade")
+        man:SetWorldPos({ x = spot.x + 3, y = spot.y, z = spot.z })
+        holdMark = E.mark()
+        E.advance(2100)
+        tp = man:GetWorldPos()
+        check(math.abs(tp.x - (spot.x + 3)) < 0.01, "a few paces off is his own and left alone")
+        check(not E.find("put back on his spot", holdMark), "nothing said of it")
+        man:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z })
         M.DuelTaunted(id)
         f = M.state.quests[id]
         check(f.loosed == true and E.find("loosed on the taunt", mark), "his say said: the men loosed")
@@ -7079,6 +7097,49 @@ case("Door duel: the holder's threaten row offers the duel while it is open, the
     check(M.QuestOfferable(askId) == true, "offerable with the duel untouched")
 end)
 
+-- bugs.txt 23 Nov 2026 ("I'll wait for dark with you" should be there after the yes without
+-- a second conversation): the holder's yes goes on to the duel's own carry rows, which read
+-- the door's dark global -- the hour within the duel's carrying hours, set at the holder's
+-- open and with the flags -- and hand the duel its fast_travel / fast_travel_wait.
+case("Door duel: the dark global follows the duel's hours at the holder's open, and the rows after the yes carry Henry by the duel's own command", function(E, M, check)
+    local id, q = byName(M, "In the Stocks")
+    if q == nil then check(true, "no In the Stocks in this data"); return end
+    local duelId, duel = byName(M, "Under the Light of the Moon")
+    check(q.doorDarkVar == "moonshine_names_q_" .. id .. "_dark" and q.doorHours ~= nil, "the dark global and the duel's hours in the table")
+    check(q.doorHours[1] == duel.fastTravel.from and q.doorHours[2] == duel.fastTravel.to, "the hours are the duel's carrying hours")
+    local was = E.hour
+    M.npc = E.soul(q.target)
+    M.state.quests[id] = { accepted = true }
+    -- By day, at the open: not dark.
+    E.hour = 12
+    M.QuestStage(id, "open")
+    check(E.gvar(q.doorDarkVar) == 0, "not dark at noon")
+    -- Into the hours, the open again: dark.
+    E.hour = duel.fastTravel.from + 0.5
+    M.QuestStage(id, "open")
+    check(E.gvar(q.doorDarkVar) == 1, "dark inside the carrying hours")
+    -- The flags keep it too.
+    E.hour = 9
+    M.QuestFlags()
+    check(E.gvar(q.doorDarkVar) == 0, "the flags read the hour as well")
+    -- The yes, then the wait row's command, as the Talk's rows run: the duel is taken up
+    -- first, and the carry waits for the Talk to be down and winds the clock on to dark.
+    local ft = duel.fastTravel
+    E.soul(duel.giver):SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    E.interior = false
+    E.hour = 14
+    M.QuestDoorDuel(id, duelId)
+    check(M.state.quests[duelId] ~= nil and M.state.quests[duelId].accepted == true, "the duel taken up before the carry")
+    M.QuestCommand(duelId, "fast_travel_wait", true)
+    E.advance(1100)
+    local pp = player:GetWorldPos()
+    check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard from the holder's Talk")
+    check(math.abs(E.hour - ft.from) < 0.01, "the clock wound to dark, got " .. tostring(E.hour))
+    E.hour = was
+    M.state.quests[duelId] = nil
+end)
+
 -- bugs.txt 23 Nov 2026 (In the Stocks: "I'll take it back. And then I'll find Paul
 -- Schmidt" never put Paul on the map): the app's accept_warn sends `warn` after the
 -- accept, which makes the warn token the deliver leg's optional objective opens on; the
@@ -7128,6 +7189,29 @@ case("Warn: the warn command makes its token, the duel is open on the warned fla
     mark = E.mark()
     M.QuestCommand(duelId, "accept")
     check(not E.find("warning given", mark) and M.Count(player, q.warnedOff) == 0, "no warned-off token without the promise")
+end)
+
+case("Nearby: Begin emits a 35m sphere of live named souls before BRIDGE begin, skipping the speaker and the dead", function(E, M, check)
+    local speaker = E.soul("kkut_woman_22", { pos = { x = 3094, y = 875, z = 60.4 } })
+    local paul = E.soul("kkut_man_51", { pos = { x = 3093, y = 872, z = 60.4 } })
+    local deadPeer = E.soul("kkut_man_52", { pos = { x = 3095, y = 876, z = 60.4 } })
+    deadPeer.alive = false
+    local farPeer = E.soul("kkut_man_53", { pos = { x = 3200, y = 875, z = 60.4 } })
+    M.namedSouls = { kkut_woman_22 = true, kkut_man_51 = true, kkut_man_52 = true, kkut_man_53 = true }
+    player:SetWorldPos({ x = 3094, y = 874, z = 60.4 })
+    local mark = E.mark()
+    check(E.begin(speaker), "the prompt opens the conversation")
+    local _, resetAt = E.find("BRIDGE nearby reset npc=kkut_woman_22", mark)
+    local addLine, addAt = E.find("BRIDGE nearby add npc=kkut_woman_22 ", mark)
+    local _, beginAt = E.find("BRIDGE begin npc=kkut_woman_22", mark)
+    check(resetAt ~= nil and addAt ~= nil and beginAt ~= nil and resetAt < addAt and addAt < beginAt,
+          "nearby reset and add precede BRIDGE begin")
+    check(addLine ~= nil and addLine:find("kkut_man_51@3093.0,872.0,60.4", 1, true) ~= nil,
+          "co-patron within 35m included, got " .. tostring(addLine))
+    check(addLine:find("kkut_woman_22@", 1, true) == nil, "speaker excluded")
+    check(addLine:find("kkut_man_52@", 1, true) == nil, "dead NPC excluded")
+    check(addLine:find("kkut_man_53@", 1, true) == nil, "far NPC beyond 35m excluded")
+    local _ = paul; _ = deadPeer; _ = farPeer
 end)
 
 return { cases = cases, order = order }

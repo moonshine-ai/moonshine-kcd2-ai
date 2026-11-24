@@ -677,6 +677,10 @@ std::string emit_storm_roles(const std::string& modid,
         if (q.carries_on()) rule("onward", q.onward_soul, onward_role(q.id));
         if (q.has_helper()) rule("helper", q.helper_soul, helper_role(q.id));
         if (q.has_counsel()) rule("counsel", q.counsel_soul, counsel_role(q.id));
+        // And a duel's man his taunt role (bugs.txt 23 Nov 2026, the yard: four runs of
+        // AddMetaRoleByName(MSQ_…_TAUNT) read back false on him and his say never came,
+        // where every role with a rule here -- holder, helper, counsel -- read true).
+        if (q.has_duel_taunt()) rule("taunt", q.target_soul, taunt_role(q.id));
     }
     s += "\t</rules>\r\n";
     s += "</storm>\r\n";
@@ -6026,13 +6030,48 @@ std::string emit_holder_dialogue(const std::string& modid, const Quest& raw) {
             s += t(10) + "</Elements>\r\n";
             s += t(10) + "<Decision Name=\"threaten_duel\" Priority=\"General\">\r\n";
             s += t(11) + "<Sequences>\r\n";
-            s += t(12) + "<Sequence EndType=\"EndDialogue\" Name=\"duel_yes\" ExitScript=\"Moonshine.QuestDoorDuel('" +
+            // The yes goes on to the duel's own carry rows where it has a carrying (npcdb.hpp
+            // has_door_go; bugs.txt 23 Nov 2026: "I'll wait for dark with you" without a
+            // second conversation): the carry now in the dark hours (the holder's dark
+            // global, QuestDark), else the wait for them, and the leaving of it for another
+            // night; the first two hand the duel's fast_travel / fast_travel_wait to the Lua,
+            // which carries once the Talk is down (FastTravelArm). Without one, the yes ends
+            // the talk as before.
+            const bool go = quest.has_door_go();
+            s += t(12) + "<Sequence EndType=\"" + (go ? "Decision" : "EndDialogue") +
+                 "\" Name=\"duel_yes\" ExitScript=\"Moonshine.QuestDoorDuel('" +
                  quest.id + "', '" + quest.duel_quest_id + "')\">\r\n";
             s += prompt(13, "duel_yes", quest.holder_duel_yes);
             s += t(13) + "<Elements>\r\n";
             s += line(14, "HENRY", "duel_yes", quest.holder_duel_yes);
             s += line(14, role, "duel_yes_reply", quest.holder_duel_yes_reply);
             s += t(13) + "</Elements>\r\n";
+            if (go) {
+                const std::string dark = "gvar('" + xml_escape(quest_flag_variable(modid, quest.id, "dark")) + "')";
+                auto carry = [&](const char* tag, const std::string& when, const char* command,
+                                 const char* henry, const std::string& henry_words,
+                                 const char* reply, const std::string& reply_words) {
+                    s += t(15) + "<Sequence" + (when.empty() ? "" : " EntryCondition=\"" + when + "\"") +
+                         " EndType=\"EndDialogue\" Name=\"" + tag + "\"" +
+                         (command ? " ExitScript=\"Moonshine.QuestCommand('" + quest.duel_quest_id + "', '" + command + "', true)\"" : "") +
+                         ">\r\n";
+                    s += prompt(16, henry, henry_words);
+                    s += t(16) + "<Elements>\r\n";
+                    s += line(17, "HENRY", henry, henry_words);
+                    s += line(17, role, reply, reply_words);
+                    s += t(16) + "</Elements>\r\n";
+                    s += t(15) + "</Sequence>\r\n";
+                };
+                s += t(13) + "<Decision Name=\"duel_go\" Priority=\"General\">\r\n";
+                s += t(14) + "<Sequences>\r\n";
+                carry("door_go", dark + "==1", "fast_travel", "door_go", quest.door_go, "door_go_reply", quest.door_go_reply);
+                if (quest.has_door_wait()) {
+                    carry("door_wait", dark + "!=1", "fast_travel_wait", "door_wait", quest.door_wait, "door_wait_reply", quest.door_wait_reply);
+                }
+                carry("door_later", "", nullptr, "door_later", quest.door_later, "door_later_reply", quest.door_later_reply);
+                s += t(14) + "</Sequences>\r\n";
+                s += t(13) + "</Decision>\r\n";
+            }
             s += t(12) + "</Sequence>\r\n";
             s += t(12) + "<Sequence EndType=\"EndDialogue\" Name=\"duel_no\">\r\n";
             s += prompt(13, "duel_no", quest.holder_duel_no);
@@ -6523,6 +6562,16 @@ std::vector<std::pair<std::string, std::string>> holder_localization(const std::
         rows.emplace_back(key("duel_yes_reply"), quest.holder_duel_yes_reply);
         rows.emplace_back(key("duel_no"), quest.holder_duel_no);
         rows.emplace_back(key("duel_no_reply"), quest.holder_duel_no_reply);
+        if (quest.has_door_go()) {
+            rows.emplace_back(key("door_go"), quest.door_go);
+            rows.emplace_back(key("door_go_reply"), quest.door_go_reply);
+            rows.emplace_back(key("door_later"), quest.door_later);
+            rows.emplace_back(key("door_later_reply"), quest.door_later_reply);
+        }
+        if (quest.has_door_wait()) {
+            rows.emplace_back(key("door_wait"), quest.door_wait);
+            rows.emplace_back(key("door_wait_reply"), quest.door_wait_reply);
+        }
     }
     if (quest.has_expose()) {
         rows.emplace_back(key("expose"), quest.holder_expose);
@@ -9160,6 +9209,7 @@ std::string state_lua(const std::string& g) {
     s += "\t\t\tlocal open = " + g + ".QuestOn(q.duelQuest) and not d.accepted and not d.done\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelOpenVar, open and 1 or 0) end)\n";
     s += "\t\t\tpcall(function() Variables.SetGlobal(q.duelTakenVar, (d.accepted and not d.done) and 1 or 0) end)\n";
+    s += "\t\t\tpcall(" + g + ".QuestDark, id)\n";
     s += "\t\tend\n";
     // The one asked's persuasion failed (QuestStage): the turn and the giving up read it.
     s += "\t\tif q.refusedVar ~= nil then\n";
@@ -10643,6 +10693,13 @@ std::string emit_conversation_lua(const std::string& modid,
             s += ", duelQuest = \"" + lua_escape(q.duel_quest_id) + "\", duelOpenVar = \"" +
                  lua_escape(quest_flag_variable(modid, q.id, "duel_open")) + "\", duelTakenVar = \"" +
                  lua_escape(quest_flag_variable(modid, q.id, "duel_taken")) + "\"";
+            // And the dark global the carry rows after the yes read (has_door_go), with the
+            // duel's hours it is reckoned from.
+            if (q.has_door_go()) {
+                char hours[64];
+                std::snprintf(hours, sizeof hours, ", doorHours = { %.2f, %.2f }", q.door_from, q.door_to);
+                s += ", doorDarkVar = \"" + lua_escape(quest_flag_variable(modid, q.id, "dark")) + "\"" + hours;
+            }
         }
         // A duel's door token (QuestDoorDuel; emit.hpp door_accept_class).
         if (q.is_duel()) s += ", doorAccept = \"" + lua_escape(door_accept_class(q)) + "\"";
@@ -12657,6 +12714,33 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "end\n";
     s += "\n";
+    // The man held on his spot while his say is waited on (bugs.txt 23 Nov 2026, the yard:
+    // set down 5m from the landing out of his tavern seat, and Henry found no sign of him;
+    // the engine takes a soul mid-routine back as FastTravelHolder's checks found). Each
+    // tick of the wait he is measured from the spot and put back on it, facing the landing,
+    // when something has taken him further than his feet could (carryHolderStrayMetres);
+    // back: how far off he was read, for the watch's log.
+    s += "function " + g + ".DuelHold(id, q)\n";
+    s += "\tlocal ft = q.fastTravel\n";
+    s += "\tif ft == nil or ft.holder == nil or q.target == nil then return nil end\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\tif e == nil or e.GetWorldPos == nil then return nil end\n";
+    s += "\tlocal spot = ft.holder\n";
+    s += "\tlocal tp = e:GetWorldPos()\n";
+    s += "\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
+    s += "\tif off <= " + g + ".carryHolderStrayMetres then return off end\n";
+    s += "\tlocal me = " + g + ".Player()\n";
+    s += "\tlocal to = { x = ft.x, y = ft.y, z = ft.z }\n";
+    s += "\tif me ~= nil and me.GetWorldPos ~= nil then to = me:GetWorldPos() end\n";
+    s += "\tlocal dx, dy = to.x - spot.x, to.y - spot.y\n";
+    s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
+    s += "\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s put back on his spot from %.0fm off%s\", id, q.target, off, ok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "\treturn off\n";
+    s += "end\n";
+    s += "\n";
     // The taunt's end (emit_taunt_dialogue's ExitScript): the men made and loosed.
     s += "function " + g + ".DuelTaunted(id)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
@@ -12781,10 +12865,12 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tif q.sprungToken == nil then return end\n";
     s += "\t\tlocal landed = " + g + ".duelLandedAt[id]\n";
     s += "\t\tif landed == nil then " + g + ".duelLandedAt[id] = now return end\n";
+    s += "\t\tlocal off = " + g + ".DuelHold(id, q)\n";
     s += "\t\tif now - landed < " + g + ".duelTauntSeconds then return end\n";
     s += "\t\tlocal me = " + g + ".Player()\n";
     s += "\t\tif me == nil then return end\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \"'s say never came; the men are loosed anyway\")\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \"'s say never came; the men are loosed anyway\" ..\n";
+    s += "\t\t\t(off ~= nil and string.format(\" (he reads %.1fm from his spot)\", off) or \" (he is not loaded)\"))\n";
     s += "\t\tpcall(" + g + ".DuelLoose, id, q, me, \"watch\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
@@ -19697,6 +19783,10 @@ std::string emit_conversation_lua(const std::string& modid,
     // A check lost on the one asked's menu (the `refused <row>` stage): where the turn is
     // written (npcdb.hpp holder_turn), the store notes it and the menu's global goes up at
     // once, so the turn and the giving up are on the menu as it is drawn again.
+    // The door's dark global (npcdb.hpp has_door_go): the hour read again as the holder's
+    // Talk opens, so the rows after the duel's yes offer the carry or the wait for the hour
+    // it is now, not the hour the flags were last synced at.
+    s += "\tif tostring(what) == \"open\" then pcall(" + g + ".QuestDark, tostring(id)) end\n";
     s += "\tif string.sub(tostring(what), 1, 8) == \"refused \" then\n";
     s += "\t\tlocal q = " + g + ".quests[tostring(id)]\n";
     s += "\t\tif q ~= nil and q.refusedVar ~= nil then\n";
@@ -19819,6 +19909,15 @@ std::string emit_conversation_lua(const std::string& modid,
     // hears it through the door token, which sets it Active with its journal entry and its
     // marker), and the store notes the way in (door; the letter D). The threat row itself
     // has already done the refusal's work (QuestRebuffed, the rebuffed port).
+    // The door's dark global (npcdb.hpp has_door_go; bugs.txt 23 Nov 2026): 1 while the
+    // hour is in the duel's carrying hours, read by the rows after the yes at the door --
+    // the carry now, or the wait for dark with him.
+    s += "function " + g + ".QuestDark(id)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tif q == nil or q.doorDarkVar == nil or q.doorHours == nil then return end\n";
+    s += "\tpcall(function() Variables.SetGlobal(q.doorDarkVar, " + g + ".HourIn(q.doorHours) and 1 or 0) end)\n";
+    s += "end\n";
+    s += "\n";
     s += "function " + g + ".QuestDoorDuel(id, duelId)\n";
     s += "\tlocal quest = " + g + ".quests[id]\n";
     s += "\tlocal duel = " + g + ".quests[duelId]\n";
@@ -20241,6 +20340,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // the time the app reads the begin line it already holds everything it needs to plan
     // the conversation. Under pcall, as a fault in the store is not a reason not to talk.
     s += "\tpcall(function() " + g + ".StateBegin(EntityUtils.GetName(npc), scene) end)\n";
+    s += "\tpcall(function() " + g + ".ScanNearby(npc) end)\n";
     s += "\tif type(" + g + ".state.locate) == \"table\" and " + g + ".state.locate.soul == EntityUtils.GetName(npc) then\n";
     s += "\t\tpcall(" + g + ".ClearLocate, \"talked\")\n";
     s += "\tend\n";
@@ -20398,6 +20498,53 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tend\n";
     s += "\tif chunk ~= \"\" then " + g + ".Log(\"BRIDGE guard_present add \" .. chunk) end\n";
     s += "\tif outChunk ~= \"\" then " + g + ".Log(\"BRIDGE guard_present out \" .. outChunk) end\n";
+    s += "end\n";
+    s += "\n";
+    // Scans named NPCs currently within 35m of `npc` (e.g. patrons sharing a tavern room
+    // or immediate street corner) right before a conversation opens, so co-present souls
+    // are known to the speaker even when their static home routine is on another street.
+    s += "function " + g + ".ScanNearby(npc)\n";
+    s += "\tif npc == nil or npc.GetWorldPos == nil or System.GetEntitiesInSphere == nil then return end\n";
+    s += "\tlocal id = EntityUtils.GetName(npc)\n";
+    s += "\tif type(id) ~= \"string\" or id == \"\" then return end\n";
+    s += "\tlocal okP, p = pcall(function() return npc:GetWorldPos() end)\n";
+    s += "\tif not okP or type(p) ~= \"table\" or type(p.x) ~= \"number\" or type(p.y) ~= \"number\" then return end\n";
+    s += "\tif " + g + ".storySoulSet == nil then\n";
+    s += "\t\tlocal set = {}\n";
+    s += "\t\tfor _, sn in ipairs(" + g + ".storySouls or {}) do set[sn] = true end\n";
+    s += "\t\t" + g + ".storySoulSet = set\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE nearby reset npc=\" .. id)\n";
+    s += "\tlocal okS, ents = pcall(function() return System.GetEntitiesInSphere(p, 35.0) end)\n";
+    s += "\tif not okS or type(ents) ~= \"table\" then return end\n";
+    s += "\tlocal chunk = \"\"\n";
+    s += "\tlocal seen = {}\n";
+    s += "\tfor _, e in ipairs(ents) do\n";
+    s += "\t\tif e ~= nil and e ~= npc and e.GetWorldPos ~= nil then\n";
+    s += "\t\t\tlocal sn = EntityUtils.GetName(e)\n";
+    s += "\t\t\tif type(sn) == \"string\" and sn ~= \"\" and sn ~= id and not seen[sn] and\n";
+    s += "\t\t\t   (" + g + ".namedSouls[sn] == true or " + g + ".guardSouls[sn] ~= nil or " + g + ".storySoulSet[sn] == true) then\n";
+    s += "\t\t\t\tlocal dead = false\n";
+    s += "\t\t\t\tpcall(function() if e.actor ~= nil and e.actor:IsDead() then dead = true end end)\n";
+    s += "\t\t\t\tif not dead then\n";
+    s += "\t\t\t\t\tlocal okE, ep = pcall(function() return e:GetWorldPos() end)\n";
+    s += "\t\t\t\t\tif okE and type(ep) == \"table\" and type(ep.x) == \"number\" and type(ep.y) == \"number\" then\n";
+    s += "\t\t\t\t\t\tseen[sn] = true\n";
+    s += "\t\t\t\t\t\tlocal item = string.format(\"%s@%.1f,%.1f,%.1f\", sn, ep.x, ep.y, ep.z or 0)\n";
+    s += "\t\t\t\t\t\tif chunk ~= \"\" and (#chunk + 1 + #item) > 400 then\n";
+    s += "\t\t\t\t\t\t\t" + g + ".Log(\"BRIDGE nearby add npc=\" .. id .. \" \" .. chunk)\n";
+    s += "\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\telseif chunk == \"\" then\n";
+    s += "\t\t\t\t\t\t\tchunk = item\n";
+    s += "\t\t\t\t\t\telse\n";
+    s += "\t\t\t\t\t\t\tchunk = chunk .. \";\" .. item\n";
+    s += "\t\t\t\t\t\tend\n";
+    s += "\t\t\t\t\tend\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tif chunk ~= \"\" then " + g + ".Log(\"BRIDGE nearby add npc=\" .. id .. \" \" .. chunk) end\n";
     s += "end\n";
     s += "\n";
     // Entered from `guard_talk.xml`'s `ask_find` ExitScript ("Can you help me find someone?").

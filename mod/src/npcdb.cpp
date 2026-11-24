@@ -961,6 +961,16 @@ void read_helper(sqlite3* db, std::vector<Quest>& quests, const std::set<std::st
             } else if (!duel->is_duel() || duel->giver_soul != q.target_soul) {
                 throw std::runtime_error("quest " + q.id + " duel_quest names " + q.duel_quest_id +
                                          ", which is not a duel with this holder as its giver");
+            } else if (duel->has_fast_travel()) {
+                // The duel's carry rows, for the holder's Talk after the yes (npcdb.hpp door_go).
+                q.door_go = duel->fast_travel_row;
+                q.door_go_reply = duel->fast_travel_reply;
+                q.door_wait = duel->fast_travel_wait_row;
+                q.door_wait_reply = duel->fast_travel_wait_reply;
+                q.door_later = duel->fast_travel_later_row;
+                q.door_later_reply = duel->fast_travel_later_reply;
+                q.door_from = duel->fast_travel_from;
+                q.door_to = duel->fast_travel_to_hour;
             }
         }
         if (!q.warn_soul.empty()) {
@@ -1306,6 +1316,14 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "duel_yes_reply") return &q.holder_duel_yes_reply;
         if (field == "duel_no") return &q.holder_duel_no;
         if (field == "duel_no_reply") return &q.holder_duel_no_reply;
+        // The app's carry rows and their answers, kept only for the door the duel is offered
+        // at (npcdb.hpp door_go; read_helper copies them onto the holder).
+        if (field == "fast_travel") return &q.fast_travel_row;
+        if (field == "fast_travel_reply") return &q.fast_travel_reply;
+        if (field == "fast_travel_wait") return &q.fast_travel_wait_row;
+        if (field == "fast_travel_wait_reply") return &q.fast_travel_wait_reply;
+        if (field == "fast_travel_later") return &q.fast_travel_later_row;
+        if (field == "fast_travel_later_reply") return &q.fast_travel_later_reply;
         if (field == "warn_soul") return &q.warn_soul;
         if (field == "warn_name") return &q.warn_name;
         if (field == "objective_warn") return &q.objective_warn;
@@ -1440,10 +1458,6 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                     q.fast_travel_from = from;
                     q.fast_travel_to_hour = to;
                 }
-            } else if (field == "fast_travel" || field == "fast_travel_reply" || field == "fast_travel_wait" ||
-                       field == "fast_travel_wait_reply" || field == "fast_travel_later" ||
-                       field == "fast_travel_later_reply") {
-                // The app's: the rows and the answers.
             } else if (field == "blackmail_groschen") {
                 // The bedside's price for Henry's silence, over the thing itself.
                 q.blackmail_groschen = std::max(0, std::atoi(words.c_str()));

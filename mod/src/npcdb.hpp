@@ -810,6 +810,25 @@ struct Quest {
     std::string holder_duel_offer;
     std::string holder_duel_yes, holder_duel_yes_reply;
     std::string holder_duel_no, holder_duel_no_reply;
+    // And after the yes, in the same breath (bugs.txt 23 Nov 2026: "I'll wait for dark with
+    // you" should be there without a second conversation): the duel's own carry rows,
+    // copied from the duel quest in read_helper -- the carry in the dark hours
+    // (`door_go` / `door_go_reply`, the duel's fast_travel / fast_travel_reply), the wait
+    // for them (`door_wait` / `door_wait_reply`, its fast_travel_wait pair) and the leaving
+    // of it for another night (`door_later` / `door_later_reply`, its fast_travel_later
+    // pair) -- and the duel's hours, for the Lua's dark global the rows read. Empty where
+    // the duel has no carrying written; the yes then ends the talk as before.
+    std::string door_go, door_go_reply, door_wait, door_wait_reply, door_later, door_later_reply;
+    double door_from = -1.0, door_to = -1.0;
+    bool has_door_go() const {
+        return has_door_duel() && !door_go.empty() && !door_go_reply.empty() && !door_later.empty() &&
+               !door_later_reply.empty() && door_from >= 0;
+    }
+    bool has_door_wait() const { return has_door_go() && !door_wait.empty() && !door_wait_reply.empty(); }
+    // The app's rows of a carrying (fast_travel and its answers; quest.h), read here only to
+    // be copied onto the holder of the door the duel is offered at (door_go above).
+    std::string fast_travel_row, fast_travel_reply, fast_travel_wait_row, fast_travel_wait_reply,
+        fast_travel_later_row, fast_travel_later_reply;
     // A deliver's promised warning (bugs.txt 23 Nov 2026: "I'll take it back. And then I'll
     // find Paul Schmidt..."): the app's `warn` directive beside the accept on the accept_warn
     // row -- the store's `warned`, letter R, and the warn token -- opens the optional
