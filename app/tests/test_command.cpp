@@ -572,4 +572,181 @@ TEST_CASE("guard town/village directory: clean_guard_subject_mention, Burgher bo
     }
 }
 
+TEST_CASE("Co-patrons at Havel's Tavern: Christina Alder knows Paul Schmidt on Where-is and Do-you-know without leaking secrets") {
+    // 1. Stage1Gate weights clamp threshold <= 0.35 so "Where is Paul Schmidt?" (0.773) passes!
+    std::filesystem::path weights_path = "tools/command_bench/stage1_gate_weights.json";
+    if (!std::filesystem::exists(weights_path) &&
+        std::filesystem::exists("../../tools/command_bench/stage1_gate_weights.json")) {
+        weights_path = "../../tools/command_bench/stage1_gate_weights.json";
+    }
+    if (std::filesystem::exists(weights_path)) {
+        const auto gate = Stage1Gate::load_json(weights_path);
+        REQUIRE(gate.has_value());
+        CHECK(gate->loaded());
+        CHECK(gate->threshold() <= 0.351f);
+    }
+
+    // 2. gamelog parses `BRIDGE nearby reset/add` markers cleanly.
+    const Event nr = classify("<16:00:02> [Lua] [moonshine] BRIDGE nearby reset npc=kkut_woman_22");
+    CHECK(nr.marker == Marker::Nearby);
+    CHECK(nr.intent == "reset");
+    CHECK(nr.soul == "kkut_woman_22");
+    const Event na = classify(
+        "<16:00:02> [Lua] [moonshine] BRIDGE nearby add npc=kkut_woman_22 kkut_man_51@3093.0,872.0,60.4;kkut_havel@3096.0,876.0,60.4");
+    CHECK(na.marker == Marker::Nearby);
+    CHECK(na.intent == "add");
+    CHECK(na.soul == "kkut_woman_22");
+    CHECK(na.said == "kkut_man_51@3093.0,872.0,60.4;kkut_havel@3096.0,876.0,60.4");
+
+    std::filesystem::path real_db = "data/kcd2/npcs.sqlite";
+    if (!std::filesystem::exists(real_db) && std::filesystem::exists("../../data/kcd2/npcs.sqlite")) {
+        real_db = "../../data/kcd2/npcs.sqlite";
+    }
+    if (!std::filesystem::exists(real_db)) return;
+
+    CommandGraph real_graph(real_db);
+    REQUIRE(real_graph.ok());
+
+    StubLlm sidecar_llm;
+    CommandDirector dir(nullptr, &sidecar_llm, real_graph);
+
+    // Christina Alder (`kkut_woman_22`) seated at Havel's Tavern (`at=3094,875`), as in wl1 log:
+    GuardPresence havel_tavern;
+    havel_tavern.guard_x = 3094.0;
+    havel_tavern.guard_y = 875.0;
+
+    // 3. "Where is Paul Schmidt?" (and bare "Where is Paul?") resolves to Paul Schmidt (`kkut_man_51`),
+    //    places `@locate` at his Havel's Tavern `routine_day_target` table (`3093.0,872.0,60.4`),
+    //    includes his Havel's Tavern `life:day` habit, and NEVER leaks Sentence 2's stolen chalice!
+    sidecar_llm.replies.push_back("LOCATE: Paul Schmidt");
+    const CommandOutcome loc_paul = dir.resolve(
+        "kkut_woman_22", "Christina Alder", "Kuttenberg",
+        "Where is Paul Schmidt?", {}, {}, KbGate::Open, {}, {}, &havel_tavern);
+    CHECK(loc_paul.status == CommandStatus::ResolvedSoul);
+    CHECK(loc_paul.soul_name == "kkut_man_51");
+    CHECK(loc_paul.display_name == "Paul Schmidt");
+    CHECK(loc_paul.directive.find("@locate kkut_man_51 ") == 0);
+    CHECK(loc_paul.directive.find("450,1440,3093.0,872.0,60.4") != std::string::npos);
+    CHECK(loc_paul.direction.find("Havel's tavern") != std::string::npos);
+    CHECK(loc_paul.direction.find("Ceska street") != std::string::npos);
+    CHECK(loc_paul.direction.find("do not say you do not know them") != std::string::npos);
+    CHECK(loc_paul.direction.find("chalice") == std::string::npos);
+    CHECK(loc_paul.direction.find("false bottom") == std::string::npos);
+
+    // Bare "Where is Paul?" disambiguates to Paul Schmidt (`kkut_man_51`) when *In the Stocks*
+    // (`979c4fccd41b`) is active in `record.quests` (over generic miner `Paul` `kkut_additive_man_124`).
+    SoulRecord active_stocks;
+    active_stocks.quests.push_back({"979c4fccd41b", "accepted"});
+    sidecar_llm.replies.push_back("LOCATE: Paul");
+    const CommandOutcome loc_bare_paul = dir.resolve(
+        "kkut_woman_22", "Christina Alder", "Kuttenberg",
+        "Where is Paul?", {}, active_stocks, KbGate::Open, {}, {}, &havel_tavern);
+    CHECK(loc_bare_paul.status == CommandStatus::ResolvedSoul);
+    CHECK(loc_bare_paul.soul_name == "kkut_man_51");
+
+    // 4. Non-command acquaintance questions ("Do you know Paul Schmidt?", "Who is Paul Schmidt?",
+    //    "Tell me about Paul Schmidt", "Does Paul Schmidt drink here?") resolve via `resolve_acquaintance`!
+    for (const char* q : {
+             "Do you know Paul Schmidt?",
+             "Who is Paul Schmidt?",
+             "Tell me about Paul Schmidt.",
+             "Does Paul Schmidt drink here?",
+         }) {
+        INFO("acquaintance query=" << q);
+        const CommandOutcome acq = dir.resolve_acquaintance(
+            "kkut_woman_22", "Christina Alder", q, {}, {}, KbGate::Open, &havel_tavern);
+        CHECK(acq.status == CommandStatus::ResolvedSoul);
+        CHECK(acq.action == CommandAction::None);
+        CHECK(acq.directive.empty());
+        CHECK(acq.soul_name == "kkut_man_51");
+        CHECK(acq.heard_token == "kkut_man_51");
+        CHECK(acq.direction.find("Havel's tavern") != std::string::npos);
+        CHECK(acq.direction.find("chalice") == std::string::npos);
+    }
+
+    // Ordinary non-person questions never false-trigger `resolve_acquaintance`.
+    for (const char* q : {
+             "What do you think of Sigismund?",
+             "How is the beer tonight?",
+             "Do you know anything about the silver mines?",
+         }) {
+        INFO("non-person query=" << q);
+        const CommandOutcome acq = dir.resolve_acquaintance(
+            "kkut_woman_22", "Christina Alder", q, {}, {}, KbGate::Open, &havel_tavern);
+        CHECK(acq.status == CommandStatus::NoAction);
+        CHECK(acq.direction.empty());
+    }
+
+    // 5. Remembered tavern venue in `SoulRecord::memory` (`kMemoryGap` with `at=3094,875 in=true`):
+    //    when Christina is met the next day out on Kupecka Street (`at=3195,812`), she still remembers
+    //    Paul Schmidt from Havel's Tavern!
+    SoulRecord remembered_tavern;
+    remembered_tavern.soul = "kkut_woman_22";
+    remembered_tavern.memory.push_back(
+        {std::string(kMemoryGap), 1000.0, "rch=0.5 at=3094,875 in=true nspc=24 hour=22.2"});
+    GuardPresence next_day_street;
+    next_day_street.guard_x = 3195.0;
+    next_day_street.guard_y = 812.0;
+    const CommandOutcome from_memory = dir.resolve_acquaintance(
+        "kkut_woman_22", "Christina Alder", "Do you know Paul Schmidt?",
+        {}, remembered_tavern, KbGate::Open, &next_day_street);
+    CHECK(from_memory.status == CommandStatus::ResolvedSoul);
+    CHECK(from_memory.soul_name == "kkut_man_51");
+    CHECK(from_memory.direction.find("from the tavern") != std::string::npos);
+
+    // 6. Live `BRIDGE nearby` co-presence: Paul Schmidt knows Christina Alder when she is sitting
+    //    3 metres away at Havel's Tavern (`nearby_souls`), even though Christina's static `npc_routine`
+    //    rows are on Kupecka Street (`3195,812`)!
+    GuardPresence paul_live;
+    paul_live.guard_x = 3093.0;
+    paul_live.guard_y = 872.0;
+    paul_live.nearby_souls["kkut_woman_22"] = {3094.0, 875.0, 60.4};
+    const CommandOutcome paul_knows_christina = dir.resolve_acquaintance(
+        "kkut_man_51", "Paul Schmidt", "Do you know Christina Alder?",
+        {}, {}, KbGate::Open, &paul_live);
+    CHECK(paul_knows_christina.status == CommandStatus::ResolvedSoul);
+    CHECK(paul_knows_christina.soul_name == "kkut_woman_22");
+    CHECK(paul_knows_christina.direction.find("right nearby here right now") != std::string::npos);
+
+    // 7. End-to-end Session test with `BRIDGE nearby` + `at=3094,875`: verifies both `"Where is Paul Schmidt?"`
+    //    and `"Do you know Paul Schmidt?"` inject grounded facts and suppress `"you know nothing of it"`!
+    StubLlm dlg_llm;
+    FakeGame game;
+    Options opts;
+    TurnWriter writer(game.paths());
+    Prefiller prefiller(dlg_llm, opts);
+    Session session(dlg_llm, writer, prefiller, opts);
+    session.set_world("Bohemia, 1403.");
+    session.set_stream_interval(std::chrono::hours(1));
+    session.set_persona_source(
+        [](std::string_view, const Approach&, std::string_view, const SoulRecord&) -> std::optional<Persona> {
+            return Persona{"Christina Alder", "You are Christina Alder, a carpenter's wife in Kuttenberg.", "Good evening."};
+        });
+    session.set_commands(&dir);
+
+    session.handle(classify("<16:00:02> [Lua] [moonshine] BRIDGE nearby reset npc=kkut_woman_22"));
+    session.handle(classify("<16:00:02> [Lua] [moonshine] BRIDGE nearby add npc=kkut_woman_22 kkut_man_51@3093.0,872.0,60.4"));
+    session.handle(classify(
+        "<16:00:02> [Lua] [moonshine] BRIDGE begin npc=kkut_woman_22 doing=SittingIdle prop=beer at=3094,875 in=true hour=22.28"));
+    session.handle(classify("<16:00:03> BRIDGE played turn=1 -- Good evening."));
+
+    sidecar_llm.replies.push_back("NONE");
+    dlg_llm.replies.push_back("Paul Schmidt? Aye, he sits right over there with a jug most days.");
+    session.say("Do you know Paul Schmidt?", true);
+    REQUIRE(!dlg_llm.calls.empty());
+    const std::string prompt_acq = dlg_llm.calls.back().messages.back().content;
+    CHECK(prompt_acq.find("Paul Schmidt") != std::string::npos);
+    CHECK(prompt_acq.find("Havel's tavern") != std::string::npos);
+    CHECK(prompt_acq.find("you know nothing of it") == std::string::npos);
+    CHECK(game.whole(2).find("@heard kkut_man_51") != std::string::npos);
+    session.handle(classify("<16:00:05> BRIDGE played turn=2 -- Paul Schmidt? Aye, he sits right over there with a jug most days."));
+
+    sidecar_llm.replies.push_back("LOCATE: Paul Schmidt");
+    dlg_llm.replies.push_back("Paul's right over at the table here in Havel's tavern, or back at the gravedigger's house on Ceska street.");
+    session.say("Where is Paul Schmidt?", true);
+    CHECK(game.whole(3).find("@locate kkut_man_51 ") != std::string::npos);
+    CHECK(game.whole(3).find("0,1440,3094.0,875.0,60.4") == std::string::npos);
+    CHECK(game.whole(3).find("0,1440,3093.0,872.0,60.4") != std::string::npos);
+}
+
 

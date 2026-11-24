@@ -623,6 +623,8 @@ private:
     std::string guard_location_;
     std::string pending_guard_present_loc_;
     GuardPresence pending_guard_presence_;
+    std::string pending_nearby_soul_;
+    std::map<std::string, LiveSoulSpot, std::less<>> pending_nearby_souls_;
     GuardPresence guard_presence_;
     bool awaiting_guard_subject_ = false;
 };

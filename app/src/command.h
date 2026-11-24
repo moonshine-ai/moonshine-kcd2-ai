@@ -62,13 +62,14 @@ struct LiveSoulSpot {
 };
 
 // Live settlement snapshot emitted by `Moonshine.ScanGuardPresent` when a guard lookup opens,
-// plus the guard's own world coordinates (`at=<x>,<y>`).
+// plus the speaker's world coordinates (`at=<x>,<y>`) and 35m live nearby scan (`BRIDGE nearby`).
 struct GuardPresence {
     bool has_live_scan = false;
     double guard_x = -1.0;
     double guard_y = -1.0;
     std::map<std::string, LiveSoulSpot, std::less<>> live_souls;
     std::set<std::string, std::less<>> absent_souls;
+    std::map<std::string, LiveSoulSpot, std::less<>> nearby_souls;
 };
 
 struct CommandCandidate {
@@ -89,6 +90,7 @@ struct CommandCandidate {
     bool is_game_named = false;
     bool is_major_friend = false;
     bool is_traveling = false;
+    bool is_nearby_now = false;
     std::string why_unmeetable;
     std::string person_token;
     std::string via_name;
@@ -97,6 +99,7 @@ struct CommandCandidate {
 
 struct SoulWhereabouts {
     std::string home_fact;
+    std::string day_fact;
     std::string self_intro;
 };
 
@@ -163,7 +166,7 @@ public:
 
 private:
     int dim_ = 0;
-    float threshold_ = 0.65f;
+    float threshold_ = 0.35f;
     std::vector<float> weights_;  // 4 * dim_ row-major
     std::vector<float> bias_;     // 4
 };
@@ -191,11 +194,13 @@ public:
 
     std::vector<CommandCandidate> candidates_for(std::string_view speaker_soul);
     std::vector<CommandCandidate> candidates_in_location(std::string_view location_id);
+    std::vector<CommandCandidate> co_patrons_near(double x, double y, double radius_m = 35.0);
     std::optional<CommandCandidate> candidate_by_soul(std::string_view soul);
     std::vector<CommandCandidate> candidates_for_guard(
         std::string_view location_id,
         const GuardPresence* guard_presence = nullptr);
-    std::vector<RoutineSpot> spots_of(std::string_view target_soul);
+    std::vector<RoutineSpot> spots_of(std::string_view target_soul,
+                                      const GuardPresence* presence = nullptr);
     std::vector<RoutineSpot> spots_of_in_location(
         std::string_view target_soul,
         std::string_view location_id,
@@ -205,6 +210,7 @@ public:
 private:
     std::vector<CommandCandidate> query_db_candidates(std::string_view speaker_soul) const;
     std::vector<CommandCandidate> query_db_location_candidates(std::string_view location_id) const;
+    std::vector<CommandCandidate> query_db_co_patrons_near(double x, double y, double radius_m) const;
     std::optional<CommandCandidate> query_db_single_candidate(std::string_view soul) const;
     std::vector<RoutineSpot> query_db_spots(std::string_view target_soul) const;
     SoulWhereabouts query_db_whereabouts(std::string_view target_soul) const;
@@ -215,6 +221,7 @@ private:
     std::mutex lock_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> cache_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> location_cache_;
+    std::map<std::pair<int, int>, std::vector<CommandCandidate>> near_cache_;
     std::map<std::string, CommandCandidate, std::less<>> soul_cache_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_;
     std::map<std::string, std::vector<CommandCandidate>, std::less<>> held_locations_;
@@ -234,13 +241,15 @@ public:
     std::string pass1_keyterms(std::string_view speaker_soul,
                                const std::vector<Message>& history,
                                const SoulRecord& record,
-                               std::size_t max_terms = 45);
+                               std::size_t max_terms = 45,
+                               const GuardPresence* guard_presence = nullptr);
 
     // Expanded Hop-1 + Hop-2 + canonical settlement keyterms for conditional Pass-2 replay.
     std::string pass2_keyterms(std::string_view speaker_soul,
                                const std::vector<Message>& history,
                                const SoulRecord& record,
-                               std::size_t max_terms = 95);
+                               std::size_t max_terms = 95,
+                               const GuardPresence* guard_presence = nullptr);
 
     // Keyterms drawn from everyone inside a Burgher (`SettlementLocation`) population center,
     // ranked toward `query_hint` when re-transcribing a spoken guard lookup.
@@ -284,7 +293,23 @@ public:
                            std::string_view guard_location = {},
                            const GuardPresence* guard_presence = nullptr);
 
+    // Zero-LLM acquaintance fallback when `KnowledgeDirector` finds no KB item (`nothing above
+    // tau`) on a non-command question naming someone in the speaker's circle, current tavern /
+    // venue (`at=<x>,<y>`), or live nearby sphere (`BRIDGE nearby`).
+    CommandOutcome resolve_acquaintance(std::string_view speaker_soul,
+                                        std::string_view speaker_name,
+                                        std::string_view said,
+                                        const std::vector<Message>& history,
+                                        const SoulRecord& record,
+                                        KbGate kb_gate = KbGate::Open,
+                                        const GuardPresence* guard_presence = nullptr);
+
 private:
+    std::vector<CommandCandidate> contextual_candidates(
+        std::string_view speaker_soul,
+        const SoulRecord& record,
+        const GuardPresence* guard_presence);
+
     ExtractedCommand run_extractor(std::string_view speaker_name,
                                    std::string_view speaker_settlement,
                                    std::string_view said,

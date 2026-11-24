@@ -39,6 +39,7 @@ constexpr std::string_view kConsoleLine = "BRIDGE console line ";
 constexpr std::string_view kSayStart = "BRIDGE say start";
 constexpr std::string_view kSayStop = "BRIDGE say stop";
 constexpr std::string_view kGuardPresent = "BRIDGE guard_present ";
+constexpr std::string_view kNearby = "BRIDGE nearby ";
 constexpr std::string_view kNpc = "npc=";
 constexpr std::string_view kDoing = "doing=";
 
@@ -326,6 +327,28 @@ Event classify(std::string_view line) {
             Event event{Marker::GuardPresent};
             event.intent = "out";
             event.said = std::string(trim(rest.substr(4)));
+            return event;
+        }
+    }
+    if (const std::size_t at = line.find(kNearby); at != std::string_view::npos) {
+        const std::string_view rest = trim(line.substr(at + kNearby.size()));
+        if (rest.rfind("reset", 0) == 0) {
+            Event event{Marker::Nearby};
+            event.intent = "reset";
+            event.soul = field_from(rest, "npc=");
+            return event;
+        }
+        if (rest.rfind("add ", 0) == 0) {
+            Event event{Marker::Nearby};
+            event.intent = "add";
+            event.soul = field_from(rest, "npc=");
+            const std::size_t npc_at = rest.find("npc=");
+            if (npc_at != std::string_view::npos) {
+                const std::size_t sp = rest.find(' ', npc_at);
+                if (sp != std::string_view::npos) {
+                    event.said = std::string(trim(rest.substr(sp + 1)));
+                }
+            }
             return event;
         }
     }

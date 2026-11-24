@@ -120,6 +120,10 @@ enum class Marker {
     // `BRIDGE guard_present reset loc=<id>` (`intent = "reset"`, `soul = <id>`) followed by
     // zero or more `BRIDGE guard_present add <soul@x,y,z;...>` (`intent = "add"`, `said = ...`).
     GuardPresent,
+    // Live 35m sphere scan of named NPCs near the speaker right before `BRIDGE begin`:
+    // `BRIDGE nearby reset npc=<id>` (`intent = "reset"`, `soul = <id>`) followed by
+    // zero or more `BRIDGE nearby add npc=<id> <soul@x,y,z;...>` (`intent = "add"`).
+    Nearby,
 };
 
 struct Event {

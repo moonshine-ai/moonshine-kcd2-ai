@@ -195,8 +195,32 @@ void Session::handle(const Event& event) {
             pending_.clear();
             pending_guard_present_loc_.clear();
             pending_guard_presence_ = {};
+            pending_nearby_soul_.clear();
+            pending_nearby_souls_.clear();
             guard_presence_ = {};
             status("the game's store " + event.said);
+            break;
+        case Marker::Nearby:
+            if (event.intent == "reset") {
+                pending_nearby_soul_ = event.soul;
+                pending_nearby_souls_.clear();
+            } else if (event.intent == "add" && !pending_nearby_soul_.empty() &&
+                       event.soul == pending_nearby_soul_) {
+                std::string_view rest = event.said;
+                while (!rest.empty()) {
+                    const std::size_t semi = rest.find(';');
+                    const std::string_view item = rest.substr(0, semi);
+                    rest = (semi == std::string_view::npos) ? std::string_view() : rest.substr(semi + 1);
+                    const std::size_t at_pos = item.find('@');
+                    if (at_pos == std::string_view::npos || at_pos == 0) continue;
+                    const std::string sn(item.substr(0, at_pos));
+                    const std::string coords(item.substr(at_pos + 1));
+                    double px = 0.0, py = 0.0, pz = 0.0;
+                    if (std::sscanf(coords.c_str(), "%lf,%lf,%lf", &px, &py, &pz) >= 2) {
+                        pending_nearby_souls_[sn] = {px, py, pz};
+                    }
+                }
+            }
             break;
         case Marker::GuardPresent:
             if (event.intent == "reset") {
@@ -320,8 +344,13 @@ void Session::open(std::string_view soul, const Approach& approach,
     }
     guard_presence_.guard_x = approach.x;
     guard_presence_.guard_y = approach.y;
+    if (!pending_nearby_soul_.empty() && pending_nearby_soul_ == soul) {
+        guard_presence_.nearby_souls = std::move(pending_nearby_souls_);
+    }
     pending_guard_present_loc_.clear();
     pending_guard_presence_ = {};
+    pending_nearby_soul_.clear();
+    pending_nearby_souls_.clear();
     awaiting_guard_subject_ = (approach.mode == "guard_find");
 
     // The look-ahead still waiting on its dwell is spent: greet() makes the greeting now.
@@ -987,7 +1016,7 @@ void Session::set_listening(bool on, std::string_view why) {
         std::string terms =
             !guard_location_.empty()
                 ? commands_->location_keyterms(guard_location_, 60, {}, &guard_presence_)
-                : commands_->pass1_keyterms(soul_, history_, record_);
+                : commands_->pass1_keyterms(soul_, history_, record_, 45, &guard_presence_);
         if (!persona_.name.empty()) {
             terms = terms.empty() ? persona_.name : (persona_.name + ", " + terms);
         }
@@ -1378,6 +1407,23 @@ void Session::answer(std::string_view said, bool remember) {
     Advice advice;
     if (judged.empty() && (picked_intent_.empty() || picked_intent_ == "help")) {
         advice = advise(kb_query, offering || picked_intent_ == "help");
+        if (commands_ && cmd.action == CommandAction::None && advice.item_id.empty() &&
+            picked_intent_.empty() && !offering && guard_location_.empty()) {
+            CommandOutcome acq = commands_->resolve_acquaintance(
+                soul_, persona_.name, said, history_, record_,
+                persona_.scripted.kb_gate, &guard_presence_);
+            if (acq.status == CommandStatus::GatedByTrust &&
+                persona_.scripted.kb_gate == KbGate::Owed &&
+                persona_.quest_of.exists() &&
+                !persona_.quest_of.target_soul.empty() &&
+                acq.soul_name == persona_.quest_of.target_soul) {
+                acq = commands_->resolve_acquaintance(
+                    soul_, persona_.name, said, history_, record_, KbGate::Open, &guard_presence_);
+            }
+            if (acq.status != CommandStatus::NoAction) {
+                cmd = std::move(acq);
+            }
+        }
         if (cmd.status == CommandStatus::GatedByTrust && !advice.knows) {
             const Quest& quest = persona_.quest_of;
             const bool giver = quest.exists() && quest.role == QuestRole::Giver;
@@ -1396,7 +1442,7 @@ void Session::answer(std::string_view said, bool remember) {
             status("knowledge: " + advice.note);
         }
     }
-    if (cmd.action != CommandAction::None) {
+    if (cmd.action != CommandAction::None || !cmd.direction.empty()) {
         if (!cmd.directive.empty()) pending_.push_back(cmd.directive);
         if (!cmd.heard_token.empty() &&
             std::find(heard_.begin(), heard_.end(), cmd.heard_token) == heard_.end()) {

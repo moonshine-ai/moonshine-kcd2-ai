@@ -18,8 +18,8 @@
 namespace moonshine {
 
 const char* kCompactCommandGrammar =
-    "root ::= \"NONE\" | (\"LOCATE: \" | \"FOLLOW: \" | \"TRAVEL: \") target\n"
-    "target ::= [A-Za-z0-9'\" .,\\-]{1,48}\n";
+    "root ::= (\"NONE\" | (\"LOCATE: \" | \"FOLLOW: \" | \"TRAVEL: \") target) \"\\n\"?\n"
+    "target ::= [A-Za-z0-9'\" .,-]{1,48}\n";
 
 const char* kCompactCommandSystemPrompt =
     "You classify player utterances in a medieval RPG dialogue into an immediate NPC command or NONE.\n"
@@ -290,8 +290,9 @@ double salience_bonus_for(const CommandCandidate& cand,
         bonus += 0.05;
     }
 
-    // 4. Social closeness (Hop-1 > Hop-2)
+    // 4. Social closeness (Hop-1 > Hop-2) + live proximity
     bonus += 0.05 * std::clamp(cand.closeness, 0.0, 1.0);
+    if (cand.is_nearby_now) bonus += 0.02;
     return bonus;
 }
 
@@ -564,24 +565,24 @@ std::string format_locate_directive(std::string_view soul,
     return "@locate " + std::string(soul) + " " + std::to_string(payload.size()) + ":" + payload;
 }
 
-std::string clean_guard_subject_mention(std::string_view raw) {
-    auto trim_punct = [](std::string_view s) {
-        std::size_t a = 0;
-        std::size_t b = s.size();
-        while (a < b && (std::isspace(static_cast<unsigned char>(s[a])) ||
-                         s[a] == '"' || s[a] == '\'' || s[a] == '?' || s[a] == '!' ||
-                         s[a] == '.' || s[a] == ',' || s[a] == ':' || s[a] == ';')) {
-            ++a;
-        }
-        while (b > a && (std::isspace(static_cast<unsigned char>(s[b - 1])) ||
-                         s[b - 1] == '"' || s[b - 1] == '\'' || s[b - 1] == '?' ||
-                         s[b - 1] == '!' || s[b - 1] == '.' || s[b - 1] == ',' ||
-                         s[b - 1] == ':' || s[b - 1] == ';')) {
-            --b;
-        }
-        return std::string(s.substr(a, b - a));
-    };
+std::string trim_punct(std::string_view s) {
+    std::size_t a = 0;
+    std::size_t b = s.size();
+    while (a < b && (std::isspace(static_cast<unsigned char>(s[a])) ||
+                     s[a] == '"' || s[a] == '\'' || s[a] == '?' || s[a] == '!' ||
+                     s[a] == '.' || s[a] == ',' || s[a] == ':' || s[a] == ';')) {
+        ++a;
+    }
+    while (b > a && (std::isspace(static_cast<unsigned char>(s[b - 1])) ||
+                     s[b - 1] == '"' || s[b - 1] == '\'' || s[b - 1] == '?' ||
+                     s[b - 1] == '!' || s[b - 1] == '.' || s[b - 1] == ',' ||
+                     s[b - 1] == ':' || s[b - 1] == ';')) {
+        --b;
+    }
+    return std::string(s.substr(a, b - a));
+}
 
+std::string clean_guard_subject_mention(std::string_view raw) {
     const std::string fallback = trim_punct(raw);
     std::string cur = fallback;
     if (cur.empty()) return cur;
@@ -665,7 +666,8 @@ std::optional<Stage1Gate> Stage1Gate::load_json(const std::filesystem::path& pat
         json j = json::parse(in);
         Stage1Gate g;
         g.dim_ = j.value("dim", 768);
-        g.threshold_ = j.value("recommended_cmd_threshold", 0.65f);
+        g.threshold_ = j.value("recommended_cmd_threshold", 0.35f);
+        if (g.threshold_ > 0.50f) g.threshold_ = 0.35f;
         const auto& w = j.at("weights");
         const auto& b = j.at("bias");
         if (w.size() != 4 || b.size() != 4) return std::nullopt;
@@ -766,6 +768,53 @@ std::vector<CommandCandidate> CommandGraph::candidates_in_location(std::string_v
     return built;
 }
 
+std::vector<CommandCandidate> CommandGraph::co_patrons_near(double x, double y, double radius_m) {
+    if (x <= 0.0 || y <= 0.0 || radius_m <= 0.0) return {};
+    std::lock_guard<std::mutex> g(lock_);
+    std::vector<CommandCandidate> out;
+    std::set<std::string, std::less<>> seen;
+    const double r2 = radius_m * radius_m;
+    for (const auto& [soul, spots] : held_spots_) {
+        for (const RoutineSpot& sp : spots) {
+            const double dx = sp.x - x;
+            const double dy = sp.y - y;
+            if (dx * dx + dy * dy <= r2) {
+                auto it = held_souls_.find(soul);
+                if (it != held_souls_.end() && seen.insert(soul).second) {
+                    CommandCandidate c = it->second;
+                    c.hop = 2;
+                    c.closeness = 0.65;
+                    c.via_name = "around here";
+                    out.push_back(std::move(c));
+                }
+                break;
+            }
+        }
+    }
+    if (!db_) return out;
+
+    const std::pair<int, int> grid_key{
+        static_cast<int>(std::llround(x / 5.0)),
+        static_cast<int>(std::llround(y / 5.0)),
+    };
+    if (std::abs(radius_m - 35.0) < 1e-3) {
+        if (auto it = near_cache_.find(grid_key); it != near_cache_.end()) {
+            for (const CommandCandidate& c : it->second) {
+                if (seen.insert(c.soul_name).second) out.push_back(c);
+            }
+            return out;
+        }
+    }
+    std::vector<CommandCandidate> built = query_db_co_patrons_near(x, y, radius_m);
+    if (std::abs(radius_m - 35.0) < 1e-3) {
+        near_cache_.emplace(grid_key, built);
+    }
+    for (CommandCandidate& c : built) {
+        if (seen.insert(c.soul_name).second) out.push_back(std::move(c));
+    }
+    return out;
+}
+
 std::optional<CommandCandidate> CommandGraph::candidate_by_soul(std::string_view soul) {
     std::lock_guard<std::mutex> g(lock_);
     if (soul.empty()) return std::nullopt;
@@ -833,11 +882,32 @@ std::vector<CommandCandidate> CommandGraph::candidates_for_guard(
     return out;
 }
 
-std::vector<RoutineSpot> CommandGraph::spots_of(std::string_view target_soul) {
-    std::lock_guard<std::mutex> g(lock_);
-    if (auto it = held_spots_.find(target_soul); it != held_spots_.end()) return it->second;
-    if (!db_ || target_soul.empty()) return {};
-    return query_db_spots(target_soul);
+std::vector<RoutineSpot> CommandGraph::spots_of(std::string_view target_soul,
+                                                const GuardPresence* presence) {
+    std::vector<RoutineSpot> out;
+    if (presence) {
+        if (auto it = presence->nearby_souls.find(target_soul);
+            it != presence->nearby_souls.end()) {
+            out.push_back({0, 1440, it->second.x, it->second.y, it->second.z});
+        } else if (auto it2 = presence->live_souls.find(target_soul);
+                   it2 != presence->live_souls.end()) {
+            out.push_back({0, 1440, it2->second.x, it2->second.y, it2->second.z});
+        }
+    }
+    std::vector<RoutineSpot> db_spots;
+    {
+        std::lock_guard<std::mutex> g(lock_);
+        if (auto it = held_spots_.find(target_soul); it != held_spots_.end()) {
+            db_spots = it->second;
+        } else if (db_ && !target_soul.empty()) {
+            db_spots = query_db_spots(target_soul);
+        }
+    }
+    for (const RoutineSpot& sp : db_spots) {
+        if (out.size() >= 8) break;
+        out.push_back(sp);
+    }
+    return out;
 }
 
 std::vector<RoutineSpot> CommandGraph::spots_of_in_location(
@@ -1263,6 +1333,28 @@ std::vector<CommandCandidate> CommandGraph::query_db_candidates(std::string_view
         }
     }
 
+    // 2c. Shared tavern `place_id` regulars (Hop-2 so we don't expand their entire circles in Step 4)
+    {
+        sqlite3_stmt* st = nullptr;
+        const char* sql =
+            "SELECT DISTINCT r2.soul_name "
+            "FROM npc_routine r1 "
+            "JOIN npc_routine r2 ON r2.place_id = r1.place_id "
+            "WHERE r1.soul_name = ?1 AND r1.place_id IS NOT NULL AND r1.place_id != '' "
+            "AND (r1.place_id LIKE 'tavern:%' OR LOWER(r1.place_id) LIKE '%tavern%') "
+            "AND (SELECT COUNT(DISTINCT r3.soul_name) FROM npc_routine r3 WHERE r3.place_id = r1.place_id) <= 45";
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, speaker_soul.data(), static_cast<int>(speaker_soul.size()), SQLITE_TRANSIENT);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string peer = col_str(st, 0);
+                if (!peer.empty() && peer != speaker_soul) {
+                    fetch_soul_meta(peer, 2, 0.62, "the tavern");
+                }
+            }
+            sqlite3_finalize(st);
+        }
+    }
+
     // 3. Hop-2 bridges JSON (`["soul_a", ...]` or `[{"soul_name": "..."}]`)
     for (const std::string& bj : bridge_jsons) {
         if (bj.empty() || bj == "[]") continue;
@@ -1684,11 +1776,250 @@ std::optional<CommandCandidate> CommandGraph::query_db_single_candidate(
         }
     }
     sqlite3_finalize(st);
+
+    if (res.has_value() &&
+        sqlite3_table_column_metadata(db_, nullptr, "npc_quest", "quest_id",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK) {
+        sqlite3_stmt* qst = nullptr;
+        const char* qsql =
+            "SELECT quest_id FROM npc_quest WHERE giver_soul = ?1 OR target_soul = ?1";
+        if (sqlite3_prepare_v2(db_, qsql, -1, &qst, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(qst, 1, soul.data(), static_cast<int>(soul.size()), SQLITE_TRANSIENT);
+            while (sqlite3_step(qst) == SQLITE_ROW) {
+                const std::string qid = col_str(qst, 0);
+                if (!qid.empty()) res->quest_ids.push_back(qid);
+            }
+            sqlite3_finalize(qst);
+        }
+    }
     return res;
+}
+
+namespace {
+
+struct QuestRoutineSpec {
+    std::string prefab;
+    double x = 0.0;
+    double y = 0.0;
+    bool ok = false;
+};
+
+// Parses `use_customerDrinkOnlyQuest@Table/table_twoSides_tavern@3094,872` or
+// `Bed/bed_high_double@3086.2,791.4`.
+QuestRoutineSpec parse_quest_routine_spec(std::string_view spec) {
+    QuestRoutineSpec out;
+    const std::size_t last_at = spec.rfind('@');
+    if (last_at == std::string_view::npos) return out;
+    const std::string_view coords = spec.substr(last_at + 1);
+    const std::size_t comma = coords.find(',');
+    if (comma == std::string_view::npos) return out;
+    try {
+        out.x = std::stod(std::string(coords.substr(0, comma)));
+        out.y = std::stod(std::string(coords.substr(comma + 1)));
+    } catch (...) {
+        return out;
+    }
+    if (!std::isfinite(out.x) || !std::isfinite(out.y)) return out;
+    const std::string_view head = spec.substr(0, last_at);
+    const std::size_t first_at = head.find('@');
+    out.prefab = std::string(first_at == std::string_view::npos ? head : head.substr(first_at + 1));
+    out.ok = true;
+    return out;
+}
+
+int parse_hhmm_minutes(std::string_view hhmm, int fallback_min) {
+    const std::size_t colon = hhmm.find(':');
+    if (colon == std::string_view::npos) return fallback_min;
+    try {
+        const int h = std::stoi(std::string(hhmm.substr(0, colon)));
+        const int m = std::stoi(std::string(hhmm.substr(colon + 1)));
+        if (h < 0 || h > 24 || m < 0 || m >= 60) return fallback_min;
+        return std::clamp(h * 60 + m, 0, 1440);
+    } catch (...) {
+        return fallback_min;
+    }
+}
+
+void snap_quest_spot_to_routine_object(sqlite3* db,
+                                       std::string_view prefab,
+                                       double& x,
+                                       double& y,
+                                       double& z) {
+    if (!db || prefab.empty()) return;
+    if (sqlite3_table_column_metadata(db, nullptr, "npc_routine_object", "pos_z",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return;
+    }
+    sqlite3_stmt* st = nullptr;
+    const char* sql =
+        "SELECT pos_x, pos_y, COALESCE(pos_z, 0.0) "
+        "FROM npc_routine_object "
+        "WHERE prefab = ?1 AND pos_x BETWEEN ?2 AND ?3 AND pos_y BETWEEN ?4 AND ?5";
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK) return;
+    sqlite3_bind_text(st, 1, prefab.data(), static_cast<int>(prefab.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_double(st, 2, x - 25.0);
+    sqlite3_bind_double(st, 3, x + 25.0);
+    sqlite3_bind_double(st, 4, y - 25.0);
+    sqlite3_bind_double(st, 5, y + 25.0);
+    double best_d2 = 25.0 * 25.0 + 1.0;
+    double bx = x, by = y, bz = z;
+    bool found = false;
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const double rx = sqlite3_column_double(st, 0);
+        const double ry = sqlite3_column_double(st, 1);
+        const double rz = sqlite3_column_double(st, 2);
+        const double d2 = (rx - x) * (rx - x) + (ry - y) * (ry - y);
+        if (d2 < best_d2) {
+            best_d2 = d2;
+            bx = rx;
+            by = ry;
+            bz = rz;
+            found = true;
+        }
+    }
+    sqlite3_finalize(st);
+    if (found) {
+        x = bx;
+        y = by;
+        z = bz;
+    }
+}
+
+}  // namespace
+
+std::vector<CommandCandidate> CommandGraph::query_db_co_patrons_near(
+    double x, double y, double radius_m) const {
+    std::vector<CommandCandidate> out;
+    if (!db_ || radius_m <= 0.0) return out;
+    const double r2 = radius_m * radius_m;
+    std::set<std::string, std::less<>> souls;
+
+    // 1. Regulars with `npc_routine` spots within `radius_m` (e.g. Havel's Tavern patrons/staff).
+    {
+        sqlite3_stmt* st = nullptr;
+        const char* sql =
+            "SELECT DISTINCT soul_name, pos_x, pos_y FROM npc_routine "
+            "WHERE pos_x BETWEEN ?1 AND ?2 AND pos_y BETWEEN ?3 AND ?4";
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
+            sqlite3_bind_double(st, 1, x - radius_m);
+            sqlite3_bind_double(st, 2, x + radius_m);
+            sqlite3_bind_double(st, 3, y - radius_m);
+            sqlite3_bind_double(st, 4, y + radius_m);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string s = col_str(st, 0);
+                const double rx = sqlite3_column_double(st, 1);
+                const double ry = sqlite3_column_double(st, 2);
+                if (!s.empty() && (rx - x) * (rx - x) + (ry - y) * (ry - y) <= r2) {
+                    souls.insert(s);
+                }
+            }
+            sqlite3_finalize(st);
+        }
+    }
+
+    // 2. Quest routine overrides (`npc_quest_lines`: e.g. Paul Schmidt's `routine_day_target`
+    // at Havel's Tavern `3094,872`).
+    if (sqlite3_table_column_metadata(db_, nullptr, "npc_quest_lines", "field",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK &&
+        sqlite3_table_column_metadata(db_, nullptr, "npc_quest", "quest_id",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK) {
+        sqlite3_stmt* st = nullptr;
+        const char* sql =
+            "SELECT ql.field, ql.text, q.giver_soul, q.target_soul, "
+            "COALESCE((SELECT text FROM npc_quest_lines h WHERE h.quest_id = ql.quest_id AND h.field = 'helper_soul'), ''), "
+            "COALESCE((SELECT text FROM npc_quest_lines w WHERE w.quest_id = ql.quest_id AND w.field = 'wed_soul'), '') "
+            "FROM npc_quest_lines ql "
+            "JOIN npc_quest q ON q.quest_id = ql.quest_id "
+            "WHERE ql.field IN ('routine_day', 'routine_day_target', 'routine_day_helper', "
+            "                   'routine_bed_target', 'routine_wed_target', 'routine_wed_soul')";
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                const std::string field = col_str(st, 0);
+                const QuestRoutineSpec spec = parse_quest_routine_spec(col_str(st, 1));
+                if (!spec.ok) continue;
+                if ((spec.x - x) * (spec.x - x) + (spec.y - y) * (spec.y - y) > r2) continue;
+                std::string s;
+                if (field == "routine_day") s = col_str(st, 2);
+                else if (field == "routine_day_helper") s = col_str(st, 4);
+                else if (field == "routine_wed_soul") s = col_str(st, 5);
+                else s = col_str(st, 3);
+                if (!s.empty()) souls.insert(s);
+            }
+            sqlite3_finalize(st);
+        }
+    }
+
+    for (const std::string& s : souls) {
+        std::optional<CommandCandidate> cand;
+        if (auto it = held_souls_.find(s); it != held_souls_.end()) {
+            cand = it->second;
+        } else if (auto it2 = soul_cache_.find(s); it2 != soul_cache_.end()) {
+            cand = it2->second;
+        } else {
+            cand = query_db_single_candidate(s);
+        }
+        if (cand.has_value()) {
+            cand->hop = 2;
+            cand->closeness = 0.65;
+            cand->via_name = "around here";
+            out.push_back(std::move(*cand));
+        }
+    }
+    return out;
 }
 
 std::vector<RoutineSpot> CommandGraph::query_db_spots(std::string_view target_soul) const {
     std::vector<RoutineSpot> spots;
+
+    // 1. Prepend `npc_quest_lines` daytime/bedtime schedule overrides (e.g. Paul Schmidt's
+    // `routine_day_target` at Havel's Tavern `3094,872` until `24:00`), since `scripts/build_scheduler.py`
+    // drives NPCs to these spots in-game over their static `npc_routine` lodging.
+    if (sqlite3_table_column_metadata(db_, nullptr, "npc_quest_lines", "field",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK &&
+        sqlite3_table_column_metadata(db_, nullptr, "npc_quest", "quest_id",
+                                      nullptr, nullptr, nullptr, nullptr, nullptr) == SQLITE_OK) {
+        sqlite3_stmt* qst = nullptr;
+        const char* qsql =
+            "SELECT ql.field, ql.text, "
+            "COALESCE((SELECT u.text FROM npc_quest_lines u "
+            "          WHERE u.quest_id = ql.quest_id AND u.field = ql.field || '_until'), ''), "
+            "COALESCE((SELECT b.text FROM npc_quest_lines b "
+            "          WHERE b.quest_id = ql.quest_id AND b.field = 'routine_bed_by'), '') "
+            "FROM npc_quest_lines ql "
+            "JOIN npc_quest q ON q.quest_id = ql.quest_id "
+            "WHERE (ql.field = 'routine_day' AND q.giver_soul = ?1) "
+            "   OR (ql.field IN ('routine_day_target', 'routine_bed_target', 'routine_wed_target') AND q.target_soul = ?1) "
+            "   OR (ql.field = 'routine_day_helper' AND EXISTS ("
+            "       SELECT 1 FROM npc_quest_lines h WHERE h.quest_id = ql.quest_id AND h.field = 'helper_soul' AND h.text = ?1)) "
+            "   OR (ql.field = 'routine_wed_soul' AND EXISTS ("
+            "       SELECT 1 FROM npc_quest_lines w WHERE w.quest_id = ql.quest_id AND w.field = 'wed_soul' AND w.text = ?1))";
+        if (sqlite3_prepare_v2(db_, qsql, -1, &qst, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(qst, 1, target_soul.data(), static_cast<int>(target_soul.size()),
+                              SQLITE_TRANSIENT);
+            while (sqlite3_step(qst) == SQLITE_ROW) {
+                const std::string field = col_str(qst, 0);
+                const QuestRoutineSpec spec = parse_quest_routine_spec(col_str(qst, 1));
+                if (!spec.ok) continue;
+                const std::string until_str = col_str(qst, 2);
+                const std::string bed_by_str = col_str(qst, 3);
+                RoutineSpot sp;
+                if (field == "routine_bed_target") {
+                    sp.start_min = bed_by_str.empty() ? 1260 : parse_hhmm_minutes(bed_by_str, 1260);
+                    sp.end_min = 420;
+                } else {
+                    sp.start_min = until_str.empty() ? 480 : 450;
+                    sp.end_min = until_str.empty() ? 1200 : parse_hhmm_minutes(until_str, 1200);
+                }
+                sp.x = spec.x;
+                sp.y = spec.y;
+                sp.z = 0.0;
+                snap_quest_spot_to_routine_object(db_, spec.prefab, sp.x, sp.y, sp.z);
+                spots.push_back(sp);
+            }
+            sqlite3_finalize(qst);
+        }
+    }
+
     sqlite3_stmt* st = nullptr;
     const char* sql =
         "SELECT COALESCE(start_min, 0), COALESCE(end_min, 0), pos_x, pos_y, COALESCE(pos_z, 0.0) "
@@ -1697,6 +2028,7 @@ std::vector<RoutineSpot> CommandGraph::query_db_spots(std::string_view target_so
     if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(st, 1, target_soul.data(), static_cast<int>(target_soul.size()), SQLITE_TRANSIENT);
         while (sqlite3_step(st) == SQLITE_ROW) {
+            if (spots.size() >= 8) break;
             RoutineSpot sp;
             sp.start_min = sqlite3_column_int(st, 0);
             sp.end_min = sqlite3_column_int(st, 1);
@@ -1722,13 +2054,30 @@ std::vector<RoutineSpot> CommandGraph::query_db_spots(std::string_view target_so
 SoulWhereabouts CommandGraph::query_db_whereabouts(std::string_view target_soul) const {
     SoulWhereabouts out;
     sqlite3_stmt* st = nullptr;
+    // Take only Sentence 1 of `life:home`: Sentence 1 states the public street/lodging
+    // (e.g. "He lives in Kuttenberg, right by the smithy." or "He rents the back room in the
+    // gravedigger's house on Ceska street..."), whereas Sentence 2+ can hold private interior
+    // details (e.g. a hidden chest).
     const char* home_sql =
         "SELECT fact FROM npc_kb_item WHERE owner = ?1 AND item_id = 'life:home' AND trust = 'open'";
     if (sqlite3_prepare_v2(db_, home_sql, -1, &st, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(st, 1, target_soul.data(), static_cast<int>(target_soul.size()),
                           SQLITE_TRANSIENT);
         if (sqlite3_step(st) == SQLITE_ROW) {
-            out.home_fact = take_sentences(col_str(st, 0), 2);
+            out.home_fact = take_sentences(col_str(st, 0), 1);
+        }
+        sqlite3_finalize(st);
+    }
+    const char* day_sql =
+        "SELECT fact FROM npc_kb_item WHERE owner = ?1 AND item_id = 'life:day' AND trust = 'open'";
+    if (sqlite3_prepare_v2(db_, day_sql, -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, target_soul.data(), static_cast<int>(target_soul.size()),
+                          SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            const std::string day1 = take_sentences(col_str(st, 0), 1);
+            if (!day1.empty() && day1.rfind("The data gives", 0) != 0 && day1 != out.home_fact) {
+                out.day_fact = day1;
+            }
         }
         sqlite3_finalize(st);
     }
@@ -1764,11 +2113,312 @@ CommandDirector::CommandDirector(Embedder* embedder,
     }
 }
 
+namespace {
+
+bool parse_gap_at_coords(std::string_view text, double& out_x, double& out_y, bool& out_indoors) {
+    out_indoors = (text.find("in=true") != std::string_view::npos);
+    std::size_t pos = text.find("at=");
+    while (pos != std::string_view::npos) {
+        if (pos == 0 || std::isspace(static_cast<unsigned char>(text[pos - 1]))) {
+            const std::string_view rest = text.substr(pos + 3);
+            const std::size_t end = rest.find_first_of(" \t\r\n");
+            const std::string_view tok = rest.substr(0, end);
+            const std::size_t comma = tok.find(',');
+            if (comma != std::string_view::npos) {
+                try {
+                    const double x = std::stod(std::string(tok.substr(0, comma)));
+                    const double y = std::stod(std::string(tok.substr(comma + 1)));
+                    if (std::isfinite(x) && std::isfinite(y) && x > 0.0 && y > 0.0) {
+                        out_x = x;
+                        out_y = y;
+                        return true;
+                    }
+                } catch (...) {
+                }
+            }
+        }
+        pos = text.find("at=", pos + 3);
+    }
+    return false;
+}
+
+std::string build_how_known_phrase(const CommandCandidate& winner,
+                                   std::string_view town_name) {
+    if (!town_name.empty()) {
+        return "As a guard here in " + std::string(town_name) +
+               ", you know everyone currently in " + std::string(town_name) +
+               ", including " + winner.full_name +
+               " — do not say you do not know them.";
+    }
+    if (winner.is_nearby_now) {
+        return "You know " + winner.full_name +
+               " — they are right nearby here right now, so do not say you do not know them.";
+    }
+    if (winner.hop > 1 && !winner.via_name.empty()) {
+        if (winner.via_name == "the tavern" || winner.via_name == "around here" ||
+            winner.via_name == "around town") {
+            return "You know " + winner.full_name + " from " + winner.via_name +
+                   " — do not say you do not know them.";
+        }
+        return "You know of " + winner.full_name + " through " + winner.via_name +
+               " — do not say you do not know them.";
+    }
+    return "You know " + winner.full_name + " — do not say you do not know them.";
+}
+
+std::string build_whereabouts_facts(const CommandCandidate& winner,
+                                    const SoulWhereabouts& wb,
+                                    std::string_view town_name,
+                                    const GuardPresence* guard_presence,
+                                    const std::vector<RoutineSpot>& spots) {
+    std::string facts;
+    if (winner.is_nearby_now) {
+        facts += "They are right nearby here right now.";
+    }
+    if (!wb.self_intro.empty()) {
+        if (!facts.empty()) facts += " ";
+        facts += winner.full_name + " says of themselves: \"" + wb.self_intro + "\"";
+    }
+    if (!wb.day_fact.empty()) {
+        if (!facts.empty()) facts += " ";
+        facts += wb.day_fact;
+    }
+    if (!wb.home_fact.empty()) {
+        if (!facts.empty()) facts += " ";
+        facts += wb.home_fact;
+    }
+    if (facts.empty() || (winner.is_nearby_now && wb.self_intro.empty() &&
+                          wb.day_fact.empty() && wb.home_fact.empty())) {
+        if (!facts.empty()) facts += " ";
+        facts += winner.full_name;
+        if (!winner.trade.empty()) facts += " is a " + winner.trade;
+        const std::string clean_sett =
+            !town_name.empty() ? std::string(town_name) : sanitize_settlement_label(winner.settlement);
+        if (!clean_sett.empty()) {
+            facts += (winner.trade.empty() ? " is here in " : " here in ") + clean_sett;
+        } else if (winner.trade.empty()) {
+            facts += " keeps nearby";
+        }
+        if (!town_name.empty() && guard_presence && !spots.empty()) {
+            const std::string bearing = compass_bearing_phrase(
+                guard_presence->guard_x, guard_presence->guard_y, spots.front().x, spots.front().y);
+            if (!bearing.empty()) {
+                facts += ", " + bearing;
+            }
+        }
+        facts += ".";
+    }
+    return facts;
+}
+
+bool is_acquaintance_stopword(std::string_view tok) {
+    static const std::set<std::string, std::less<>> kStop = {
+        "anyone",   "anybody",  "anything", "someone",  "somebody", "something",
+        "nobody",   "nothing",  "everyone", "everybody","everything","him",
+        "her",      "them",     "you",      "yourself", "me",       "myself",
+        "it",       "this",     "that",     "these",    "those",    "here",
+        "there",    "town",     "village",  "tavern",   "inn",      "church",
+        "castle",   "forge",    "smithy",   "market",   "bathhouse","bohemia",
+        "kuttenberg","troskovice","suchdol","sigismund","wenceslas","god",
+        "work",     "news",     "rumours",  "rumors",   "trouble",  "coin",
+        "groschen", "beer",     "wine",     "ale",      "food",     "dice",
+    };
+    return kStop.find(tok) != kStop.end();
+}
+
+std::string extract_person_inquiry_subject(std::string_view said, bool& has_inquiry_cue) {
+    has_inquiry_cue = false;
+    std::string cur = trim_punct(said);
+    if (cur.empty()) return {};
+
+    static const char* const kLeadFillers[] = {
+        "hey ", "hello ", "good day ", "excuse me ", "pardon me ", "listen ",
+        "say ", "tell me ", "pray tell ", "by chance ", "friend ", "master ", "mistress ",
+    };
+    bool stripped_filler = true;
+    while (stripped_filler && !cur.empty()) {
+        stripped_filler = false;
+        std::string low = cur;
+        for (char& ch : low) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        for (const char* f : kLeadFillers) {
+            const std::size_t flen = std::strlen(f);
+            // Note: "tell me " before "about " is part of the inquiry prefix, so don't strip "tell me about "!
+            if (std::strcmp(f, "tell me ") == 0 && low.rfind("tell me about ", 0) == 0) continue;
+            if (low.size() > flen && low.compare(0, flen, f) == 0) {
+                cur = trim_punct(std::string_view(cur).substr(flen));
+                stripped_filler = true;
+                break;
+            }
+        }
+    }
+
+    static const char* const kInquiryPrefixes[] = {
+        "what do you know about ",
+        "what do you know of ",
+        "what can you tell me about ",
+        "can you tell me about ",
+        "could you tell me about ",
+        "do you know anything about ",
+        "do you know anyone named ",
+        "do you know anyone called ",
+        "do you know a man named ",
+        "do you know a woman named ",
+        "do you know a fellow named ",
+        "do you know of ",
+        "do you know ",
+        "know anything about ",
+        "know of ",
+        "tell me about ",
+        "have you ever met ",
+        "have you met ",
+        "ever met ",
+        "have you heard anything about ",
+        "have you heard of ",
+        "heard of ",
+        "have you seen ",
+        "seen ",
+        "who is this ",
+        "who's this ",
+        "who is ",
+        "who's ",
+        "what about ",
+        "how about ",
+        "and what of ",
+        "what of ",
+    };
+    std::string low = cur;
+    for (char& ch : low) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    for (const char* pref : kInquiryPrefixes) {
+        const std::size_t plen = std::strlen(pref);
+        if (low.size() > plen && low.compare(0, plen, pref) == 0) {
+            cur = trim_punct(std::string_view(cur).substr(plen));
+            has_inquiry_cue = true;
+            break;
+        }
+    }
+    if (!has_inquiry_cue) return {};
+
+    static const char* const kTrailSuffixes[] = {
+        " around here",
+        " in this tavern",
+        " in the tavern",
+        " at the tavern",
+        " in here",
+        " in this town",
+        " in town",
+        " here",
+        " lately",
+        " today",
+        " tonight",
+        " before",
+        " by chance",
+        " around",
+    };
+    bool stripped_suf = true;
+    while (stripped_suf && !cur.empty()) {
+        stripped_suf = false;
+        std::string slow = cur;
+        for (char& ch : slow) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        for (const char* suf : kTrailSuffixes) {
+            const std::size_t slen = std::strlen(suf);
+            if (slow.size() > slen && slow.compare(slow.size() - slen, slen, suf) == 0) {
+                cur = trim_punct(std::string_view(cur).substr(0, cur.size() - slen));
+                stripped_suf = true;
+                break;
+            }
+        }
+    }
+    return cur;
+}
+
+}  // namespace
+
+std::vector<CommandCandidate> CommandDirector::contextual_candidates(
+    std::string_view speaker_soul,
+    const SoulRecord& record,
+    const GuardPresence* guard_presence) {
+    std::vector<CommandCandidate> out = graph_.candidates_for(speaker_soul);
+    std::map<std::string, std::size_t, std::less<>> idx_by_soul;
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        idx_by_soul[out[i].soul_name] = i;
+    }
+
+    if (guard_presence) {
+        // 1. Live co-present NPCs within 35m right now (`BRIDGE nearby`).
+        for (const auto& [soul, spot] : guard_presence->nearby_souls) {
+            (void)spot;
+            if (soul.empty() || soul == speaker_soul) continue;
+            if (auto it = idx_by_soul.find(soul); it != idx_by_soul.end()) {
+                CommandCandidate& existing = out[it->second];
+                existing.is_nearby_now = true;
+                existing.closeness = std::max(existing.closeness, 0.88);
+                continue;
+            }
+            if (std::optional<CommandCandidate> extra = graph_.candidate_by_soul(soul)) {
+                extra->hop = 1;
+                extra->closeness = 0.88;
+                extra->via_name = "right here";
+                extra->is_nearby_now = true;
+                idx_by_soul[extra->soul_name] = out.size();
+                out.push_back(std::move(*extra));
+            }
+        }
+    }
+
+    // 2. Co-patrons & regulars at the speaker's current venue (`at=<x>,<y>`) + up to 6 distinct
+    // remembered encounter venues from `record.memory` (`kMemoryGap`).
+    struct VenuePoint {
+        double x = 0.0;
+        double y = 0.0;
+        double closeness = 0.65;
+        const char* via = "around here";
+    };
+    std::vector<VenuePoint> venues;
+    if (guard_presence && guard_presence->guard_x > 0.0 && guard_presence->guard_y > 0.0) {
+        venues.push_back({guard_presence->guard_x, guard_presence->guard_y, 0.65, "around here"});
+    }
+    for (auto it = record.memory.rbegin();
+         it != record.memory.rend() && venues.size() < 7;
+         ++it) {
+        if (it->kind != kMemoryGap) continue;
+        double mx = 0.0, my = 0.0;
+        bool indoors = false;
+        if (!parse_gap_at_coords(it->text, mx, my, indoors)) continue;
+        bool near_existing = false;
+        for (const VenuePoint& vp : venues) {
+            const double dx = vp.x - mx;
+            const double dy = vp.y - my;
+            if (dx * dx + dy * dy <= 25.0 * 25.0) {
+                near_existing = true;
+                break;
+            }
+        }
+        if (!near_existing) {
+            venues.push_back({mx, my, 0.58, indoors ? "the tavern" : "around town"});
+        }
+    }
+
+    for (const VenuePoint& vp : venues) {
+        for (CommandCandidate& cp : graph_.co_patrons_near(vp.x, vp.y, 35.0)) {
+            if (cp.soul_name.empty() || cp.soul_name == speaker_soul) continue;
+            if (idx_by_soul.find(cp.soul_name) != idx_by_soul.end()) continue;
+            cp.hop = 2;
+            cp.closeness = vp.closeness;
+            cp.via_name = vp.via;
+            idx_by_soul[cp.soul_name] = out.size();
+            out.push_back(std::move(cp));
+        }
+    }
+    return out;
+}
+
 std::string CommandDirector::pass1_keyterms(std::string_view speaker_soul,
                                             const std::vector<Message>& history,
                                             const SoulRecord& record,
-                                            std::size_t max_terms) {
-    std::vector<CommandCandidate> cands = graph_.candidates_for(speaker_soul);
+                                            std::size_t max_terms,
+                                            const GuardPresence* guard_presence) {
+    std::vector<CommandCandidate> cands =
+        contextual_candidates(speaker_soul, record, guard_presence);
     std::string recent = " ";
     for (const Message& m : history) recent += command_normalize(m.content) + " ";
 
@@ -1804,8 +2454,10 @@ std::string CommandDirector::pass1_keyterms(std::string_view speaker_soul,
 std::string CommandDirector::pass2_keyterms(std::string_view speaker_soul,
                                             const std::vector<Message>& history,
                                             const SoulRecord& record,
-                                            std::size_t max_terms) {
-    std::vector<CommandCandidate> cands = graph_.candidates_for(speaker_soul);
+                                            std::size_t max_terms,
+                                            const GuardPresence* guard_presence) {
+    std::vector<CommandCandidate> cands =
+        contextual_candidates(speaker_soul, record, guard_presence);
     std::string recent = " ";
     for (const Message& m : history) recent += command_normalize(m.content) + " ";
 
@@ -2004,7 +2656,7 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
         }
     }
     if (cands.empty()) {
-        cands = graph_.candidates_for(speaker_soul);
+        cands = contextual_candidates(speaker_soul, record, guard_presence);
     }
     const std::string town_name =
         guard_location.empty()
@@ -2232,48 +2884,14 @@ CommandOutcome CommandDirector::link(std::string_view speaker_soul,
     if (extracted.action == CommandAction::LocateNpc) {
         const std::vector<RoutineSpot> spots =
             guard_location.empty()
-                ? graph_.spots_of(winner->soul_name)
+                ? graph_.spots_of(winner->soul_name, guard_presence)
                 : graph_.spots_of_in_location(winner->soul_name, guard_location, guard_presence);
         out.directive = format_locate_directive(winner->soul_name, spots);
         const SoulWhereabouts wb = graph_.whereabouts_of(winner->soul_name);
 
-        const std::string how_known =
-            !town_name.empty()
-                ? ("As a guard here in " + town_name + ", you know everyone currently in " +
-                   town_name + ", including " + winner->full_name +
-                   " — do not say you do not know them.")
-                : ((winner->hop > 1 && !winner->via_name.empty())
-                       ? ("You know of " + winner->full_name + " through " + winner->via_name +
-                          " — do not say you do not know them.")
-                       : ("You know " + winner->full_name + " — do not say you do not know them."));
-
-        std::string facts;
-        if (!wb.self_intro.empty()) {
-            facts += winner->full_name + " says of themselves: \"" + wb.self_intro + "\"";
-        }
-        if (!wb.home_fact.empty()) {
-            if (!facts.empty()) facts += " ";
-            facts += wb.home_fact;
-        }
-        if (facts.empty()) {
-            facts = winner->full_name;
-            if (!winner->trade.empty()) facts += " is a " + winner->trade;
-            const std::string clean_sett =
-                !town_name.empty() ? town_name : sanitize_settlement_label(winner->settlement);
-            if (!clean_sett.empty()) {
-                facts += (winner->trade.empty() ? " is here in " : " here in ") + clean_sett;
-            } else if (winner->trade.empty()) {
-                facts += " keeps nearby";
-            }
-            if (!town_name.empty() && guard_presence && !spots.empty()) {
-                const std::string bearing = compass_bearing_phrase(
-                    guard_presence->guard_x, guard_presence->guard_y, spots.front().x, spots.front().y);
-                if (!bearing.empty()) {
-                    facts += ", " + bearing;
-                }
-            }
-            facts += ".";
-        }
+        const std::string how_known = build_how_known_phrase(*winner, town_name);
+        const std::string facts =
+            build_whereabouts_facts(*winner, wb, town_name, guard_presence, spots);
 
         out.direction =
             "[Henry asks where to find " + winner->full_name + ". " + how_known +
@@ -2408,7 +3026,7 @@ CommandOutcome CommandDirector::resolve(
         const std::string p2_terms =
             (!guard_location.empty() && ext.action == CommandAction::LocateNpc)
                 ? location_keyterms(guard_location, 95, ext.target_mention, guard_presence)
-                : pass2_keyterms(speaker_soul, history, record);
+                : pass2_keyterms(speaker_soul, history, record, 95, guard_presence);
         const std::string retx = trim_ws(retranscribe_fn(p2_terms));
         if (!retx.empty() && command_normalize(retx) != command_normalize(said)) {
             ExtractedCommand ext2 = run_extractor(speaker_name, speaker_settlement, retx, history);
@@ -2424,6 +3042,196 @@ CommandOutcome CommandDirector::resolve(
             }
         }
     }
+    return out;
+}
+
+CommandOutcome CommandDirector::resolve_acquaintance(
+    std::string_view speaker_soul,
+    std::string_view speaker_name,
+    std::string_view said,
+    const std::vector<Message>& history,
+    const SoulRecord& record,
+    KbGate kb_gate,
+    const GuardPresence* guard_presence) {
+    CommandOutcome out;
+    if (said.empty()) return out;
+
+    std::vector<CommandCandidate> cands =
+        contextual_candidates(speaker_soul, record, guard_presence);
+    if (cands.empty()) return out;
+
+    const std::string speaker_det = strip_determiners(speaker_name);
+    std::string recent = " ";
+    for (const Message& m : history) recent += command_normalize(m.content) + " ";
+
+    struct CandidateHit {
+        double total = 0.0;
+        double surf = 0.0;
+        std::string matched_span;
+        const CommandCandidate* cand = nullptr;
+    };
+    std::vector<CandidateHit> hits;
+
+    auto score_proper_mention = [&](std::string_view raw_mention, double min_single_surf, double min_multi_surf) {
+        const std::string q_det = strip_determiners(raw_mention);
+        if (q_det.size() < 3) return;
+        if (!speaker_det.empty() && q_det == speaker_det) return;
+        const std::vector<std::string> q_toks = split_words(q_det);
+        if (q_toks.empty() || q_toks.size() > 4) return;
+        if (q_toks.size() == 1 && is_acquaintance_stopword(q_toks[0])) return;
+        const std::string q_phon = phonetic_phrase(q_det);
+
+        for (const CommandCandidate& c : cands) {
+            if (c.soul_name == speaker_soul) continue;
+            double c_surf = 0.0;
+            bool matched_multi = false;
+            const bool exact_full = (strip_determiners(c.full_name) == q_det);
+
+            std::vector<std::string> aliases = {c.full_name, c.ui_name};
+            if (q_toks.size() == 1) {
+                aliases.push_back(c.given_name);
+                if (!c.byname.empty()) aliases.push_back(c.byname);
+            } else {
+                if (!c.title.empty() && !c.given_name.empty()) {
+                    aliases.push_back(c.title + " " + c.given_name);
+                }
+                if (!c.byname.empty() && !c.given_name.empty()) {
+                    aliases.push_back(c.given_name + " " + c.byname);
+                }
+            }
+            for (const std::string& ea : c.extra_aliases) aliases.push_back(ea);
+
+            for (const std::string& al : aliases) {
+                const std::string ad = strip_determiners(al);
+                if (ad.empty()) continue;
+                if (q_toks.size() >= 2 && split_words(ad).size() < 2 &&
+                    !(c.is_major_friend && split_words(strip_determiners(c.full_name)).size() == 1)) {
+                    continue;
+                }
+                const double sc = surface_and_phonetic_score(q_det, q_phon, ad, phonetic_phrase(ad));
+                if (sc > c_surf) c_surf = sc;
+                if (q_toks.size() >= 2 && split_words(ad).size() >= 2 && sc >= 0.88) {
+                    matched_multi = true;
+                }
+            }
+
+            if (q_toks.size() >= 2 && is_leading_name_honorific(q_toks[0])) {
+                std::string stripped_q;
+                for (std::size_t k = 1; k < q_toks.size(); ++k) {
+                    if (!stripped_q.empty()) stripped_q.push_back(' ');
+                    stripped_q += q_toks[k];
+                }
+                const std::string sq_phon = phonetic_phrase(stripped_q);
+                for (const std::string& al : {c.full_name, c.given_name, c.byname, c.ui_name}) {
+                    const std::string ad = strip_determiners(al);
+                    if (ad.empty()) continue;
+                    const double sc = surface_and_phonetic_score(stripped_q, sq_phon, ad, phonetic_phrase(ad));
+                    if (sc >= 0.90) {
+                        c_surf = std::max(c_surf, sc * 0.99);
+                        matched_multi = true;
+                    }
+                }
+            }
+
+            if (q_toks.size() >= 2) {
+                const std::string c_gn = strip_determiners(c.given_name);
+                const std::string title_gn =
+                    (!c.title.empty() && !c.given_name.empty()) ? strip_determiners(c.title + " " + c.given_name) : "";
+                if (!title_gn.empty() && jaro_winkler_similarity(q_det, title_gn) >= 0.86) {
+                    // Valid title + given name match
+                } else if (!c_gn.empty() && !is_leading_name_honorific(q_toks[0])) {
+                    const double gn_sim = surface_and_phonetic_score(
+                        q_toks[0], command_phonetic_key(q_toks[0]), c_gn, command_phonetic_key(c_gn));
+                    if (gn_sim < 0.80) c_surf *= 0.65;
+                } else if (!matched_multi && !exact_full) {
+                    c_surf *= 0.70;
+                }
+            }
+
+            const double req = (q_toks.size() >= 2) ? min_multi_surf : min_single_surf;
+            if (c_surf < req) continue;
+
+            double priority_bonus = 0.0;
+            if (exact_full) priority_bonus += 0.04;
+            if (c.is_major_friend) priority_bonus += 0.09;
+            else if (c.is_game_named || !c.quest_ids.empty()) priority_bonus += 0.05;
+            const double total = c_surf + priority_bonus + salience_bonus_for(c, recent, record);
+            hits.push_back({total, c_surf, std::string(raw_mention), &c});
+        }
+    };
+
+    bool has_cue = false;
+    const std::string subj = extract_person_inquiry_subject(said, has_cue);
+    if (has_cue && !subj.empty()) {
+        score_proper_mention(subj, /*min_single_surf=*/0.93, /*min_multi_surf=*/0.88);
+    }
+
+    // Also scan contiguous 2-token and 3-token spans for an explicit multi-word proper name
+    // (e.g. "Does Paul Schmidt drink here?", "Is Innkeeper Havel around?").
+    if (hits.empty()) {
+        const std::vector<std::string> toks = split_words(command_normalize(said));
+        for (std::size_t n = 3; n >= 2; --n) {
+            if (toks.size() < n) continue;
+            for (std::size_t i = 0; i + n <= toks.size(); ++i) {
+                if (is_acquaintance_stopword(toks[i]) || is_acquaintance_stopword(toks[i + n - 1])) {
+                    continue;
+                }
+                std::string span;
+                for (std::size_t k = 0; k < n; ++k) {
+                    if (k > 0) span.push_back(' ');
+                    span += toks[i + k];
+                }
+                score_proper_mention(span, /*min_single_surf=*/1.01, /*min_multi_surf=*/0.92);
+            }
+            if (!hits.empty()) break;
+        }
+    }
+
+    if (hits.empty()) return out;
+    std::sort(hits.begin(), hits.end(),
+              [](const CandidateHit& a, const CandidateHit& b) { return a.total > b.total; });
+
+    const CommandCandidate* winner = hits.front().cand;
+    out.target_mention = hits.front().matched_span;
+    out.display_name = winner->full_name;
+    out.settlement = winner->settlement;
+    out.confidence = hits.front().surf;
+
+    if (winner->is_absentee) {
+        out.status = CommandStatus::UnmeetableAbsentee;
+        out.soul_name = winner->soul_name;
+        const std::string why = winner->why_unmeetable.empty()
+                                    ? (winner->full_name + " is gone and cannot be met here")
+                                    : winner->why_unmeetable;
+        out.direction = "[Henry asks about " + winner->full_name + ". " + why + ".]";
+        out.note = "acquaintance absentee (" + winner->full_name + ")";
+        return out;
+    }
+
+    if (kb_gate == KbGate::Asking || kb_gate == KbGate::Owed) {
+        out.status = CommandStatus::GatedByTrust;
+        out.soul_name = winner->soul_name;
+        out.note = "acquaintance gated by trust (" + winner->soul_name + ")";
+        return out;
+    }
+
+    out.status = CommandStatus::ResolvedSoul;
+    out.soul_name = winner->soul_name;
+    if (!winner->person_token.empty() && !record.knows(winner->person_token)) {
+        out.heard_token = winner->person_token;
+    }
+
+    const std::vector<RoutineSpot> spots = graph_.spots_of(winner->soul_name, guard_presence);
+    const SoulWhereabouts wb = graph_.whereabouts_of(winner->soul_name);
+    const std::string how_known = build_how_known_phrase(*winner, {});
+    const std::string facts = build_whereabouts_facts(*winner, wb, {}, guard_presence, spots);
+
+    out.direction =
+        "[Henry asks about " + winner->full_name + ". " + how_known +
+        " What you know of them: " + facts +
+        " Answer in your own voice in a sentence or two using only these particulars; "
+        "do not invent any other rumour, secret or backstory.]";
+    out.note = "acquaintance -> " + winner->soul_name + " (" + winner->full_name + ")";
     return out;
 }
 
