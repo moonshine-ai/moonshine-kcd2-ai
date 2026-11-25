@@ -1190,6 +1190,11 @@ struct Quest {
     // errand has no pay option: the giver pays money, so buying the thing back would
     // only cut him out, and the menu leaves that choice off.
     int pay_groschen = 0;
+    // A duel's man's purse at the carry, in groschen (npc_quest_lines `purse_groschen`;
+    // bugs.txt 25 Nov 2026: "Paul's purse should contain 250 groschen"): the Lua tops his
+    // money up to this as his day becomes the yard (DuelKit), so the spared man has it to
+    // hand over and the killed one has it on him. 0 leaves his purse as the game has it.
+    int purse_groschen = 0;
 
     // The ways the thing can be won that this quest has a completed log of its own for,
     // beyond the plain one: the graph gets a completion port and the objective a state

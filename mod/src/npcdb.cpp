@@ -1392,6 +1392,9 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
                 // would have done that himself and kept Henry out of it), and the
                 // menu shows no pay option at all.
                 q.pay_groschen = std::atoi(words.c_str());
+            } else if (field == "purse_groschen") {
+                // A duel's man's purse at the carry (DuelKit); anything under one is none.
+                q.purse_groschen = std::max(0, std::atoi(words.c_str()));
             } else if (field == "count") {
                 // A find's number of the thing, a mind's of visits, a return's of the goods;
                 // anything under one is the one.

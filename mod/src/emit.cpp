@@ -2688,6 +2688,19 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(yard_tag(modid, quest.id)) + "\" />\r\n";
                 s += t(5) + "<Edge From=\"atYard.State\" To=\"IsActive\" />\r\n";
                 s += t(4) + "</SchedulerLinkActivation>\r\n";
+                // And a torch in his hand while his day is the yard (bugs.txt 25 Nov 2026:
+                // "Paul Schmidt should be carrying a torch so he's more visible in the cut
+                // scenes"): the engine draws and lights an NPC's light-source item of its
+                // own accord at night out of doors, and this context (the shipped
+                // interrupt_lookAround's, held over an NPC while he looks about with his
+                // torch) forces it whatever his activity; the torch itself the Lua puts in
+                // his inventory at the yard token (DuelKit, kDuelTorchClass). The fight's
+                // own ForceForbidAutoTorch puts it away for the blows.
+                s += t(4) + "<SetEntityContext Name=\"yardTorch\">\r\n";
+                s += t(5) + "<Constant Name=\"Context\" Value=\"" + std::string(kDuelTorchContext) + "\" />\r\n";
+                s += t(5) + "<Asset Name=\"Souls\" Alias=\"target\" />\r\n";
+                s += t(5) + "<Edge From=\"atYard.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</SetEntityContext>\r\n";
             }
             // And on his knees once cowed (has_kneel; bugs.txt 24 Nov 2026: "he didn't
             // cower once the two bandits were beaten, he just walked around like normal"):
@@ -10801,6 +10814,8 @@ std::string emit_conversation_lua(const std::string& modid,
             if (q.has_duel_cowed()) s += ", cowedToken = \"" + lua_escape(cowed_class(q)) + "\"";
             // The carry's yard token (FastTravelGo): his day the yard from here.
             if (q.has_yard()) s += ", yardToken = \"" + lua_escape(yard_class(q)) + "\"";
+            // His purse at the carry (DuelKit; npcdb.hpp purse_groschen).
+            if (q.purse_groschen > 0) s += ", purse = " + std::to_string(q.purse_groschen);
             // His word before the blows (emit_taunt_dialogue): the role it speaks through
             // (GrantHolder) and the token its end sends (DuelTaunted, DuelLoose).
             if (q.has_duel_taunt()) {
@@ -12797,6 +12812,37 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tok and \"\" or \", SetWorldPos raised\"))\n";
     s += "\tagain()\n";
     s += "end\n";
+    // What the duel's man carries into the yard (bugs.txt 25 Nov 2026), given as the carry
+    // is asked for: a torch (emit.hpp kDuelTorchClass) where he has none, which the
+    // engine's auto torch lights under the graph's ForceAllowAutoTorch (yardTorch); and
+    // his purse topped up to q.purse groschen (npcdb.hpp purse_groschen) where it is
+    // lighter, so the spared man has it to hand over and the killed one has it on him.
+    // Nothing is taken from him. Each is said in the log.
+    s += "function " + g + ".DuelKit(id, q)\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\tif e == nil or e.inventory == nil then " + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. tostring(q.target) .. \" not loaded for his torch and purse\") return end\n";
+    s += "\tlocal torch = nil\n";
+    s += "\tpcall(function() torch = e.inventory:FindItem(" + g + ".duelTorchClass) end)\n";
+    s += "\tif torch == nil then\n";
+    s += "\t\tlocal ok, err = pcall(function() e.inventory:CreateItem(" + g + ".duelTorchClass, 100, 1) end)\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: a torch put in %s's pack for the yard%s\", id, q.target, ok and \"\" or (\", CreateItem raised \" .. tostring(err))))\n";
+    s += "\telse\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has a torch of his own for the yard\")\n";
+    s += "\tend\n";
+    s += "\tif q.purse == nil or q.purse <= 0 then return end\n";
+    s += "\tlocal have = 0\n";
+    s += "\tpcall(function() have = e.inventory:GetMoney() or 0 end)\n";
+    s += "\tif have >= q.purse then\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's purse reads %.1f groschen, %d wanted; left as it is\", id, q.target, have, q.purse))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal add = math.floor((q.purse - have) * 10 + 0.5)\n";
+    s += "\tlocal ok, err = pcall(function() e.inventory:CreateItem(ItemUtils.itemIDs.money, 100, add) end)\n";
+    s += "\tlocal after = have\n";
+    s += "\tpcall(function() after = e.inventory:GetMoney() or have end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's purse made up from %.1f to %.1f groschen (%d wanted)%s\", id, q.target, have, after, q.purse, ok and \"\" or (\", CreateItem raised \" .. tostring(err))))\n";
+    s += "end\n";
     s += "function " + g + ".FastTravelGo(id, q, wait)\n";
     s += "\tlocal me = " + g + ".Player()\n";
     s += "\tlocal ft = q.fastTravel\n";
@@ -12878,6 +12924,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // 24 Nov runs read him 40 m off along the line to his tavern seat as his say was asked
     // for, and the forced dialogue set up where the scheduler had him.
     s += "\tlocal function go()\n";
+    s += "\t\tif q.kind == \"duel\" then pcall(" + g + ".DuelKit, id, q) end\n";
     s += "\t\tif q.kind == \"duel\" and q.yardToken ~= nil then\n";
     s += "\t\t\t" + g + ".Token(q, q.yardToken)\n";
     s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. tostring(q.target) .. \"'s day is the yard from here; the carry follows\")\n";
@@ -12926,6 +12973,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelKneelMetres = " + health_text(kDuelKneelMetres) + "\n";
     s += g + ".duelKneelFaceMs = " + std::to_string(kDuelKneelFaceMs) + "\n";
     s += g + ".duelKneelFaceTickMs = " + std::to_string(kDuelKneelFaceTickMs) + "\n";
+    s += g + ".duelTorchClass = \"" + std::string(kDuelTorchClass) + "\"\n";
     s += g + ".duelCowedInClip = \"" + std::string(kDuelCowedInClip) + "\"\n";
     s += g + ".duelCowedLoopClip = \"" + std::string(kDuelCowedLoopClip) + "\"\n";
     s += g + ".duelCowedLayer = " + std::to_string(kDuelCowedLayer) + "\n";

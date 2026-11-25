@@ -5888,6 +5888,18 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(q.yardToken == "6d6f6f6e-7368-5a00-8000-" .. id, "the yard token is the duel's class under the Z prefix")
     check(M.Count(player, q.yardToken) == 1 and E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s day is the yard from here; the carry follows", mark),
           "the yard token first, for the graph's yard tag, and said")
+    -- What he carries into the yard (bugs.txt 25 Nov 2026): a torch for the engine's auto
+    -- torch under the graph's context, and his purse made up to the written sum, both
+    -- given as the carry is asked for and said; a second carry finds them on him.
+    check(man.inventory:FindItem(M.duelTorchClass) ~= nil and E.find("a torch put in " .. q.giver .. "'s pack for the yard", mark), "a torch put in his pack")
+    check(q.purse == 250, "his purse written as 250: " .. tostring(q.purse))
+    check(math.abs(man.inventory:GetMoney() - q.purse) < 0.01 and E.find("purse made up from 0.0 to 250.0 groschen (250 wanted)", mark), "and his purse made up to it: " .. tostring(man.inventory:GetMoney()))
+    do
+        local m2 = E.mark()
+        M.DuelKit(id, q)
+        check(man.inventory:GetCountOfClass(M.duelTorchClass) == 1 and math.abs(man.inventory:GetMoney() - q.purse) < 0.01, "given again, nothing doubled")
+        check(E.find("has a torch of his own for the yard", m2) and E.find("purse reads 250.0 groschen, 250 wanted; left as it is", m2), "and said")
+    end
     -- The yard's cut (bugs.txt 24 Nov 2026: "kept faded to black until the setup is
     -- complete"): the screen blacked as the carry begins, before anything is set down.
     check(E.postFx["Global_User_Brightness"] == 0 and M.black == true and E.find("BRIDGE screen black (the carry to the yard)", mark), "the screen blacked as the carry begins")
@@ -5900,6 +5912,9 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     local tp = man:GetWorldPos()
     check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "the man on his spot")
     local gap = math.sqrt((spot.x - ft.x) ^ 2 + (spot.y - ft.y) ^ 2)
+    -- Two metres nearer than the 24 Nov spot (bugs.txt 25 Nov 2026: "2 meters closer to
+    -- Henry in starting cutscene"): 5.6 m from the landing, on the same line.
+    check(math.abs(gap - 5.56) < 0.05, string.format("his spot %.2fm from the landing", gap))
     local d = man:GetDirectionVector()
     check(math.abs(d.x - (ft.x - spot.x) / gap) < 0.01 and math.abs(d.y - (ft.y - spot.y) / gap) < 0.01, "facing the landing")
     check(player.view ~= nil, "Henry's view turned to him")
@@ -6029,9 +6044,10 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.advance(1100)
     f = M.state.quests[id]
     check(f.done == true and f.gone == true, "done, and he is gone")
-    check(math.abs(player.inventory:GetMoney() - before - math.max(87, q.pay)) < 0.01, "his purse handed over: " .. tostring(player.inventory:GetMoney() - before))
+    local purse = (q.purse or 0) + 87
+    check(math.abs(player.inventory:GetMoney() - before - math.max(purse, q.pay)) < 0.01, "his purse handed over, the written sum and what he had: " .. tostring(player.inventory:GetMoney() - before))
     check(man.inventory:GetMoney() == 0, "and nothing left in his")
-    check(E.find("duel spared, his purse (87)", mark) and E.find("gone from the game", mark), "said in the log")
+    check(E.find("duel spared, his purse (" .. purse .. ")", mark) and E.find("gone from the game", mark), "said in the log")
     check(not q.beg or (E.find("Henry's word to " .. q.giver .. " on his knees is spare", mark) and E.find("complete fired by the row's own port; no beat queued", mark)),
           "the row's word said, and no beat queued for the app")
     check(not q.beg or (man.stops[#man.stops] == M.duelCowedLayer and E.find(q.giver .. "'s surrender pose stopped (spared)", mark) and M.duelCowed[id] == nil),

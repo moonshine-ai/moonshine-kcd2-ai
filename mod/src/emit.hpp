@@ -994,6 +994,18 @@ constexpr int kDuelKneelFaceTickMs = 100;
 // after the set-down; the in clip is handed over to the loop kDuelCowedBlend seconds before
 // its end, as the measured chains are; stopped by DuelChoice before Henry's word is acted
 // on, so the blow's death and the spared man's leaving are not played under it.
+// A torch in the duel's man's hand from the carry (bugs.txt 25 Nov 2026: "carrying a torch
+// so he's more visible in the cut scenes"). The engine's own "auto torch" draws and lights
+// an NPC's light-source item (GetLightSourceItem) at night out of doors; the entity
+// context ForceAllowAutoTorch forces it whatever he is doing (the shipped
+// interrupt_lookAround holds it over an NPC looking about with his torch, rutinaAVypad over
+// its patrol), and ForceForbidAutoTorch, which the attack interrupt sets, puts it away for
+// the fight. The graph holds the context over him while atYard (emit_quest); the Lua puts
+// the torch in his inventory at the yard token where he has none (DuelKit), the common
+// torch_weapon (scripts/autopilot/light_probe.lua), which bandit souls carry and light of
+// themselves. Townsfolk are not given one by the game, which is why he had none.
+constexpr const char* kDuelTorchContext = "ForceAllowAutoTorch";
+constexpr const char* kDuelTorchClass = "4cea28a0-0814-405a-bf24-4fd711f7eb63";
 constexpr const char* kDuelCowedInClip = "combat_surrender_idle_in";
 constexpr const char* kDuelCowedLoopClip = "combat_surrender_idle";
 constexpr int kDuelCowedLayer = 13;
