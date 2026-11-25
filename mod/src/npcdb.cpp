@@ -1345,6 +1345,7 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "carry_name") return &q.carry_name;
         if (field == "routine") return &q.routine;
         if (field == "routine_gone_target") return &q.routine_gone_target;
+        if (field == "routine_cowed_target") return &q.routine_cowed_target;
         if (field == "wed_soul") return &q.wed_soul;
         if (field == "wed_name") return &q.wed_name;
         if (field == "routine_wed_target") return &q.routine_wed_target;

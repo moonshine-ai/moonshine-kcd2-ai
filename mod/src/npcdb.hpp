@@ -473,6 +473,20 @@ struct Quest {
     // it. Empty for every other quest.
     std::string wed_soul, wed_name, routine_wed_target, routine_wed_soul, dress_wed;
     bool has_wed() const { return has_gone() && !wed_soul.empty(); }
+    // A duel's man on his duel spot for the carry (bugs.txt 25 Nov 2026: the forced
+    // dialogue's stand-ins and camera were set up where the scheduler had him, 40 m off
+    // along the line to his tavern seat, with nobody in sight): the scheduler script adds a
+    // link to his NPC hub to the wrapper his spot (fast_travel_holder_to) is written on,
+    // under the graph's yard tag, which the Lua's yard token turns on as the carry begins
+    // (FastTravelGo) and the graph off when the duel is done. Wants a sprung duel (the
+    // graph's trigger section) and a spot.
+    bool has_yard() const { return has_duel_spring() && !fast_travel_holder_to.empty(); }
+    // And on his knees once cowed (`routine_cowed_target`, `<x>,<y>`; bugs.txt 25 Nov 2026:
+    // "he didn't cower once the two bandits were beaten"): the same script adds a link,
+    // above the yard's, to a kneeling wrapper by the point under the graph's kneel tag,
+    // on from the cowed token. Empty for every other quest.
+    std::string routine_cowed_target;
+    bool has_kneel() const { return has_duel_cowed() && !routine_cowed_target.empty(); }
     // How near a bed is to count as the same roof: the next room of the same house (Joan's
     // catchpoles sleep 5.3 m from her) and not the neighbours (the nearest other house in
     // Horany is 30 m off).

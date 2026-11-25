@@ -5874,6 +5874,13 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.hour = 20
     local mark = E.mark()
     M.QuestCommand(id, "fast_travel")
+    -- The yard token before the carry (bugs.txt 25 Nov 2026: the forced dialogue set up
+    -- where the scheduler had him): the graph's yard tag, and the man's day the yard.
+    check(q.yardToken == "6d6f6f6e-7368-5a00-8000-" .. id, "the yard token is the duel's class under the Z prefix")
+    check(M.Count(player, q.yardToken) == 1 and E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s day is the yard from here; the carry follows", mark),
+          "the yard token first, for the graph's yard tag, and said")
+    local tp0 = man:GetWorldPos()
+    check(math.abs(tp0.x - (ft.x + 150)) < 0.01 and not E.find("set down at", mark), "the carry waits on it")
     E.advance(1100)
     local pp = player:GetWorldPos()
     check(math.abs(pp.x - ft.x) < 0.01 and math.abs(pp.y - ft.y) < 0.01, "Henry in the yard")
@@ -5924,7 +5931,7 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     end
     check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " set down at", mark) and E.count("made at", mark) == 2, "said in the log")
     E.advance(1600)
-    check(M.Count(player, q.token) == 0 and (not taunted or M.Count(player, q.sprungToken) == 0), "the tokens gone a moment later")
+    check(M.Count(player, q.token) == 0 and M.Count(player, q.yardToken) == 0 and (not taunted or M.Count(player, q.sprungToken) == 0), "the tokens gone a moment later")
     local landMark = mark
     -- A second carry does not spring it twice.
     mark = E.mark()
@@ -7128,9 +7135,12 @@ case("Duel: a wall between the landing and the written spot puts the man on a cl
     player:SetWorldPos({ x = 100, y = 100, z = 0 })
     E.interior = false
     E.hour = 20
-    -- A wall across the line from the landing to the written spot, at its midpoint.
+    -- A wall across the line from the landing to the written spot, a pace and a half out
+    -- from the landing (so the point duelBehindMetres behind Henry, once he faces the
+    -- other way, is beyond it whatever the spot's distance).
     local dx, dy = w.x - ft.x, w.y - ft.y
-    local mx, my = ft.x + dx / 2, ft.y + dy / 2
+    local dn = math.sqrt(dx * dx + dy * dy)
+    local mx, my = ft.x + dx / dn * 1.5, ft.y + dy / dn * 1.5
     E.walls = { { mx - dy * 3, my + dx * 3, mx + dy * 3, my - dx * 3 } }
     local mark = E.mark()
     M.QuestCommand(id, "fast_travel")
@@ -7154,7 +7164,7 @@ case("Duel: a wall between the landing and the written spot puts the man on a cl
     for k, name in ipairs(f.spawned) do
         local e = System.GetEntityByName(name)
         local mp = e:GetWorldPos()
-        check(math.sqrt((mp.x - ft.x) ^ 2 + (mp.y - ft.y) ^ 2) < 2.5, name .. " within a few paces of Henry")
+        check(math.sqrt((mp.x - ft.x) ^ 2 + (mp.y - ft.y) ^ 2) < M.duelBehindMetres + 0.5, name .. " within a few paces of Henry (close behind, or at his flank)")
     end
     -- A man standing where he was made, far off: put down again behind Henry after the
     -- stuck seconds, once; his fellow at Henry's back left alone.

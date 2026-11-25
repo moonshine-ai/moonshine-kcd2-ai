@@ -852,6 +852,16 @@ std::string gone_tag(const std::string& modid, const std::string& quest_id) {
     return modid + "_gone_" + quest_id;
 }
 
+std::string yard_tag(const std::string& modid, const std::string& quest_id) {
+    require_identifier(quest_id, "quest id");
+    return modid + "_yard_" + quest_id;
+}
+
+std::string kneel_tag(const std::string& modid, const std::string& quest_id) {
+    require_identifier(quest_id, "quest id");
+    return modid + "_kneel_" + quest_id;
+}
+
 std::string wed_tag(const std::string& modid, const std::string& quest_id) {
     require_identifier(quest_id, "quest id");
     return modid + "_wed_" + quest_id;
@@ -944,6 +954,17 @@ std::string door_accept_class(const Quest& quest) {
 }
 
 std::string door_accept_name(const Quest& quest) { return "door_" + quest_node(quest.id); }
+
+std::string yard_class(const Quest& quest) {
+    // A duel's carry begun, the man's day the yard (bugs.txt 25 Nov 2026): the same shape
+    // under 5a, the letter Z, for the yard's ground.
+    require_identifier(quest.id, "quest id");
+    std::string tail = quest.id;
+    while (tail.size() < 12) tail = "0" + tail;
+    return "6d6f6f6e-7368-5a00-8000-" + tail.substr(tail.size() - 12);
+}
+
+std::string yard_name(const Quest& quest) { return "yard_" + quest_node(quest.id); }
 
 std::string warn_class(const Quest& quest) {
     // A deliver's warning promised: the same shape under 57, the letter W.
@@ -2626,6 +2647,57 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
                 s += t(5) + "<Edge From=\"cowing.State\" To=\"IsActive\" />\r\n";
                 s += t(4) + "</ItemDescriptorTrigger>\r\n";
+            }
+            // The man's day the yard from the carry (has_yard; bugs.txt 25 Nov 2026: the
+            // forced dialogue's camera and stand-ins were set up where the scheduler had
+            // him, 40 m off toward his tavern seat, with nobody in sight): the Lua's yard
+            // token (FastTravelGo, before the clock is wound) turns the yard tag on, under
+            // which the scheduler override's added link on his NPC hub makes the wrapper
+            // his duel spot is written on his goal (build_scheduler.py), so the engine's
+            // pull and the set-down agree. Off when the duel is done, either way, or he
+            // is dead; the shape is the gone link's (goneLink).
+            if (quest.has_yard()) {
+                s += t(4) + "<State Name=\"placing\" TypeT=\"bool\">\r\n";
+                s += t(5) + "<Edge From=\"" + on_active + "\" To=\"SetTrue\" />\r\n";
+                s += t(5) + "<Edge From=\"placed.OnAcquire\" To=\"SetFalse\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<Function Name=\"yardClass\" MethodName=\"wh::entitymodule::CreateItemClassDescriptor\" "
+                            "DeclaringType=\"wh::entitymodule\">\r\n";
+                s += t(5) + "<Constant Name=\"ItemClass\" Value=\"" + xml_escape(yard_class(quest)) + "\" />\r\n";
+                s += t(5) + "<Constant Name=\"Amount\" Value=\"1\" />\r\n";
+                s += t(4) + "</Function>\r\n";
+                s += t(4) + "<ItemDescriptorTrigger Name=\"placed\">\r\n";
+                s += t(5) + "<Edge From=\"yardClass.ItemDescriptor\" To=\"ItemDescriptor\" />\r\n";
+                s += t(5) + "<Edge From=\"playerSoul.Inventory\" To=\"Inventory\" />\r\n";
+                s += t(5) + "<Edge From=\"placing.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</ItemDescriptorTrigger>\r\n";
+                s += t(4) + "<State Name=\"atYard\" TypeT=\"bool\">\r\n";
+                s += t(5) + "<Edge From=\"placed.OnAcquire\" To=\"SetTrue\" />\r\n";
+                for (const std::string& port : on_done) s += t(5) + "<Edge From=\"" + port + "\" To=\"SetFalse\" />\r\n";
+                s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
+                s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<SchedulerLinkActivation Name=\"yardLink\">\r\n";
+                s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(yard_tag(modid, quest.id)) + "\" />\r\n";
+                s += t(5) + "<Edge From=\"atYard.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</SchedulerLinkActivation>\r\n";
+            }
+            // And on his knees once cowed (has_kneel; bugs.txt 25 Nov 2026: "he didn't
+            // cower once the two bandits were beaten, he just walked around like normal"):
+            // the kneel tag on from the cowed token, under which the added link above the
+            // yard's takes him to the kneeling wrapper by routine_cowed_target; off with
+            // the duel's end as the yard's is.
+            if (quest.has_kneel()) {
+                s += t(4) + "<State Name=\"kneeling\" TypeT=\"bool\">\r\n";
+                s += t(5) + "<Edge From=\"cowed.OnAcquire\" To=\"SetTrue\" />\r\n";
+                for (const std::string& port : on_done) s += t(5) + "<Edge From=\"" + port + "\" To=\"SetFalse\" />\r\n";
+                s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
+                s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
+                s += t(4) + "</State>\r\n";
+                s += t(4) + "<SchedulerLinkActivation Name=\"kneelLink\">\r\n";
+                s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(kneel_tag(modid, quest.id)) + "\" />\r\n";
+                s += t(5) + "<Edge From=\"kneeling.State\" To=\"IsActive\" />\r\n";
+                s += t(4) + "</SchedulerLinkActivation>\r\n";
             }
             s += emit_brawl(quest, ambushed);
         }
@@ -7487,6 +7559,7 @@ std::string emit_item_table(const std::string& modid, const std::vector<Quest>& 
     // warning promised and given (warn_class, warned_off_class).
     for (const Quest& q : quests) {
         if (q.is_duel()) token_row(door_accept_name(q), door_accept_class(q));
+        if (q.has_yard()) token_row(yard_name(q), yard_class(q));
         if (q.has_warn()) {
             token_row(warn_name(q), warn_class(q));
             token_row(warned_off_name(q), warned_off_class(q));
@@ -7749,6 +7822,10 @@ std::vector<std::pair<std::string, std::string>> item_localization(const std::st
             if (q.has_duel_taunt()) {
                 rows.emplace_back(item_ui_key(modid, sprung_name(q)), "A duel sprung");
                 rows.emplace_back(item_info_key(modid, sprung_name(q)), q.giver_name + "'s word said, and his friends loosed.");
+            }
+            if (q.has_yard()) {
+                rows.emplace_back(item_ui_key(modid, yard_name(q)), "A yard gone to");
+                rows.emplace_back(item_info_key(modid, yard_name(q)), q.giver_name + " waits in the yard from here.");
             }
         } else if (q.has_helper()) {
             rows.emplace_back(item_ui_key(modid, token_name(q)), "A name given");
@@ -10610,6 +10687,8 @@ std::string emit_conversation_lua(const std::string& modid,
             // WatchDuel).
             s += ", token = \"" + lua_escape(token_class(q)) + "\"";
             if (q.has_duel_cowed()) s += ", cowedToken = \"" + lua_escape(cowed_class(q)) + "\"";
+            // The carry's yard token (FastTravelGo): his day the yard from here.
+            if (q.has_yard()) s += ", yardToken = \"" + lua_escape(yard_class(q)) + "\"";
             // His word before the blows (emit_taunt_dialogue): the role it speaks through
             // (GrantHolder) and the token its end sends (DuelTaunted, DuelLoose).
             if (q.has_duel_taunt()) {
@@ -12608,7 +12687,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal ft = q.fastTravel\n";
     s += "\tif me == nil or me.GetWorldPos == nil or ft == nil then return end\n";
     s += "\tlocal to = { x = ft.x, y = ft.y, z = ft.z }\n";
-    s += "\tlocal function go()\n";
+    s += "\tlocal function carry()\n";
     s += "\t\tlocal ahead = nil\n";
     s += "\t\tlocal hour, now = nil, " + g + ".WorldTime()\n";
     s += "\t\tpcall(function() hour = Calendar.GetWorldHourOfDay() end)\n";
@@ -12662,6 +12741,21 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tland()\n";
     s += "\t\tend\n";
     s += "\tend\n";
+    // A duel's man's day the yard from here (q.yardToken; bugs.txt 25 Nov 2026): the token
+    // first, and the carry kDuelYardLeadMs after it, so the graph has the yard tag on --
+    // and the scheduler his goal moved to the wrapper on his duel spot -- before the clock
+    // is wound and the engine re-places the souls for the skipped hours; without it the
+    // 24 Nov runs read him 40 m off along the line to his tavern seat as his say was asked
+    // for, and the forced dialogue set up where the scheduler had him.
+    s += "\tlocal function go()\n";
+    s += "\t\tif q.kind == \"duel\" and q.yardToken ~= nil then\n";
+    s += "\t\t\t" + g + ".Token(q, q.yardToken)\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. tostring(q.target) .. \"'s day is the yard from here; the carry follows\")\n";
+    s += "\t\t\tpcall(function() Script.SetTimer(" + g + ".duelYardLeadMs, carry) end)\n";
+    s += "\t\telse\n";
+    s += "\t\t\tcarry()\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
     s += "\tlocal mounted = false\n";
     s += "\tpcall(function() mounted = me.human:IsMounted() end)\n";
     s += "\tif mounted then\n";
@@ -12698,6 +12792,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelSword = \"" + std::string(kDuelSwordPreset) + "\"\n";
     s += g + ".duelTauntSeconds = " + std::to_string(kDuelTauntSeconds) + "\n";
     s += g + ".duelSayDelayMs = " + std::to_string(kDuelSayDelayMs) + "\n";
+    s += g + ".duelYardLeadMs = " + std::to_string(kDuelYardLeadMs) + "\n";
     s += g + ".duelHoldMetres = " + health_text(kDuelHoldMetres) + "\n";
     s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
     s += g + ".duelEyeMetres = " + health_text(kDuelEyeMetres) + "\n";

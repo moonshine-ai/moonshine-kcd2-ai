@@ -89,6 +89,10 @@ std::string sprung_name(const Quest& quest);
 // sets the quest Active as the talk's accept port would.
 std::string door_accept_class(const Quest& quest);
 std::string door_accept_name(const Quest& quest);
+// A duel's fifth: the carry begun, the man's day the yard from here (Quest::has_yard;
+// emit_leg's placed trigger, the Lua's FastTravelGo).
+std::string yard_class(const Quest& quest);
+std::string yard_name(const Quest& quest);
 // A deliver's promised warning (npcdb.hpp warn_soul): the token on the app's `warn` that
 // opens the optional objective on the one to be warned, and the one that closes it once
 // the scene opening on the warning is taken up or refused at him (QuestCommand accept).
@@ -889,6 +893,17 @@ std::string gone_tag(const std::string& modid, const std::string& quest_id);
 // that afternoon and night, and the walk into town the next morning.
 std::string wed_tag(const std::string& modid, const std::string& quest_id);
 constexpr int kWedHours = 20;
+// The tag the graph turns on as a duel's carry begins and off when the duel is done
+// (Quest::has_yard): the scheduler override's added link on the man's NPC hub, to the
+// wrapper his duel spot is written on, reads it, so the scheduler's pull and the Lua's
+// set-down agree and the forced dialogue finds him on the spot (bugs.txt 25 Nov 2026).
+std::string yard_tag(const std::string& modid, const std::string& quest_id);
+// And the tag on from the cowed token to the duel's end (Quest::has_kneel): the added
+// link to a kneeling wrapper by routine_cowed_target reads it.
+std::string kneel_tag(const std::string& modid, const std::string& quest_id);
+// The yard token is made half a second before the carry's clock is wound, so the graph
+// has the tag on before the engine re-places the souls for the skipped hours.
+constexpr int kDuelYardLeadMs = 500;
 // A travel with a brawl stages it on that same match: the brawlers are set at odds with the
 // one looked at, told to fight bare-handed and to be nobody's business (`combat_invisible`,
 // so neither Henry nor a guard is drawn in), and each is sent the game's own first-punch

@@ -145,6 +145,20 @@ link to the wrapper and points that link at another hub of the same prefab withi
 the prefab's objects that the hub already links to (its sibling chore: a broom spot a few
 metres off); a hub with no sibling is left shared and the report says so.
 
+A duel's man (npc_quest kind `duel` with a `fast_travel_holder_to`; 25 Nov 2026 -- bugs.txt:
+"the cutscene focused camera was still pointing south at the wall with nobody in sight")
+gets a link added to his NPC hub to the wrapper his duel spot is written on (within
+YARD_METRES; the spot is chosen to sit on one), all day at the gone link's priority with
+HaltOnInvalid and Urgency, under the graph's yard tag (emit.cpp yard_tag), which the Lua's
+yard token turns on as the carry begins and the graph off when the duel is done. SetWorldPos
+alone moved his body and the scheduler pulled him back toward his day's goal (read 40 m off
+along the line to his tavern seat), and the forced dialogue set up where the scheduler had
+him; with the goal itself on the spot the two agree. A duel spot on no wrapper is reported
+and skipped (the Lua's set-down still happens; the pull is what is lost). And with a
+`routine_cowed_target` (`<x>,<y>`) a second link, one priority above, to a kneeling wrapper
+(KNEEL_BEHAVIOURS: the beggar's `useKneeling`) by the point, under the kneel tag the graph
+turns on at the cowed token: the man on his knees once his men are down.
+
 Nothing to do (no quest has a routine on the level) writes no pak and says so, and a
 spec that cannot be resolved against the table is an error, not a silent skip: the graph
 would flip a tag no link carries and the giver would stop greeting Henry for nothing.
@@ -216,6 +230,40 @@ GONE_PRIORITY = 20
 # Which wrappers by the point a man gone to a camp may take, first preferred: a seat on a
 # bench (`use`, what Ellen herself does at hers), a loitering spot, the camp bench's fun.
 GONE_BEHAVIOURS = ("use", "waiting", "drinking", "use_withBark", "lookingAround")
+
+
+def yard_tag(modid: str, quest_id: str) -> str:
+    """emit.cpp yard_tag(): the LinkTag the graph turns on as a duel's carry begins (the
+    Lua's yard token, FastTravelGo) and off when the duel is done, under which the man's
+    routine goal is the wrapper on his duel spot (fast_travel_holder_to) rather than
+    wherever his day had him."""
+    return f"{modid}_yard_{quest_id}"
+
+
+def kneel_tag(modid: str, quest_id: str) -> str:
+    """emit.cpp kneel_tag(): the LinkTag the graph turns on at the cowed token and off when
+    the duel is done, under which the man goes to his knees (routine_cowed_target)."""
+    return f"{modid}_kneel_{quest_id}"
+
+
+# A duel's man on his spot (25 Nov 2026 -- bugs.txt: "the cutscene focused camera was still
+# pointing south at the wall with nobody in sight"): SetWorldPos moves his body, but the
+# scheduler keeps pulling him to his day's goal (the 24 Nov runs read him 40 m off along
+# the straight line to his tavern seat, and the forced dialogue set its stand-ins and camera
+# up where the scheduler had him). So the goal itself is moved: a link added to his NPC
+# hub, all day at the gone link's priority, to the wrapper the duel spot is written on, live
+# under the yard tag from the carry. The spot must be *on* a wrapper (within YARD_METRES)
+# offering one of GONE_BEHAVIOURS; a duel spot that is not is reported and skipped.
+YARD_PRIORITY = GONE_PRIORITY
+YARD_METRES = 3.0
+# And the man cowed on his knees (routine_cowed_target, `<x>,<y>`; bugs.txt 25 Nov 2026: "he
+# didn't cower once the two bandits were beaten"): a link added at one above the yard's, so
+# it outbids it from the cowed token on, to a kneeling wrapper by the point. The game has
+# no cowering behaviour a mod can select; the beggar's kneel (so_beggar `useKneeling`, out
+# of doors, ungated) is the nearest it offers, and "on his knees, begging" is the journal's
+# own picture of him.
+KNEEL_PRIORITY = GONE_PRIORITY + 1
+KNEEL_BEHAVIOURS = ("useKneeling",)
 
 
 def wed_tag(modid: str, quest_id: str) -> str:
@@ -407,6 +455,38 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
         specs.append({"quest_id": quest_id, "gone": (float(m.group(1)), float(m.group(2))),
                       "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
                       "tag": gone_tag(modid, quest_id)})
+    # A duel's man on his spot for the carry (fast_travel_holder_to on a duel, `<x>,<y>,<z>`;
+    # 25 Nov 2026, see YARD_PRIORITY): a link added to his NPC hub to the wrapper the spot is
+    # written on, under the graph's yard tag. And on his knees once cowed (routine_cowed_target,
+    # `<x>,<y>`): a second link, above it, to a kneeling wrapper by the point, under the kneel
+    # tag.
+    for quest_id, text, cowed, soul, name, hub, gender in conn.execute(
+            "SELECT l.quest_id, l.text, "
+            "COALESCE((SELECT text FROM npc_quest_lines WHERE quest_id = l.quest_id AND field = 'routine_cowed_target'), ''), "
+            "q.target_soul, q.target_name, h.hub_guid, "
+            "COALESCE((SELECT gender FROM npc WHERE soul_name = q.target_soul LIMIT 1), '') "
+            "FROM npc_quest_lines l JOIN npc_quest q USING (quest_id) "
+            "LEFT JOIN npc_routine_hub h ON h.soul_name = q.target_soul AND h.level = ? "
+            "WHERE q.kind = 'duel' AND l.field = 'fast_travel_holder_to' AND l.text <> '' ORDER BY l.quest_id",
+            (level,)).fetchall():
+        if not soul:
+            raise SystemExit(f"{quest_id}: a duel with no target")
+        if not hub:
+            print(f"  {quest_id}: {name} ({soul}) has no scheduler hub on {level}; skipped", file=sys.stderr)
+            continue
+        m = re.fullmatch(r"\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*[-\d.]+\s*", text)
+        if not m:
+            raise SystemExit(f"{quest_id}: fast_travel_holder_to wants <x>,<y>,<z>, got {text!r}")
+        specs.append({"quest_id": quest_id, "yard": (float(m.group(1)), float(m.group(2))),
+                      "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
+                      "tag": yard_tag(modid, quest_id)})
+        if cowed.strip():
+            m = re.fullmatch(r"\s*([-\d.]+)\s*,\s*([-\d.]+)\s*", cowed)
+            if not m:
+                raise SystemExit(f"{quest_id}: routine_cowed_target wants <x>,<y>, got {cowed!r}")
+            specs.append({"quest_id": quest_id, "kneel": (float(m.group(1)), float(m.group(2))),
+                          "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
+                          "tag": kneel_tag(modid, quest_id)})
     # And whom he goes to live with (wed_soul; 20 Nov 2026 -- Benesh and Ellen, man and wife
     # in Kuttenberg): under the graph's wed tag, on kWedHours after the handover, a day link
     # *added* to each NPC hub to the work the quest names for them (routine_wed_target his,
@@ -738,35 +818,38 @@ def resolve_home_at(spec: dict, hubs: dict) -> dict:
             "late": [(l.target, l.start, l.end) for l in late]}
 
 
-def resolve_gone(spec: dict, hubs: dict) -> dict:
+def resolve_gone(spec: dict, hubs: dict, key: str = "gone", metres: float = POINT_METRES,
+                 behaviours: tuple[str, ...] = GONE_BEHAVIOURS, nearest: bool = False) -> dict:
     """The wrapper by the point the holder goes to (routine_gone_target): a positioned hub
     within POINT_METRES of it carrying an ungated link (no role, buff or tag) with one of
     GONE_BEHAVIOURS that fits his gender -- the first behaviour preferred, then the nearest
-    to the point -- and his NPC hub, which must be in the table."""
+    to the point -- and his NPC hub, which must be in the table. The same search serves a
+    duel's yard (`yard`, within YARD_METRES, the `nearest` wrapper whatever its behaviour,
+    since the spot is written on it) and its kneel (`kneel`, KNEEL_BEHAVIOURS)."""
     who = f"{spec['name']} ({spec['soul']}, hub {spec['hub']})"
     if spec["hub"] not in hubs:
         raise ValueError(f"{who}: no such hub in the table")
-    px, py = spec["gone"]
+    px, py = spec[key]
     best = None
     for guid, (hub, links) in hubs.items():
         pos = position(hub)
         if not pos:
             continue
         d = math.hypot(pos[0] - px, pos[1] - py)
-        if d > POINT_METRES:
+        if d > metres:
             continue
         for l in links:
             b = l.get("BehaviorName")
-            if b not in GONE_BEHAVIOURS or not gender_fits(l, spec["gender"]):
+            if b not in behaviours or not gender_fits(l, spec["gender"]):
                 continue
             if l.get("RequiredRole") or l.get("BuffTag") or l.get("LinkTag"):
                 continue
-            rank = (GONE_BEHAVIOURS.index(b), d)
+            rank = (d,) if nearest else (behaviours.index(b), d)
             if best is None or rank < best[0]:
                 best = (rank, guid, pos, b, d)
     if best is None:
-        raise ValueError(f"{who}: no wrapper within {POINT_METRES:.0f} m of {px:.1f},{py:.1f} with one of "
-                         f"{', '.join(GONE_BEHAVIOURS)} he could take")
+        raise ValueError(f"{who}: no wrapper within {metres:.0f} m of {px:.1f},{py:.1f} with one of "
+                         f"{', '.join(behaviours)} he could take")
     return {"npc_hub": spec["hub"], "wrapper": best[1], "wrapper_pos": best[2], "behaviour": best[3],
             "metres": best[4]}
 
@@ -1196,6 +1279,37 @@ def apply(table: bytes, specs: list[dict]) -> tuple[bytes, list[str]]:
                 f"    NPC hub {r['npc_hub']}: link added -> wrapper {r['wrapper']} (`{r['behaviour']}`) at "
                 f"{r['wrapper_pos'][0]:.1f},{r['wrapper_pos'][1]:.1f} ({r['metres']:.0f} m from the point), "
                 f"prio {GONE_PRIORITY}, all day, live while the tag is on")
+            continue
+        if spec.get("yard") or spec.get("kneel"):
+            # A duel's man: his goal the wrapper on his duel spot under the yard tag (so the
+            # scheduler's pull and the Lua's SetWorldPos agree, and the forced dialogue finds
+            # him there), and on his knees under the kneel tag once cowed; the gone link's
+            # shape (HaltOnInvalid, Urgency), the kneel one above the yard's.
+            kind = "yard" if spec.get("yard") else "kneel"
+            try:
+                r = (resolve_gone(spec, hubs, "yard", YARD_METRES, nearest=True) if kind == "yard"
+                     else resolve_gone(spec, hubs, "kneel", POINT_METRES, KNEEL_BEHAVIOURS))
+            except ValueError as e:
+                if kind == "yard":
+                    print(f"  {spec['quest_id']}: the duel spot is on no wrapper; the yard link is skipped ({e})",
+                          file=sys.stderr)
+                    continue
+                raise
+            prio = YARD_PRIORITY if kind == "yard" else KNEEL_PRIORITY
+            tag = spec["tag"]
+            text = edit_hub(text, r["npc_hub"], lambda block: add_link(
+                block, r["wrapper"], {
+                    "Priority": str(prio), "TimeOfDayStart": "0", "TimeOfDayEnd": "1440",
+                    "TimeVariation": "0", "AllowedGenders": "0", "Attraction": str(ROUTINE_ATTRACTION),
+                    "LinkTag": tag, "InvertLinkTagRequirement": "false",
+                    "HaltOnInvalid": "true", "Urgency": ROUTINE_URGENCY}))
+            px, py = spec[kind]
+            what = "the duel spot" if kind == "yard" else "on his knees"
+            report.append(
+                f"{spec['quest_id']} {spec['name']} ({spec['soul']}): {what} at {px:.1f},{py:.1f} under tag {tag}\n"
+                f"    NPC hub {r['npc_hub']}: link added -> wrapper {r['wrapper']} (`{r['behaviour']}`) at "
+                f"{r['wrapper_pos'][0]:.1f},{r['wrapper_pos'][1]:.1f} ({r['metres']:.1f} m from the point), "
+                f"prio {prio}, all day, live while the tag is on")
             continue
         r = resolve(spec, hubs)
         tag = spec["tag"]
