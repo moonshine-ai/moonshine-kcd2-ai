@@ -950,12 +950,14 @@ constexpr int kDuelSeconds = 240;
 constexpr const char* kDuelContexts[] = {
     "combat_neverSurrenderOrFlee", "combat_neverAcceptSurrender", "combat_invisible",
 };
-// Where the two made ones stand as Henry lands (metres behind him, a pace to either side),
-// the sword put in their hands (the shipped CombatDebug.lua's shortsword weapon preset),
-// and how far off Henry must be for their bodies to be taken away (DuelSweep).
+// Where the two made ones stand as Henry lands (metres behind him, a pace to either side)
+// and the sword put in their hands (the shipped CombatDebug.lua's shortsword weapon
+// preset). Their bodies stay where they fall (DuelFinish; bugs.txt 25 Nov 2026): a man
+// down but breathing at the cowed token is finished with DuelKill's blow, and nothing is
+// removed -- until the 25th the unconscious were taken away at the token and the dead once
+// Henry was 80 m off or the duel done.
 constexpr double kDuelBehindMetres = 3.0;
 constexpr const char* kDuelSwordPreset = "b966514a-966a-4b1c-b870-755abd25bd32";
-constexpr double kDuelSweepMetres = 80.0;
 // A duel with a taunt (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) makes the men at
 // Henry's back as he lands, in the dark, swords sheathed, and held on their points by the
 // pin (bugs.txt 25 Nov 2026: "bandits aren't visible when cutscene camera switches to

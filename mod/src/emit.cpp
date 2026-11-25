@@ -12961,8 +12961,8 @@ std::string emit_conversation_lua(const std::string& modid,
     // XGenAIModule.SpawnEntity is nil in the retail build, which is how the first duel went
     // (kcd.log 21 Nov 2026: both "could not be made", and with nobody to count down the
     // man was cowed in the same tick). Their names are kept in the store (spawned) and
-    // their entity ids beside it, for WatchDuel to count them down and DuelSweep to take the
-    // bodies away (the ids in memory only: an entity id is the engine's handle, not a
+    // their entity ids beside it, for WatchDuel to count them down and DuelFinish to see to the
+    // breathing (the ids in memory only: an entity id is the engine's handle, not a
     // thing for the save). A soul that will not spawn is logged and the duel goes on with
     // those that did, or with the man alone.
     s += g + ".duelBehindMetres = " + health_text(kDuelBehindMetres) + "\n";
@@ -13415,16 +13415,13 @@ std::string emit_conversation_lua(const std::string& modid,
     // standing is not counted down inside duelStandSeconds of the loosing (the 22 Nov run
     // cowed the man eight seconds in with both his friends up and one of them on Henry), and
     // each man's state is logged through that grace so the next run can be read.
-    // The friends left unconscious are taken away then, so nobody wakes into a
-    // second fight; the dead lie where they fell until DuelSweep (Henry gone off, or the
-    // duel over) takes them. Past done: the sweep, and a spared man kept out of the world
-    // (DuelGone) after each load.
-    s += g + ".duelSweepMetres = " + health_text(kDuelSweepMetres) + "\n";
+    // The friends left breathing are finished where they lie then (DuelFinish; bugs.txt
+    // 25 Nov 2026: the bodies stay), so nobody wakes into a second fight. Past done: a
+    // spared man kept out of the world (DuelGone) after each load.
     s += "function " + g + ".WatchDuel(id, q, pp)\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif f.done then\n";
     s += "\t\tif f.gone then " + g + ".DuelGone(id, q) end\n";
-    s += "\t\t" + g + ".DuelSweep(id, q, pp, false)\n";
     s += "\t\treturn\n";
     s += "\tend\n";
     s += "\tif not f.ambushed then return end\n";
@@ -13510,7 +13507,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // Henry for it in the token's tick, the two turned to each other (DuelKneel).
     s += "\tif q.beg then pcall(" + g + ".DuelKneel, id, q, pp) end\n";
     s += "\tif q.cowedToken ~= nil then " + g + ".Token(q, q.cowedToken) end\n";
-    s += "\t" + g + ".DuelSweep(id, q, pp, true)\n";
+    s += "\t" + g + ".DuelFinish(id, q)\n";
     s += "end\n";
     s += "\n";
     // The man set down before Henry for his begging (emit_beg_dialogue; bugs.txt 24 Nov
@@ -13623,33 +13620,29 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: the blow dealt to %s%s; he reads %s\", id, tostring(q.target), ok and \"\" or (\", DealDamage raised \" .. tostring(err)), dead and \"dead\" or \"alive\"))\n";
     s += "end\n";
     s += "\n";
-    // The made ones taken out of the world: the unconscious at once when asked (wakingOnly),
-    // the rest once Henry is duelSweepMetres off or the duel is done; a name not found is
-    // already gone. The store's list shrinks as they go.
-    s += "function " + g + ".DuelSweep(id, q, pp, wakingOnly)\n";
+    // The made ones left where they fell (bugs.txt 25 Nov 2026: "the bandit bodies should
+    // remain after the duel; at the moment they're gone" -- until then the unconscious were
+    // removed at the cowed token and the dead once Henry was off or the duel done). A duel
+    // is to the death: a man down but breathing at the cowed token is finished where he lies,
+    // by the blow DuelKill deals (health past any man's, no attacker, so no crime of
+    // Henry's and nobody wakes into a second fight), and nothing is removed; the bodies
+    // stay for the game's own corpse-keeping, with their swords and purses on them. The
+    // store's list is kept as it is, for the watch's reading after a load.
+    s += "function " + g + ".DuelFinish(id, q)\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
     s += "\tif f.spawned == nil or #f.spawned == 0 then return end\n";
-    s += "\tlocal keep, keepIds = {}, {}\n";
     s += "\tlocal ids = " + g + ".duelIds[id] or {}\n";
-    s += "\tlocal far = false\n";
-    s += "\tif pp ~= nil and q.fastTravel ~= nil then\n";
-    s += "\t\tfar = math.sqrt((pp.x - q.fastTravel.x) ^ 2 + (pp.y - q.fastTravel.y) ^ 2) > " + g + ".duelSweepMetres\n";
-    s += "\tend\n";
     s += "\tfor k, name in ipairs(f.spawned) do\n";
     s += "\t\tlocal down, e, dead = " + g + ".DuelDown(name, ids[k])\n";
-    s += "\t\tlocal take = e ~= nil and ((wakingOnly and down and not dead) or (not wakingOnly and (far or f.done)))\n";
-    s += "\t\tif e == nil then\n";
-    s += "\t\telseif take then\n";
-    s += "\t\t\tpcall(function() System.RemoveEntity(e.id) end)\n";
-    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. name .. \" taken away\")\n";
-    s += "\t\telse\n";
-    s += "\t\t\tkeep[#keep + 1] = name\n";
-    s += "\t\t\tkeepIds[#keep] = ids[k]\n";
+    s += "\t\tif e ~= nil and down and not dead then\n";
+    s += "\t\t\tlocal ok, err = pcall(function() e.soul:DealDamage(0, " + g + ".duelKillHealth, 0, false) end)\n";
+    s += "\t\t\tlocal gone = false\n";
+    s += "\t\t\tpcall(function() gone = e.actor:IsDead() == true end)\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s finished where he lies%s; he reads %s\", id, name, ok and \"\" or (\", DealDamage raised \" .. tostring(err)), gone and \"dead\" or \"alive\"))\n";
+    s += "\t\telseif e ~= nil and dead then\n";
+    s += "\t\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. name .. \" lies where he fell\")\n";
     s += "\t\tend\n";
     s += "\tend\n";
-    s += "\tf.spawned = keep\n";
-    s += "\t" + g + ".duelIds[id] = keepIds\n";
-    s += "\t" + g + ".state.quests[id] = f\n";
     s += "end\n";
     s += "\n";
     // Spared (the app's `complete` on a duel): all his money to Henry -- what his purse holds
@@ -17170,8 +17163,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tif q.kind == \"ambush\" and not f.handed and not f.dead then out[#out + 1] = id end\n";
     s += "\t\t\tif q.kind == \"buy\" and not f.handed and not f.dead then out[#out + 1] = id end\n";
     // A duel from the spring (DuelSpring) until it is over, for the man's death and his
-    // friends' falling; and past done for the bodies (DuelSweep) and the spared man kept
-    // gone (DuelGone).
+    // friends' falling; and past done for the spared man kept gone (DuelGone).
     s += "\t\t\tif q.kind == \"duel\" and f.ambushed then out[#out + 1] = id end\n";
     // A find with a keepsake: until it is laid, and then for Henry's pocket (the flag the
     // app reads for the giver's thanks).

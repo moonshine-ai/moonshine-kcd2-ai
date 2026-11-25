@@ -5816,7 +5816,7 @@ end)
 -- camera they must be behind him); the spring token brings up his forced dialogue, and
 -- its end (DuelTaunted) is when their swords come out and the sprung token is sent for
 -- the graph's brawl. His friends down is the cowed token and the letter Y, their
--- bodies taken away; the spare row hands Henry the man's purse and takes him out of the
+-- bodies left lying; the spare row hands Henry the man's purse and takes him out of the
 -- world; the man dead instead is the `dead` way.
 case("Duel: the carry is to the fight -- no clock wound, the man set down facing Henry, his friends made armed behind him in the dark (loosed after his say, where a taunt is written), the spring token; friends down is the cowed token and the letter Y; spared hands over his purse and he is gone; killed is the dead way", function(E, M, check)
     local id, q = byKind(M, "duel")
@@ -6024,7 +6024,7 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     lp = man:GetWorldPos()
     check(math.abs(lp.x - (ft.x + 8)) < 0.01 and not E.find("put down", leashMark), "eight metres off is his own fight, left alone")
     -- One friend down: the man still fights. Both down: cowed, the token, the letter Y, the
-    -- unconscious one taken away and the dead one left lying.
+    -- unconscious one finished where he lies and both bodies left (bugs.txt 25 Nov 2026).
     made[1].down = true
     E.advance(2100)
     check(M.state.quests[id].cowed ~= true, "one friend standing, the man still fights")
@@ -6038,7 +6038,12 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(f.cowed == true and string.find(M.QuestFlagLetters(f), "Y", 1, true) ~= nil, "both down: cowed, the letter Y")
     check(E.find("friends are down; he is cowed", mark) and E.count("token made", mark) == 1,
           "said in the log, and the cowed token made for the graph (gone again a moment later)")
-    check(#f.spawned == 1 and System.GetEntityByName("mn_duel_" .. id .. "_1") == nil, "the unconscious one taken away, the dead one left lying")
+    check(#f.spawned == 2 and System.GetEntityByName("mn_duel_" .. id .. "_1") == made[1] and System.GetEntityByName("mn_duel_" .. id .. "_2") == made[2],
+          "both bodies left where they fell, nothing removed")
+    check(made[1].alive == false and made[1].dealt ~= nil and made[1].dealt.health == M.duelKillHealth and made[1].dealt.attacker == 0,
+          "the unconscious one finished where he lies, by the blow dealt by nobody")
+    check(E.find("mn_duel_" .. id .. "_1 finished where he lies; he reads dead", mark) and E.find("mn_duel_" .. id .. "_2 lies where he fell", mark), "and said")
+    check(made[2].dealt == nil, "the dead one not struck again")
     -- With his begging written as the graph's forced dialogue (q.beg; bugs.txt 24 Nov
     -- 2026: "automatically enter into a conversation with Paul"), he is set down before
     -- Henry for it in the token's tick, turned to him and Henry's view to him, and kept on
@@ -6096,7 +6101,12 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
           "the surrender pose stopped before he goes")
     check(man:GetWorldPos().z < -500, "the man put out of the world")
     E.advance(2100)
-    check(#(M.state.quests[id].spawned or {}) == 0, "the bodies taken away once the duel is done")
+    check(#(M.state.quests[id].spawned or {}) == 2 and System.GetEntityByName("mn_duel_" .. id .. "_1") ~= nil and System.GetEntityByName("mn_duel_" .. id .. "_2") ~= nil,
+          "the bodies still lying once the duel is done")
+    player:SetWorldPos({ x = ft.x + 200, y = ft.y, z = ft.z })
+    E.advance(2100)
+    check(System.GetEntityByName("mn_duel_" .. id .. "_1") ~= nil and System.GetEntityByName("mn_duel_" .. id .. "_2") ~= nil, "and with Henry far off")
+    player:SetWorldPos({ x = ft.x, y = ft.y, z = ft.z })
     -- The other row of his begging: killed where he kneels (the blow, dealt by nobody; his
     -- death is the dead ending by the watch's reading). A watch row of the first cut was
     -- taken out on the 25th; a word the Lua does not know does nothing.
