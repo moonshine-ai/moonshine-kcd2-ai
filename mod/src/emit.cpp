@@ -12701,6 +12701,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelHoldMetres = " + health_text(kDuelHoldMetres) + "\n";
     s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
     s += g + ".duelEyeMetres = " + health_text(kDuelEyeMetres) + "\n";
+    s += g + ".duelLeashMetres = " + health_text(kDuelLeashMetres) + "\n";
+    s += g + ".duelLeashBackMetres = " + health_text(kDuelLeashBackMetres) + "\n";
     s += g + ".duelStuckSeconds = " + std::to_string(kDuelStuckSeconds) + "\n";
     s += g + ".duelStuckMetres = " + health_text(kDuelStuckMetres) + "\n";
     // The spot each duel's man was in fact set down on (DuelPlace: the written one, or a
@@ -12853,6 +12855,28 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn off, true\n";
     s += "end\n";
     s += "\n";
+    // The man kept within reach once the men are loosed (kDuelLeashMetres): further than
+    // that from Henry he is put down a few paces from him on his spot's side, facing him.
+    s += "function " + g + ".DuelLeash(id, q, pp)\n";
+    s += "\tif q.target == nil then return end\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\tif e == nil or e.GetWorldPos == nil then return end\n";
+    s += "\tlocal tp = e:GetWorldPos()\n";
+    s += "\tlocal gap = math.sqrt((tp.x - pp.x) ^ 2 + (tp.y - pp.y) ^ 2)\n";
+    s += "\tif gap <= " + g + ".duelLeashMetres then return end\n";
+    s += "\tlocal spot = " + g + ".DuelSpotOf(id, q) or tp\n";
+    s += "\tlocal dx, dy = spot.x - pp.x, spot.y - pp.y\n";
+    s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\tlocal b = " + g + ".duelLeashBackMetres\n";
+    s += "\tlocal x, y = pp.x + dx / n * b, pp.y + dy / n * b\n";
+    s += "\tlocal z = " + g + ".Ground(x, y, pp.z)\n";
+    s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = x, y = y, z = z }) end)\n";
+    s += "\tpcall(function() e:SetDirectionVector({ x = -dx / n, y = -dy / n, z = 0 }) end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s %.0fm from Henry (read at %.1f %.1f %.1f); put down %.0fm from him at %.1f %.1f %.1f%s\",\n";
+    s += "\t\tid, q.target, gap, tp.x, tp.y, tp.z, b, x, y, z, ok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "end\n";
+    s += "\n";
     // The taunt's end (emit_taunt_dialogue's ExitScript): the men made and loosed.
     s += "function " + g + ".DuelTaunted(id)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
@@ -12992,6 +13016,8 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\tpcall(" + g + ".StateQuest, id, \"killed\")\n";
     s += "\t\treturn\n";
     s += "\tend\n";
+    // Loosed and not done -- the fight, and the begging after it -- he is kept in reach.
+    s += "\tif f.loosed and not " + g + ".InDialog() then " + g + ".DuelLeash(id, q, pp) end\n";
     s += "\tif f.cowed then return end\n";
     s += "\tlocal now = " + g + ".Now()\n";
     s += "\tif not f.loosed then\n";

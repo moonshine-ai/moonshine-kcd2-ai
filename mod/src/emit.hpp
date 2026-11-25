@@ -972,6 +972,15 @@ constexpr int kDuelStandSeconds = 15;
 // further than kDuelStuckMetres from Henry and not two metres from where he was made, is
 // taken for stuck and put down again on a clear point behind Henry, once.
 constexpr double kDuelEyeMetres = 1.5;
+// And once the men are loosed the man is kept within kDuelLeashMetres of Henry through the
+// fight and after he is cowed, until the duel is done (bugs.txt 24 Nov 2026, "Paul didn't
+// seem to be present during or after the fight"): a soul out of Henry's sight with his
+// evening's seat to go to is warped along his way by the scheduler -- 42 m in a second,
+// read toward the tavern, twice in one landing -- and once the say no longer holds him he
+// goes. Further than the leash he is put down kDuelLeashBackMetres from Henry on the side
+// his spot is, facing him; nearer he is his own, so his fighting is not fought with.
+constexpr double kDuelLeashMetres = 14.0;
+constexpr double kDuelLeashBackMetres = 4.0;
 constexpr int kDuelStuckSeconds = 12;
 constexpr double kDuelStuckMetres = 6.0;
 // A pray is prayed when the player soul's praying context -- the game's own "Player

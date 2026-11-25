@@ -5932,6 +5932,20 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.advance(1100)
     check(#M.state.quests[id].spawned == 2 and E.find("duel already sprung", mark), "not sprung twice")
     check(not taunted or E.count("found by id, standing", landMark) >= 2, "the made men looked up by their ids and seen standing")
+    -- Through the fight the man is kept within reach (bugs.txt 24 Nov 2026: no sign of him
+    -- during or after it): taken further than the leash he is put down a few paces from
+    -- Henry on his spot's side, facing him; nearer he is left to fight.
+    man:SetWorldPos({ x = ft.x + 40, y = ft.y, z = ft.z })
+    local leashMark = E.mark()
+    E.advance(2100)
+    local lp = man:GetWorldPos()
+    check(math.abs(math.sqrt((lp.x - ft.x) ^ 2 + (lp.y - ft.y) ^ 2) - M.duelLeashBackMetres) < 0.05, "taken off during the fight: put down a few paces from Henry")
+    check(E.find(q.giver .. " 40m from Henry (read at", leashMark) and E.find("put down 4m from him at", leashMark), "and said, with where he was read")
+    man:SetWorldPos({ x = ft.x + 8, y = ft.y, z = ft.z })
+    leashMark = E.mark()
+    E.advance(2100)
+    lp = man:GetWorldPos()
+    check(math.abs(lp.x - (ft.x + 8)) < 0.01 and not E.find("put down", leashMark), "eight metres off is his own fight, left alone")
     -- One friend down: the man still fights. Both down: cowed, the token, the letter Y, the
     -- unconscious one taken away and the dead one left lying.
     made[1].down = true
@@ -5945,6 +5959,12 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(E.find("friends are down; he is cowed", mark) and E.count("token made", mark) == 1,
           "said in the log, and the cowed token made for the graph (gone again a moment later)")
     check(#f.spawned == 1 and System.GetEntityByName("mn_duel_" .. id .. "_1") == nil, "the unconscious one taken away, the dead one left lying")
+    -- Cowed, he is still kept in reach for the begging, until the duel is done.
+    man:SetWorldPos({ x = ft.x + 40, y = ft.y, z = ft.z })
+    leashMark = E.mark()
+    E.advance(2100)
+    lp = man:GetWorldPos()
+    check(math.sqrt((lp.x - ft.x) ^ 2 + (lp.y - ft.y) ^ 2) < 5 and E.find("put down 4m from him", leashMark), "cowed and walking off: put down by Henry again")
     -- Spared: his purse (over the floor) in Henry's, and the man out of the world.
     man.inventory:CreateItem(E.moneyClass, 100, 870)
     local before = player.inventory:GetMoney()
