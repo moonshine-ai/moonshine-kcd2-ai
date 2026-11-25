@@ -956,8 +956,11 @@ constexpr const char* kDuelContexts[] = {
 constexpr double kDuelBehindMetres = 3.0;
 constexpr const char* kDuelSwordPreset = "b966514a-966a-4b1c-b870-755abd25bd32";
 constexpr double kDuelSweepMetres = 80.0;
-// A duel with a taunt (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) makes the men and
-// begins the brawl at the taunt dialogue's end (DuelTaunted), or this long after the
+// A duel with a taunt (npcdb.hpp duel_taunt; bugs.txt 22 Nov 2026) makes the men at
+// Henry's back as he lands, in the dark, swords sheathed, and held on their points by the
+// pin (bugs.txt 25 Nov 2026: "bandits aren't visible when cutscene camera switches to
+// Henry; they should be behind him"), and draws their swords and begins the brawl at the
+// taunt dialogue's end (DuelTaunted), or this long after the
 // landing when the dialogue has not played (WatchDuel): a forced dialogue the game will
 // not open leaves the yard quiet otherwise; a dialogue that is up is never cut (WatchDuel
 // reads InDialog). The 23 Nov run's say ran twenty seconds and the watch loosed the men a

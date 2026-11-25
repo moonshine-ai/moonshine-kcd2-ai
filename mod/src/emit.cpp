@@ -13090,6 +13090,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tf.spawned = {}\n";
     s += "\tf.loosed = nil\n";
     s += "\t" + g + ".duelIds[id] = {}\n";
+    s += "\t" + g + ".duelMade[id] = nil\n";
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "\t" + g + ".duelLandedAt[id] = " + g + ".Now()\n";
     s += "\t" + g + ".duelStood[id] = {}\n";
@@ -13098,9 +13099,12 @@ std::string emit_conversation_lua(const std::string& modid,
     // With a taunt written the token -- the forced dialogue -- is asked for a moment after
     // the landing (kDuelSayDelayMs), not in the tick that set the two down: the 23 Nov run
     // played it with no model in view and the man 28 m off at its end. He is put back on
-    // his spot as it is asked for, should the engine have taken him in the meantime.
+    // his spot as it is asked for, should the engine have taken him in the meantime. The
+    // men are made at his back now, in the dark, so the say's camera finds them there
+    // (bugs.txt 25 Nov 2026); their swords stay sheathed until the loosing.
     s += "\tif q.sprungToken ~= nil then\n";
-    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has his say first; the men wait on it\")\n";
+    s += "\t\t" + g + ".DuelMake(id, q, me, to)\n";
+    s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has his say first; the men stand at Henry's back for it\")\n";
     s += "\t\t" + g + ".DuelPinStart(id)\n";
     s += "\t\tpcall(function() Script.SetTimer(" + g + ".duelSayDelayMs, function() " + g + ".DuelSay(id) end) end)\n";
     s += "\telse\n";
@@ -13164,10 +13168,14 @@ std::string emit_conversation_lua(const std::string& modid,
     // 25 Nov 2026, the camera facing south): read every tick, put back facing Henry when
     // more than kDuelPinMetres off, quietly; one line when it lets go says how often and
     // how far. `seq` is the pin's own number, so a second carry's pin is not run twice.
+    // The men made at Henry's back are held on their points by the same loop until the
+    // loosing (bugs.txt 25 Nov 2026: in the say's camera they must be behind him), facing
+    // him; the man's own part of it ends once his say has had him, the men's with the
+    // loosing, and each is said in its own line with its count.
     s += g + ".duelPin = {}\n";
     s += "function " + g + ".DuelPinStart(id)\n";
     s += "\tlocal seq = ((" + g + ".duelPin[id] or {}).seq or 0) + 1\n";
-    s += "\t" + g + ".duelPin[id] = { seq = seq, since = " + g + ".Now(), n = 0, far = 0 }\n";
+    s += "\t" + g + ".duelPin[id] = { seq = seq, since = " + g + ".Now(), n = 0, far = 0, men = 0, menFar = 0 }\n";
     s += "\t" + g + ".DuelPin(id, seq)\n";
     s += "end\n";
     s += "function " + g + ".DuelPin(id, seq)\n";
@@ -13179,32 +13187,64 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal why = nil\n";
     s += "\tif not f.ambushed or f.done then why = \"the duel is over\"\n";
     s += "\telseif f.loosed or f.cowed then why = \"the men are loosed\"\n";
-    s += "\telseif " + g + ".InDialog() then\n";
-    s += "\t\tif pin.sayAt == nil then pin.sayAt = now end\n";
-    s += "\t\tif (now - pin.sayAt) * 1000 >= " + g + ".duelPinAfterMs then why = \"his say has him\" end\n";
     s += "\telseif (now - pin.since) * 1000 >= " + g + ".duelPinMaxMs then why = \"its limit\"\n";
     s += "\tend\n";
-    s += "\tif why ~= nil then\n";
+    s += "\tlocal function manLetGo(how)\n";
+    s += "\t\tif pin.sayHeld then return end\n";
+    s += "\t\tpin.sayHeld = true\n";
     s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s pinned to his spot %d times over %.0fs, the furthest %.1fm off; let go (%s)\",\n";
-    s += "\t\t\tid, tostring(q.target), pin.n, now - pin.since, pin.far, why))\n";
+    s += "\t\t\tid, tostring(q.target), pin.n, now - pin.since, pin.far, how))\n";
+    s += "\tend\n";
+    s += "\tif why ~= nil then\n";
+    s += "\t\tmanLetGo(why)\n";
+    s += "\t\tif #(f.spawned or {}) > 0 then\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: his men held at Henry's back %d times over %.0fs, the furthest %.1fm off; let go (%s)\",\n";
+    s += "\t\t\t\tid, pin.men, now - pin.since, pin.menFar, why))\n";
+    s += "\t\tend\n";
     s += "\t\t" + g + ".duelPin[id] = nil\n";
     s += "\t\treturn\n";
     s += "\tend\n";
-    s += "\tlocal e = nil\n";
-    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
-    s += "\tlocal spot = " + g + ".DuelSpotOf(id, q)\n";
-    s += "\tif e ~= nil and e.GetWorldPos ~= nil and spot ~= nil then\n";
-    s += "\t\tlocal tp = e:GetWorldPos()\n";
-    s += "\t\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
-    s += "\t\tif off > " + g + ".duelPinMetres then\n";
-    s += "\t\t\tlocal me = " + g + ".Player()\n";
-    s += "\t\t\tlocal to = (me ~= nil and me.GetWorldPos ~= nil) and me:GetWorldPos() or { x = q.fastTravel.x, y = q.fastTravel.y }\n";
-    s += "\t\t\tlocal dx, dy = to.x - spot.x, to.y - spot.y\n";
-    s += "\t\t\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
-    s += "\t\t\tpcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
-    s += "\t\t\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
-    s += "\t\t\tpin.n = pin.n + 1\n";
-    s += "\t\t\tif off > pin.far then pin.far = off end\n";
+    s += "\tlocal me = " + g + ".Player()\n";
+    s += "\tlocal to = (me ~= nil and me.GetWorldPos ~= nil) and me:GetWorldPos() or { x = q.fastTravel.x, y = q.fastTravel.y, z = q.fastTravel.z }\n";
+    s += "\tif not pin.sayHeld then\n";
+    s += "\t\tif " + g + ".InDialog() then\n";
+    s += "\t\t\tif pin.sayAt == nil then pin.sayAt = now end\n";
+    s += "\t\t\tif (now - pin.sayAt) * 1000 >= " + g + ".duelPinAfterMs then manLetGo(\"his say has him\") end\n";
+    s += "\t\telse\n";
+    s += "\t\t\tlocal e = nil\n";
+    s += "\t\t\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\t\t\tlocal spot = " + g + ".DuelSpotOf(id, q)\n";
+    s += "\t\t\tif e ~= nil and e.GetWorldPos ~= nil and spot ~= nil then\n";
+    s += "\t\t\t\tlocal tp = e:GetWorldPos()\n";
+    s += "\t\t\t\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
+    s += "\t\t\t\tif off > " + g + ".duelPinMetres then\n";
+    s += "\t\t\t\t\tlocal dx, dy = to.x - spot.x, to.y - spot.y\n";
+    s += "\t\t\t\t\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\t\t\t\t\tpcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
+    s += "\t\t\t\t\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
+    s += "\t\t\t\t\tpin.n = pin.n + 1\n";
+    s += "\t\t\t\t\tif off > pin.far then pin.far = off end\n";
+    s += "\t\t\t\tend\n";
+    s += "\t\t\tend\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    // The men: each on the point he was made on, turned to Henry.
+    s += "\tlocal ids, madeAt = " + g + ".duelIds[id] or {}, " + g + ".duelMadeAt[id] or {}\n";
+    s += "\tfor k, name in ipairs(f.spawned or {}) do\n";
+    s += "\t\tlocal at = madeAt[k]\n";
+    s += "\t\tlocal down, m = " + g + ".DuelDown(name, ids[k])\n";
+    s += "\t\tif at ~= nil and m ~= nil and not down then\n";
+    s += "\t\t\tlocal mp = nil\n";
+    s += "\t\t\tpcall(function() mp = m:GetWorldPos() end)\n";
+    s += "\t\t\tlocal off = mp ~= nil and math.sqrt((mp.x - at.x) ^ 2 + (mp.y - at.y) ^ 2) or 0\n";
+    s += "\t\t\tif off > " + g + ".duelPinMetres then\n";
+    s += "\t\t\t\tlocal dx, dy = to.x - at.x, to.y - at.y\n";
+    s += "\t\t\t\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\t\t\t\tpcall(function() m:SetWorldPos({ x = at.x, y = at.y, z = at.z }) end)\n";
+    s += "\t\t\t\tpcall(function() m:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
+    s += "\t\t\t\tpin.men = pin.men + 1\n";
+    s += "\t\t\t\tif off > pin.menFar then pin.menFar = off end\n";
+    s += "\t\t\tend\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tpcall(function() Script.SetTimer(" + g + ".duelPinTickMs, function() " + g + ".DuelPin(id, seq) end) end)\n";
@@ -13263,13 +13303,16 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\treturn t[2], t[3], " + g + ".Ground(t[2], t[3], to.z), \"behind Henry (no clear point found)\"\n";
     s += "end\n";
     // The two made behind Henry, on along the line from the man through him, a pace to
-    // either side of it, facing his back, and the brawl loosed (the sprung token, where
-    // the graph waits on one). Once only.
-    s += "function " + g + ".DuelLoose(id, q, me, why)\n";
+    // either side of it, facing his back, armed with the sword sheathed. Made as Henry
+    // lands, in the dark (bugs.txt 25 Nov 2026: "bandits aren't visible when cutscene
+    // camera switches to Henry; they should be behind him" -- until then they were made at
+    // the say's end), and held on their points by the pin until loosed. Once only.
+    s += g + ".duelMade = {}\n";
+    s += "function " + g + ".DuelMake(id, q, me, to)\n";
+    s += "\tif " + g + ".duelMade[id] then return end\n";
+    s += "\t" + g + ".duelMade[id] = true\n";
     s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
-    s += "\tif f.loosed then return end\n";
-    s += "\tif f.done or f.cowed then return end\n";
-    s += "\tlocal to = me:GetWorldPos()\n";
+    s += "\tto = to or me:GetWorldPos()\n";
     s += "\tlocal from = nil\n";
     s += "\tpcall(function()\n";
     s += "\t\tlocal e = System.GetEntityByName(q.target)\n";
@@ -13304,19 +13347,35 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tnames[#names + 1] = bound\n";
     s += "\t\t\tids[#names] = made.id\n";
     s += "\t\t\tmadeAt[#names] = { x = x, y = y, z = z }\n";
-    // Facing Henry's back, armed, sword out.
+    // Facing Henry's back, armed; the sword is drawn at the loosing.
     s += "\t\t\tpcall(function() made:SetDirectionVector({ x = -bx, y = -by, z = 0 }) end)\n";
     s += "\t\t\tpcall(function() made.actor:EquipWeaponPreset(" + g + ".duelSword) end)\n";
-    s += "\t\t\tpcall(function() made.human:DrawWeapon() end)\n";
+    s += "\t\t\tpcall(function() made.human:HolsterWeapon() end)\n";
     s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s made at %.1f %.1f %.1f %s (id %s%s)\", id, name, x, y, z, how,\n";
     s += "\t\t\t\ttostring(made.id), bound ~= name and (\", named \" .. tostring(bound)) or \"\"))\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tf.spawned = names\n";
-    s += "\tf.loosed = true\n";
     s += "\t" + g + ".duelIds[id] = ids\n";
     s += "\t" + g + ".duelMadeAt[id] = madeAt\n";
     s += "\t" + g + ".duelReplaced[id] = {}\n";
+    s += "\t" + g + ".state.quests[id] = f\n";
+    s += "end\n";
+    // The brawl loosed: the men made where they are not yet (a duel without a say, or a
+    // making that failed at the landing), their swords out, and the sprung token where the
+    // graph waits on one. Once only.
+    s += "function " + g + ".DuelLoose(id, q, me, why)\n";
+    s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\tif f.loosed then return end\n";
+    s += "\tif f.done or f.cowed then return end\n";
+    s += "\t" + g + ".DuelMake(id, q, me)\n";
+    s += "\tf = " + g + ".state.quests[id] or f\n";
+    s += "\tlocal names = f.spawned or {}\n";
+    s += "\tfor k, name in ipairs(names) do\n";
+    s += "\t\tlocal down, e = " + g + ".DuelDown(name, (" + g + ".duelIds[id] or {})[k])\n";
+    s += "\t\tif e ~= nil then pcall(function() e.human:DrawWeapon() end) end\n";
+    s += "\tend\n";
+    s += "\tf.loosed = true\n";
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "\t" + g + ".duelLoosedAt[id] = " + g + ".Now()\n";
     s += "\t" + g + ".duelStood[id] = {}\n";

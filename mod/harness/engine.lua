@@ -309,6 +309,8 @@ local function actorComponent(e)
     local actor = {}
     function actor:IsDead() return not e.alive end
     function actor:IsUnconscious() return e.down == true end
+    -- The sword put in a made man's hands (the duel's weapon preset), remembered.
+    function actor:EquipWeaponPreset(preset) e.preset = preset end
     function actor:CanInteractWith() return true end
     function actor:GetCurrentAnimationState() return e.anim end
     -- The player's view turned (SpawnPoint.lua's way; the mod's FaceFrom): the angles kept
@@ -365,6 +367,11 @@ function Engine.soul(name, opts)
     e.soul = soulComponent(e)
     e.actor = actorComponent(e)
     e.inventory = Inventory.new(e)
+    -- An NPC's human: the weapon drawn or put away (the duel's made men), remembered.
+    e.human = {}
+    function e.human:DrawWeapon() e.drawn = true end
+    function e.human:HolsterWeapon() e.drawn = false end
+    function e.human:IsWeaponDrawn() return e.drawn == true end
     function e:GetName() return self.name end
     -- A Stash's inventory id (behaviors.md §6.3): the same inventory every entity here has.
     function e:GetInventoryToOpen() return self.inventory:GetId() end
