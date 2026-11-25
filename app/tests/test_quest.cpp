@@ -1430,6 +1430,30 @@ TEST_CASE("outside the carrying's hours a written wait takes its place, the mod 
     for (const DirectorRow& row : plan_quest(quest, at("done"), noon).rows) CHECK(row.intent != "fast_travel_wait");
 }
 
+TEST_CASE("a duel done is read by its how: spared bought his life, watched was marched off, dead says nothing") {
+    // bugs.txt 24 Nov 2026 (In the Stocks): the begging is the mod's own forced dialogue with
+    // three rows, and the `watched` ending is new; the giver's paragraph and his aside follow it.
+    Quest quest = bartels_axe(QuestRole::Giver);
+    quest.kind = "duel";
+    quest.target_soul = quest.giver_soul;
+    quest.target_name = quest.giver_name;
+    Approach night;
+    night.hour = 22.0;
+    QuestFacts spared = at("done");
+    CHECK(plan_quest(quest, spared, night).block.find("bought it with every groschen") != std::string::npos);
+    QuestFacts watched = at("done");
+    watched.how = "watched";
+    const QuestPlan marched = plan_quest(quest, watched, night);
+    CHECK(marched.block.find("marched you to the watch") != std::string::npos);
+    CHECK(marched.block.find("groschen") == std::string::npos);
+    CHECK(marched.rows.empty());
+    CHECK(quest_aside(quest, watched, {quest}, {watched}).find("marched you to the watch") != std::string::npos);
+    QuestFacts dead = at("done");
+    dead.how = "dead";
+    CHECK(plan_quest(quest, dead, night).block.empty());
+    CHECK(quest_aside(quest, dead, {quest}, {dead}).empty());
+}
+
 namespace {
 
 // The pilot's find: Mangy Margery the beggar wants four chamomile, and pays in a token.

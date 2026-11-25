@@ -288,7 +288,12 @@ local function soulComponent(e)
     soul.skills = {}
     function soul:GetSkillLevel(name) return self.skills[name] or 1 end
     function soul:GetSocialClass() return { Id = 1, Name = "townsman" } end
-    function soul:DealDamage(hp) e.alive = false end
+    -- The game's DealDamage(stamina, health, attackerId, suppressHitreaction): any health
+    -- dealt kills, as a case wants (the duel's blow); what was dealt is kept on the entity.
+    function soul:DealDamage(stamina, health, attackerId, suppress)
+        e.dealt = { stamina = stamina, health = health, attacker = attackerId, suppress = suppress }
+        if (health or stamina or 1) > 0 then e.alive = false end
+    end
     function soul:GetRelationship() return 0 end
     -- Buffs by guid, as the game keeps them: AddBuff returns an instance the caller may
     -- hand back to RemoveBuff; RemoveAllBuffsByGuid clears every instance of one.
@@ -865,6 +870,13 @@ function Engine.installGlobals()
         AddCCommand = function(name, body, help) Engine.commands[name] = { body = body, help = help } end,
         GetViewport = function() return 0, 0, 3840, 1600 end,
         GetTerrainElevation = function() return 0 end,
+        -- The post-process parameters (Global_User_Brightness is the yard's cut): what was
+        -- last set, by name, since the game's GetPostProcessFxParam reads nil for them.
+        SetPostProcessFxParam = function(name, value)
+            Engine.postFx = Engine.postFx or {}
+            Engine.postFx[name] = value
+        end,
+        GetPostProcessFxParam = function() return nil end,
         -- The spec is kept on the entity (e.spec) so a case can read what a chest was
         -- spawned with: its class, position, lock and key.
         SpawnEntity = function(spec)
@@ -1143,6 +1155,7 @@ function Engine.reset()
     Engine.files = {}
     Engine.infoTexts = {}
     Engine.rays = {}
+    Engine.postFx = {}
     Engine.floorAt = nil
     Engine.walls = nil
     Engine.walled = false

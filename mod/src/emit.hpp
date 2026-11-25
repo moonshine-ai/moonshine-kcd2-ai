@@ -169,6 +169,15 @@ std::string taunt_metarole(const std::string& quest_id);
 std::string emit_taunt_dialogue(const std::string& modid, const Quest& quest);
 // Its text rows (taunt, taunt_reply), for the localization pak.
 std::vector<std::pair<std::string, std::string>> taunt_localization(const std::string& modid, const Quest& quest);
+// A duel's begging (npcdb.hpp has_duel_beg; bugs.txt 24 Nov 2026): the man's plea once his
+// friends are down, forced on Henry by the graph off the cowed token, with Henry's three
+// rows under it -- spare him, march him to the watch, kill him -- and no other way out.
+// The spare and watch rows fire Out ports of the dialogue's own (`spared`, `watched`),
+// which the graph wires as the plain complete and the `watched` ending; every row's
+// ExitScript tells the Lua what was chosen (DuelChoice). The taunt's role speaks it.
+std::string beg_node(const std::string& quest_id);
+std::string emit_beg_dialogue(const std::string& modid, const Quest& quest);
+std::vector<std::pair<std::string, std::string>> beg_localization(const std::string& modid, const Quest& quest);
 
 // One beat of the dialogue graph that exists to fire a quest port. The app decides
 // when -- it writes "@quest <id> <command>" ahead of a turn's words -- and the Lua
@@ -896,7 +905,7 @@ constexpr int kWedHours = 20;
 // The tag the graph turns on as a duel's carry begins and off when the duel is done
 // (Quest::has_yard): the scheduler override's added link on the man's NPC hub, to the
 // wrapper his duel spot is written on, reads it, so the scheduler's pull and the Lua's
-// set-down agree and the forced dialogue finds him on the spot (bugs.txt 25 Nov 2026).
+// set-down agree and the forced dialogue finds him on the spot (bugs.txt 24 Nov 2026).
 std::string yard_tag(const std::string& modid, const std::string& quest_id);
 // And the tag on from the cowed token to the duel's end (Quest::has_kneel): the added
 // link to a kneeling wrapper by routine_cowed_target reads it.
@@ -959,6 +968,28 @@ constexpr int kDuelTauntSeconds = 40;
 // view, and the man read 28 m off when it ended): the engine has them both placed and the
 // camera somewhere to be; the man is held on his spot through it (DuelSpring, DuelSay).
 constexpr int kDuelSayDelayMs = 2500;
+// His begging (npcdb.hpp has_duel_beg; bugs.txt 24 Nov 2026) is enqueued by the graph this
+// long after the cowed token, on its own Timer: the token stops the brawl at once, and the
+// Lua has set the man down before Henry and turned the two to each other in the token's
+// tick (DuelKneel, kDuelKneelMetres off him, and the turning kept up through the wait, as
+// FollowFace does), so the dialogue -- weighed once, as it is enqueued, and wanting them
+// within arm's reach -- finds them standing for it.
+constexpr int kDuelBegDelaySeconds = 2;
+constexpr double kDuelKneelMetres = 1.5;
+constexpr int kDuelKneelFaceMs = 2500;
+constexpr int kDuelKneelFaceTickMs = 100;
+// The blow Henry's kill row lands (DuelKill): health damage past any man's, dealt by
+// nobody (no attacker id, so it is no crime of Henry's for the watch), and the death is
+// the graph's `dead` ending as a death in the fight is.
+constexpr int kDuelKillHealth = 1000;
+// The yard's cut (bugs.txt 24 Nov 2026: "kept faded to black until the setup is complete
+// and we enter into the cutscene"): the screen is blacked as the carry begins (Black, the
+// Global_User_Brightness post-process parameter; behaviors.md §8.5) and lifted as his say
+// is seen open -- or as the men are loosed without one -- and in any case this long after
+// the carry began, so a dialogue that never opens does not leave the player in the dark.
+// The parameter cannot be read back, so the mod keeps its own record and restores it on
+// every path out and on every load.
+constexpr int kDuelBlackMaxMs = 20000;
 // How far a duel's man may stand from his spot before the watch puts him back on it,
 // while his say is waited on (DuelHold; bugs.txt 23 Nov 2026: at 28 m he was nowhere to
 // be seen): a few paces, not the carry's thirty metres, since nothing of his is near.

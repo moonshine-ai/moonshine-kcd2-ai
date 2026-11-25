@@ -5856,6 +5856,8 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "held on his spot through the say as well")
         check(E.find("duel: say playing", holdMark) and E.find("read 120.0m from his spot and put back", holdMark), "and where he reads said each tick of it")
         check(#(M.state.quests[id].spawned or {}) == 0 and not E.find("say never came", holdMark), "the say not counted down while it plays")
+        -- His say up is the cut's end: the screen lit.
+        check(E.postFx["Global_User_Brightness"] == 1 and M.black == false and E.find("BRIDGE screen lit (his say is up)", holdMark), "his say up: the screen lit")
         E.dialog.open = false
         man:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z })
         M.DuelTaunted(id)
@@ -5874,11 +5876,14 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.hour = 20
     local mark = E.mark()
     M.QuestCommand(id, "fast_travel")
-    -- The yard token before the carry (bugs.txt 25 Nov 2026: the forced dialogue set up
+    -- The yard token before the carry (bugs.txt 24 Nov 2026: the forced dialogue set up
     -- where the scheduler had him): the graph's yard tag, and the man's day the yard.
     check(q.yardToken == "6d6f6f6e-7368-5a00-8000-" .. id, "the yard token is the duel's class under the Z prefix")
     check(M.Count(player, q.yardToken) == 1 and E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s day is the yard from here; the carry follows", mark),
           "the yard token first, for the graph's yard tag, and said")
+    -- The yard's cut (bugs.txt 24 Nov 2026: "kept faded to black until the setup is
+    -- complete"): the screen blacked as the carry begins, before anything is set down.
+    check(E.postFx["Global_User_Brightness"] == 0 and M.black == true and E.find("BRIDGE screen black (the carry to the yard)", mark), "the screen blacked as the carry begins")
     local tp0 = man:GetWorldPos()
     check(math.abs(tp0.x - (ft.x + 150)) < 0.01 and not E.find("set down at", mark), "the carry waits on it")
     E.advance(1100)
@@ -5892,6 +5897,7 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(math.abs(d.x - (ft.x - spot.x) / gap) < 0.01 and math.abs(d.y - (ft.y - spot.y) / gap) < 0.01, "facing the landing")
     check(player.view ~= nil, "Henry's view turned to him")
     if taunted then
+        check(E.postFx["Global_User_Brightness"] == 0, "the screen still black through the set-down, until his say is up")
         -- The say is asked for a moment after the landing, not in its tick (bugs.txt 23 Nov
         -- 2026: enqueued as the two were set down it played with no model in view).
         check(M.Count(player, q.token) == 0, "no spring token in the landing's tick: the say waits a moment")
@@ -5910,6 +5916,7 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s say asked for, he stands 0.0m from his spot", mark), "and said, with him on his spot")
     else
         check(M.Count(player, q.token) == 1, "the spring token for the graph")
+        check(E.postFx["Global_User_Brightness"] == 1 and E.find("BRIDGE screen lit (the men are loosed)", mark), "no say: the screen lit as the men are loosed")
     end
     loose(mark)
     local f = M.state.quests[id]
@@ -5938,6 +5945,8 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
     check(#M.state.quests[id].spawned == 2 and E.find("duel already sprung", mark), "not sprung twice")
+    check(E.postFx["Global_User_Brightness"] == 1 and E.find("BRIDGE screen black (the carry to the yard)", mark) and E.find("BRIDGE screen lit (already sprung)", mark),
+          "the second carry's black lifted at once, with nothing to spring")
     check(not taunted or E.count("found by id, standing", landMark) >= 2, "the made men looked up by their ids and seen standing")
     -- Through the fight the man is kept within reach (bugs.txt 24 Nov 2026: no sign of him
     -- during or after it): taken further than the leash he is put down a few paces from
@@ -5966,26 +5975,99 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(E.find("friends are down; he is cowed", mark) and E.count("token made", mark) == 1,
           "said in the log, and the cowed token made for the graph (gone again a moment later)")
     check(#f.spawned == 1 and System.GetEntityByName("mn_duel_" .. id .. "_1") == nil, "the unconscious one taken away, the dead one left lying")
+    -- With his begging written as the graph's forced dialogue (q.beg; bugs.txt 24 Nov
+    -- 2026: "automatically enter into a conversation with Paul"), he is set down before
+    -- Henry for it in the token's tick, turned to him and Henry's view to him, and kept on
+    -- the point while the graph's timer runs; then his feet are his own again.
+    if q.beg then
+        local hp = player:GetWorldPos()
+        local kp = man:GetWorldPos()
+        check(math.abs(math.sqrt((kp.x - hp.x) ^ 2 + (kp.y - hp.y) ^ 2) - M.duelKneelMetres) < 0.05, "set down before Henry for his begging, within arm's reach")
+        check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " set down before Henry at 1.5m, from", mark) and E.find("for his begging", mark), "and said")
+        local kd = man:GetDirectionVector()
+        check(math.abs(kd.x - (hp.x - kp.x) / M.duelKneelMetres) < 0.05 and math.abs(kd.y - (hp.y - kp.y) / M.duelKneelMetres) < 0.05, "facing Henry")
+        man:SetWorldPos({ x = ft.x + 10, y = ft.y, z = ft.z })
+        E.advance(300)
+        local back = man:GetWorldPos()
+        check(math.abs(back.x - kp.x) < 0.05 and math.abs(back.y - kp.y) < 0.05, "taken off the point while the dialogue is waited on: put back on it")
+        E.advance(M.duelKneelFaceMs + 500)
+        man:SetWorldPos({ x = ft.x + 8, y = ft.y, z = ft.z })
+        E.advance(300)
+        check(math.abs(man:GetWorldPos().x - (ft.x + 8)) < 0.05, "the wait over, a few paces are his own")
+    end
     -- Cowed, he is still kept in reach for the begging, until the duel is done.
     man:SetWorldPos({ x = ft.x + 40, y = ft.y, z = ft.z })
     leashMark = E.mark()
     E.advance(2100)
     lp = man:GetWorldPos()
     check(math.sqrt((lp.x - ft.x) ^ 2 + (lp.y - ft.y) ^ 2) < 5 and E.find("put down 4m from him", leashMark), "cowed and walking off: put down by Henry again")
-    -- Spared: his purse (over the floor) in Henry's, and the man out of the world.
+    -- Spared: his purse (over the floor) in Henry's, and the man out of the world. Off the
+    -- forced dialogue's spare row (DuelChoice, the row's own port firing the complete)
+    -- where one is written, else the app's complete.
     man.inventory:CreateItem(E.moneyClass, 100, 870)
     local before = player.inventory:GetMoney()
     mark = E.mark()
-    M.QuestCommand(id, "complete")
+    if q.beg then M.DuelChoice(id, "spare") else M.QuestCommand(id, "complete") end
     E.advance(1100)
     f = M.state.quests[id]
     check(f.done == true and f.gone == true, "done, and he is gone")
     check(math.abs(player.inventory:GetMoney() - before - math.max(87, q.pay)) < 0.01, "his purse handed over: " .. tostring(player.inventory:GetMoney() - before))
     check(man.inventory:GetMoney() == 0, "and nothing left in his")
     check(E.find("duel spared, his purse (87)", mark) and E.find("gone from the game", mark), "said in the log")
+    check(not q.beg or (E.find("Henry's word to " .. q.giver .. " on his knees is spare", mark) and E.find("complete fired by the row's own port; no beat queued", mark)),
+          "the row's word said, and no beat queued for the app")
     check(man:GetWorldPos().z < -500, "the man put out of the world")
     E.advance(2100)
     check(#(M.state.quests[id].spawned or {}) == 0, "the bodies taken away once the duel is done")
+    -- The other two rows of his begging: marched to the watch (the watched ending, unpaid,
+    -- and he is gone), and killed where he kneels (the blow, dealt by nobody; his death is
+    -- the dead ending by the watch's reading).
+    local function cowAgain()
+        M.state.quests[id] = { accepted = true }
+        M.duelGoneDone[id] = nil
+        man.alive = true
+        man.down = nil
+        man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+        for k = 1, 2 do
+            local e = System.GetEntityByName("mn_duel_" .. id .. "_" .. k)
+            if e ~= nil then System.RemoveEntity(e.id) end
+        end
+        local m = E.mark()
+        M.QuestCommand(id, "fast_travel")
+        E.advance(1100)
+        loose(m)
+        E.advance(2100)
+        for k = 1, 2 do
+            local e = System.GetEntityByName("mn_duel_" .. id .. "_" .. k)
+            if e ~= nil then e.alive = false end
+        end
+        E.advance(2100)
+        check(M.state.quests[id].cowed == true, "cowed again")
+        return m
+    end
+    if q.beg then
+        mark = cowAgain()
+        man.inventory:CreateItem(E.moneyClass, 100, 500)
+        before = player.inventory:GetMoney()
+        M.DuelChoice(id, "watch")
+        E.advance(1100)
+        f = M.state.quests[id]
+        check(f.done == true and f.how == "watched" and f.gone == true and f.dead ~= true, "marched to the watch: done the watched way, and he is gone: " .. tostring(f.how))
+        check(player.inventory:GetMoney() == before and man.inventory:GetMoney() == 50, "nothing paid, his purse his own")
+        check(man:GetWorldPos().z < -500 and E.find("on his knees is watch", mark) and E.find("gone from the game", mark), "put out of the world, and said")
+        check(string.find(M.QuestFlagLetters(f), "v", 1, true) ~= nil, "the letter v")
+        mark = cowAgain()
+        before = player.inventory:GetMoney()
+        M.DuelChoice(id, "kill")
+        check(man.alive == false and man.dealt ~= nil and man.dealt.health == M.duelKillHealth and man.dealt.attacker == 0 and man.dealt.suppress == false,
+              "the blow: health past any man's, dealt by nobody")
+        check(E.find("the blow dealt to " .. q.giver .. "; he reads dead", mark), "and said")
+        E.advance(2100)
+        f = M.state.quests[id]
+        check(f.done == true and f.dead == true and f.how == "dead", "his death is the dead way: " .. tostring(f.how))
+        check(player.inventory:GetMoney() == before, "nothing paid")
+        man.alive = true
+    end
     -- Killed instead: a fresh duel sprung and the man dead is the dead way, nothing paid.
     M.state.quests[id] = { accepted = true }
     M.duelGoneDone[id] = nil
@@ -6045,9 +6127,12 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     mark = E.mark()
     M.QuestCommand(id, "fast_travel")
     E.advance(1100)
+    check(E.postFx["Global_User_Brightness"] == 0, "the screen black for the say that is to come")
     E.advance((M.duelTauntSeconds - 5) * 1000)
     f = M.state.quests[id]
     check(f.ambushed == true and f.loosed ~= true and #(f.spawned or {}) == 0, "no say and no men yet, " .. (M.duelTauntSeconds - 5) .. " s in")
+    -- A say that never opens does not leave the player in the dark: the cut's limit.
+    check(E.postFx["Global_User_Brightness"] == 1 and E.find("BRIDGE screen lit (the cut's limit)", mark), "the screen lit at the cut's limit, with no say to lift it")
     -- Stepped finely, so the men can be put down before the watch has seen them standing.
     for _ = 1, 16 do
         E.advance(500)

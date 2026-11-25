@@ -523,6 +523,14 @@ int main(int argc, char** argv) {
                         loc_extras.push_back(std::move(row));
                     }
                 }
+                // And his begging once his friends are down, with Henry's three rows
+                // (emit_beg_dialogue), and its rows.
+                if (q.has_duel_beg()) {
+                    data_pak.add(level_dir + kcd2::beg_node(q.id) + ".xml", kcd2::emit_beg_dialogue(o.modid, q));
+                    for (auto& row : kcd2::beg_localization(o.modid, q)) {
+                        loc_extras.push_back(std::move(row));
+                    }
+                }
                 // And the holder's menu beside it, which the quest file lists as its own
                 // definition, with the twelve lines it says. A find has no holder.
                 if (!q.has_holder()) continue;

@@ -1375,8 +1375,10 @@ QuestPlan plan_buy(const Quest& quest, const QuestFacts& facts) {
 // himself: Henry comes to threaten him (the quest's `opener` row draws the `offer`, which is
 // the challenge), and the yes is the challenge taken up. From then the carrying is the
 // evening's (plan_quest lays the fast travel rows between the hours written); the fight is
-// the mod's; once his friends are down he begs, and Henry's one row spares him for his purse.
-// Dead, or gone, there is nothing to say.
+// the mod's; once his friends are down he begs -- through the mod's own forced dialogue, with
+// Henry's three rows (spare him, the watch, kill him; bugs.txt 24 Nov 2026), so the cowed
+// row here is the fallback for a dialogue the game did not open. Dead, or gone, there is
+// nothing to say.
 QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach& approach) {
     QuestPlan plan;
     if (quest.role != QuestRole::Giver) return plan;
@@ -1384,6 +1386,14 @@ QuestPlan plan_duel(const Quest& quest, const QuestFacts& facts, const Approach&
     if (facts.done) {
         if (facts.how == "dead" || facts.dead) {
             plan.block.clear();
+            return plan;
+        }
+        // Marched to the watch off the mod's begging menu (the `watched` how; bugs.txt 24
+        // Nov 2026): gone from the town like a spared man, and the bailiff has him.
+        if (facts.how == "watched") {
+            plan.block = "This person beat the men you brought to the yard and beat you, and marched you "
+                         "to the watch with your hands empty; the bailiff has you now. You are not to be "
+                         "met; if you are, you are a frightened man who wants nothing but to be let go.";
             return plan;
         }
         plan.block = "This person beat the men you brought to the yard and beat you, and you begged "
@@ -2336,6 +2346,10 @@ std::string quest_aside(const Quest& quest, const QuestFacts& facts,
         if (quest.role != QuestRole::Giver) return {};
         if (facts.done) {
             if (facts.dead || facts.how == "dead") return {};
+            if (facts.how == "watched") {
+                return "This person also beat you and the men you set on them in the yard, and marched you to "
+                       "the watch; you are a frightened man, and you say nothing of it unasked.";
+            }
             return "This person also beat you and the men you set on them in the yard, and you bought your "
                    "life with your purse and swore to leave the town; you are a frightened man, and you say "
                    "nothing of it unasked.";

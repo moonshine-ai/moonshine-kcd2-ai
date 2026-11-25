@@ -473,7 +473,7 @@ struct Quest {
     // it. Empty for every other quest.
     std::string wed_soul, wed_name, routine_wed_target, routine_wed_soul, dress_wed;
     bool has_wed() const { return has_gone() && !wed_soul.empty(); }
-    // A duel's man on his duel spot for the carry (bugs.txt 25 Nov 2026: the forced
+    // A duel's man on his duel spot for the carry (bugs.txt 24 Nov 2026: the forced
     // dialogue's stand-ins and camera were set up where the scheduler had him, 40 m off
     // along the line to his tavern seat, with nobody in sight): the scheduler script adds a
     // link to his NPC hub to the wrapper his spot (fast_travel_holder_to) is written on,
@@ -481,7 +481,7 @@ struct Quest {
     // (FastTravelGo) and the graph off when the duel is done. Wants a sprung duel (the
     // graph's trigger section) and a spot.
     bool has_yard() const { return has_duel_spring() && !fast_travel_holder_to.empty(); }
-    // And on his knees once cowed (`routine_cowed_target`, `<x>,<y>`; bugs.txt 25 Nov 2026:
+    // And on his knees once cowed (`routine_cowed_target`, `<x>,<y>`; bugs.txt 24 Nov 2026:
     // "he didn't cower once the two bandits were beaten"): the same script adds a link,
     // above the yard's, to a kneeling wrapper by the point under the graph's kneel tag,
     // on from the cowed token. Empty for every other quest.
@@ -937,6 +937,24 @@ struct Quest {
     // as he lands.
     std::string duel_taunt;
     std::string duel_taunt_reply;
+    // His begging once his friends are down (bugs.txt 24 Nov 2026: "automatically enter
+    // into a conversation with Paul"): a second forced dialogue of the graph's
+    // (emit_beg_dialogue), opened off the cowed token with the man set down before Henry,
+    // his `beg` and then Henry's three rows and nothing else -- no greeting, no farewell,
+    // no "(End dialog)". `spare` / `spare_reply`: the plain completion as the app's row was
+    // (DuelSpared: his purse, and he is gone). `watch` / `watch_reply`: marched to the
+    // watch, the `watched` ending (log_completed_watched), nothing paid, and he is gone.
+    // `kill` / `kill_reply`: Henry kills him where he kneels (DuelKill), which is the
+    // `dead` ending with the note on his body, as a death in the fight is. The rows speak
+    // through the taunt's role (taunt_role), so a beg wants a taunt written too.
+    std::string duel_beg;
+    std::string duel_spare;
+    std::string duel_spare_reply;
+    std::string duel_watch;
+    std::string duel_watch_reply;
+    std::string duel_kill;
+    std::string duel_kill_reply;
+    std::string log_completed_watched;
 
     bool is_duel() const { return kind == "duel"; }
     bool is_deliver() const { return kind == "deliver"; }
@@ -966,6 +984,13 @@ struct Quest {
     // A duel with the man's word before the blows (above): the taunt's forced dialogue, the
     // role it speaks through, and the sprung token the brawl waits for.
     bool has_duel_taunt() const { return has_duel_spring() && !duel_taunt.empty(); }
+    // And his begging as a forced dialogue with Henry's three rows (above): only with every
+    // line of it written, the cowed token to open it on, and the taunt's role to speak in.
+    bool has_duel_beg() const {
+        return has_duel_cowed() && has_duel_taunt() && !duel_beg.empty() && !duel_spare.empty() &&
+               !duel_spare_reply.empty() && !duel_watch.empty() && !duel_watch_reply.empty() &&
+               !duel_kill.empty() && !duel_kill_reply.empty();
+    }
     // A deliver of a thing of the game's own rather than a letter (item_kind "thing"): the
     // parish chalice carried back to the priest.
     bool carries_thing() const { return is_deliver() && !item_class.empty() && item_kind == "thing"; }
@@ -1194,6 +1219,8 @@ inline constexpr const char* kResolutions[] = {
     "fought",   // beat: the man was knocked down rather than talked, frightened or paid round
     "dead",     // beat, mind: the target died before it was done; unpaid. A duel's: the man
                 // challenged killed in it, which ends the duel there (the note on his body)
+    "watched",  // duel: the man marched to the watch off the begging's menu (has_duel_beg);
+                // unpaid, and he is gone from the game as a spared man is
     // (a leave's and a return's lied and quiet are the travel's; an ambush's lied, quiet and
     // dead are the ask's; a buy's paid, stolen and lied are the retrieve's, its lie the
     // price overstated and pocketed; a pleading deliver's threatened is Henry's third answer

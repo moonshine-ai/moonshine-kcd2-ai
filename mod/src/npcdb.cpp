@@ -1341,6 +1341,14 @@ void read_holder_lines(sqlite3* db, std::vector<Quest>& quests) {
         if (field == "log_cowed") return &q.log_cowed;
         if (field == "taunt") return &q.duel_taunt;
         if (field == "taunt_reply") return &q.duel_taunt_reply;
+        if (field == "beg") return &q.duel_beg;
+        if (field == "spare") return &q.duel_spare;
+        if (field == "spare_reply") return &q.duel_spare_reply;
+        if (field == "watch") return &q.duel_watch;
+        if (field == "watch_reply") return &q.duel_watch_reply;
+        if (field == "kill") return &q.duel_kill;
+        if (field == "kill_reply") return &q.duel_kill_reply;
+        if (field == "log_completed_watched") return &q.log_completed_watched;
         if (field == "carry_class") return &q.carry_class;
         if (field == "carry_name") return &q.carry_name;
         if (field == "routine") return &q.routine;
@@ -1845,8 +1853,10 @@ std::vector<std::string> Quest::resolutions() const {
     }
     if (is_duel()) {
         // Spared is the plain completion; killed in it has its own (the man's death, which
-        // ends the duel where it is).
+        // ends the duel where it is), and so has the man marched to the watch off the
+        // begging's menu (has_duel_beg; bugs.txt 24 Nov 2026).
         if (!log_completed_dead.empty()) out.emplace_back("dead");
+        if (has_duel_beg() && !log_completed_watched.empty()) out.emplace_back("watched");
         return out;
     }
     if (is_ask() || is_ambush()) {

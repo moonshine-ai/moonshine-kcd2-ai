@@ -145,7 +145,7 @@ link to the wrapper and points that link at another hub of the same prefab withi
 the prefab's objects that the hub already links to (its sibling chore: a broom spot a few
 metres off); a hub with no sibling is left shared and the report says so.
 
-A duel's man (npc_quest kind `duel` with a `fast_travel_holder_to`; 25 Nov 2026 -- bugs.txt:
+A duel's man (npc_quest kind `duel` with a `fast_travel_holder_to`; 24 Nov 2026 -- bugs.txt:
 "the cutscene focused camera was still pointing south at the wall with nobody in sight")
 gets a link added to his NPC hub to the wrapper his duel spot is written on (within
 YARD_METRES; the spot is chosen to sit on one), all day at the gone link's priority with
@@ -246,7 +246,7 @@ def kneel_tag(modid: str, quest_id: str) -> str:
     return f"{modid}_kneel_{quest_id}"
 
 
-# A duel's man on his spot (25 Nov 2026 -- bugs.txt: "the cutscene focused camera was still
+# A duel's man on his spot (24 Nov 2026 -- bugs.txt: "the cutscene focused camera was still
 # pointing south at the wall with nobody in sight"): SetWorldPos moves his body, but the
 # scheduler keeps pulling him to his day's goal (the 24 Nov runs read him 40 m off along
 # the straight line to his tavern seat, and the forced dialogue set its stand-ins and camera
@@ -256,7 +256,7 @@ def kneel_tag(modid: str, quest_id: str) -> str:
 # offering one of GONE_BEHAVIOURS; a duel spot that is not is reported and skipped.
 YARD_PRIORITY = GONE_PRIORITY
 YARD_METRES = 3.0
-# And the man cowed on his knees (routine_cowed_target, `<x>,<y>`; bugs.txt 25 Nov 2026: "he
+# And the man cowed on his knees (routine_cowed_target, `<x>,<y>`; bugs.txt 24 Nov 2026: "he
 # didn't cower once the two bandits were beaten"): a link added at one above the yard's, so
 # it outbids it from the cowed token on, to a kneeling wrapper by the point. The game has
 # no cowering behaviour a mod can select; the beggar's kneel (so_beggar `useKneeling`, out
@@ -456,7 +456,7 @@ def read_specs(db: Path, level: str, modid: str) -> list[dict]:
                       "soul": soul, "name": name, "hub": hub, "gender": gender.lower(),
                       "tag": gone_tag(modid, quest_id)})
     # A duel's man on his spot for the carry (fast_travel_holder_to on a duel, `<x>,<y>,<z>`;
-    # 25 Nov 2026, see YARD_PRIORITY): a link added to his NPC hub to the wrapper the spot is
+    # 24 Nov 2026, see YARD_PRIORITY): a link added to his NPC hub to the wrapper the spot is
     # written on, under the graph's yard tag. And on his knees once cowed (routine_cowed_target,
     # `<x>,<y>`): a second link, above it, to a kneeling wrapper by the point, under the kneel
     # tag.
