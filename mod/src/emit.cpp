@@ -810,7 +810,6 @@ const std::string* resolution_log(const Quest& quest, const std::string& how) {
     if (how == "quiet") return &quest.log_completed_quiet;
     if (how == "fought") return &quest.log_completed_fought;
     if (how == "dead") return &quest.log_completed_dead;
-    if (how == "watched") return &quest.log_completed_watched;
     if (how == "pinned") return &quest.log_completed_pinned;
     if (how == "covered") return &quest.log_completed_covered;
     if (how == "fibbed") return &quest.log_completed_fibbed;
@@ -2281,13 +2280,6 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
         out.way_completes.emplace_back("targetDeath.OnDeath", "dead");
         out.complete_ports.push_back("targetDeath.OnDeath");
     }
-    // And marched to the watch off his begging's menu: the forced dialogue's `watched`
-    // port is the `watched` ending's Completed, no row of the giver's said.
-    if (beg && std::find(ways.begin(), ways.end(), "watched") != ways.end()) {
-        s += t(5) + "<Edge From=\"begTalk.watched\" To=\"Set" + resolution_state("watched") + "\" />\r\n";
-        out.way_completes.emplace_back("begTalk.watched", "watched");
-        out.complete_ports.push_back("begTalk.watched");
-    }
     // Given up to the giver's face (the app's `abandon`): the objective's own Canceled
     // line, and the quest's failure follows (questState below) for everything else.
     s += t(5) + "<Edge From=\"" + P("abandon") + "\" To=\"SetAbandoned\" />\r\n";
@@ -2691,7 +2683,6 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 for (const std::string& port : on_done) s += t(5) + "<Edge From=\"" + port + "\" To=\"SetFalse\" />\r\n";
                 s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
                 s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
-                if (beg) s += t(5) + "<Edge From=\"begTalk.watched\" To=\"SetFalse\" />\r\n";
                 s += t(4) + "</State>\r\n";
                 s += t(4) + "<SchedulerLinkActivation Name=\"yardLink\">\r\n";
                 s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(yard_tag(modid, quest.id)) + "\" />\r\n";
@@ -2709,7 +2700,6 @@ LegOut emit_leg(const std::string& modid, const Quest& quest, const LegCtx& ctx)
                 for (const std::string& port : on_done) s += t(5) + "<Edge From=\"" + port + "\" To=\"SetFalse\" />\r\n";
                 s += t(5) + "<Edge From=\"questState.OnFailed\" To=\"SetFalse\" />\r\n";
                 s += t(5) + "<Edge From=\"targetDeath.OnDeath\" To=\"SetFalse\" />\r\n";
-                if (beg) s += t(5) + "<Edge From=\"begTalk.watched\" To=\"SetFalse\" />\r\n";
                 s += t(4) + "</State>\r\n";
                 s += t(4) + "<SchedulerLinkActivation Name=\"kneelLink\">\r\n";
                 s += t(5) + "<Constant Name=\"LinkTag\" Value=\"" + xml_escape(kneel_tag(modid, quest.id)) + "\" />\r\n";
@@ -6507,17 +6497,18 @@ std::vector<std::pair<std::string, std::string>> taunt_localization(const std::s
 
 std::string emit_beg_dialogue(const std::string& modid, const Quest& quest) {
     // A duel's man on his knees (emit.hpp; bugs.txt 24 Nov 2026: "When the bandits are
-    // beaten, automatically enter into a conversation with Paul ... let him go ... take him
-    // to the watch ... kill him. There should be no other options"): the taunt dialogue's
+    // beaten, automatically enter into a conversation with Paul ... let him go ... kill
+    // him. There should be no other options"; the watch row of the first cut taken out on
+    // the 25th: "Remove the 'take him to the watch/bailiff' option"): the taunt dialogue's
     // shape, enqueued by the graph off the cowed token (begTalk) with the man set down
     // before Henry (DuelKneel). His plea is the root sequence, which ends in a decision of
-    // Henry's three rows -- the shipped forced dialogues nest a player's menu the same way
+    // Henry's two rows -- the shipped forced dialogues nest a player's menu the same way
     // (se_zachariasem_po_duelu.xml) -- and each row ends the dialogue: there is no
     // farewell, so no "(End dialog)" row, and no way back. The spare row fires the
-    // `spared` port (the graph's plain complete: the objective's Done with log_completed)
-    // and the watch row the `watched` port (the `watched` ending); the kill row fires
-    // nothing, since the Lua's blow (DuelKill) is a death the graph's own trigger reads as
-    // the `dead` ending. Each ExitScript hands the Lua the choice (DuelChoice).
+    // `spared` port (the graph's plain complete: the objective's Done with log_completed);
+    // the kill row fires nothing, since the Lua's blow (DuelKill) is a death the graph's
+    // own trigger reads as the `dead` ending. Each ExitScript hands the Lua the choice
+    // (DuelChoice).
     if (!quest.has_duel_beg()) throw std::runtime_error("quest " + quest.id + " has no duel begging");
     const std::string node = beg_node(quest.id);
     const std::string role = xml_escape(taunt_role(quest.id));
@@ -6546,7 +6537,6 @@ std::string emit_beg_dialogue(const std::string& modid, const Quest& quest) {
     s += t(2) + "<ForcedDialog Name=\"" + node + "\">\r\n";
     s += t(3) + "<Ports>\r\n";
     s += t(4) + "<Port Name=\"spared\" Direction=\"Out\" Type=\"trigger\" />\r\n";
-    s += t(4) + "<Port Name=\"watched\" Direction=\"Out\" Type=\"trigger\" />\r\n";
     s += t(3) + "</Ports>\r\n";
     s += t(3) + "<Text Text=\"" + xml_escape(quest.name + " (beg)") + "\" />\r\n";
     s += t(3) + "<Dialogue TechnicalStatus=\"Enabled\" Initiator=\"NonPlayer\" AllowGreeting=\"false\" "
@@ -6559,9 +6549,8 @@ std::string emit_beg_dialogue(const std::string& modid, const Quest& quest) {
     s += t(7) + "</Elements>\r\n";
     s += t(7) + "<Decision Name=\"beg_out\" Priority=\"General\">\r\n";
     s += t(8) + "<Sequences>\r\n";
-    // In the order of the note: let him go, the watch, kill him.
+    // In the order of the note: let him go, kill him.
     s += row("spare", "spare", quest.duel_spare, "spare_reply", quest.duel_spare_reply, "spared");
-    s += row("watch", "watch", quest.duel_watch, "watch_reply", quest.duel_watch_reply, "watched");
     s += row("kill", "kill", quest.duel_kill, "kill_reply", quest.duel_kill_reply, nullptr);
     s += t(8) + "</Sequences>\r\n";
     s += t(7) + "</Decision>\r\n";
@@ -6580,7 +6569,6 @@ std::vector<std::pair<std::string, std::string>> beg_localization(const std::str
     if (!quest.has_duel_beg()) return rows;
     const std::pair<const char*, const std::string*> fields[] = {
         {"beg", &quest.duel_beg},     {"spare", &quest.duel_spare}, {"spare_reply", &quest.duel_spare_reply},
-        {"watch", &quest.duel_watch}, {"watch_reply", &quest.duel_watch_reply},
         {"kill", &quest.duel_kill},   {"kill_reply", &quest.duel_kill_reply},
     };
     for (const auto& f : fields) rows.emplace_back(quest_key(modid, quest.id, f.first), *f.second);
@@ -9106,12 +9094,6 @@ std::string state_lua(const std::string& g) {
     s += "\t\tif facts.doneAt == nil then facts.doneAt = " + g + ".WorldTime(); facts.doneHour = " + g + ".HourOfDay() end\n";
     s += "\tend\n";
     s += "\tif command == \"killed\" then facts.dead = true; facts.how = \"dead\" end\n";
-    // A duel's man marched to the watch off his begging's menu (DuelChoice; the `watched`
-    // how): done, unpaid, and gone from the game as a spared man is (the letter v).
-    s += "\tif command == \"watched\" then\n";
-    s += "\t\tfacts.accepted = true; facts.done = true; facts.how = \"watched\"; facts.gone = true\n";
-    s += "\t\tif facts.doneAt == nil then facts.doneAt = " + g + ".WorldTime(); facts.doneHour = " + g + ".HourOfDay() end\n";
-    s += "\tend\n";
     // Given up to the giver's face (the app's give-up row): over, and the dump says how
     // (:d/abandoned), so the app plans the giver as somebody Henry let down.
     s += "\tif command == \"abandon\" then facts.accepted = true; facts.done = true; facts.how = \"abandoned\"\n";
@@ -12944,9 +12926,17 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelKneelMetres = " + health_text(kDuelKneelMetres) + "\n";
     s += g + ".duelKneelFaceMs = " + std::to_string(kDuelKneelFaceMs) + "\n";
     s += g + ".duelKneelFaceTickMs = " + std::to_string(kDuelKneelFaceTickMs) + "\n";
+    s += g + ".duelCowedInClip = \"" + std::string(kDuelCowedInClip) + "\"\n";
+    s += g + ".duelCowedLoopClip = \"" + std::string(kDuelCowedLoopClip) + "\"\n";
+    s += g + ".duelCowedLayer = " + std::to_string(kDuelCowedLayer) + "\n";
+    s += g + ".duelCowedBlend = " + health_text(kDuelCowedBlend) + "\n";
     s += g + ".duelKillHealth = " + std::to_string(kDuelKillHealth) + "\n";
     s += g + ".duelBlackMaxMs = " + std::to_string(kDuelBlackMaxMs) + "\n";
     s += g + ".duelHoldMetres = " + health_text(kDuelHoldMetres) + "\n";
+    s += g + ".duelPinTickMs = " + std::to_string(kDuelPinTickMs) + "\n";
+    s += g + ".duelPinMetres = " + health_text(kDuelPinMetres) + "\n";
+    s += g + ".duelPinAfterMs = " + std::to_string(kDuelPinAfterMs) + "\n";
+    s += g + ".duelPinMaxMs = " + std::to_string(kDuelPinMaxMs) + "\n";
     s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
     s += g + ".duelEyeMetres = " + health_text(kDuelEyeMetres) + "\n";
     s += g + ".duelLeashMetres = " + health_text(kDuelLeashMetres) + "\n";
@@ -13063,6 +13053,7 @@ std::string emit_conversation_lua(const std::string& modid,
     // his spot as it is asked for, should the engine have taken him in the meantime.
     s += "\tif q.sprungToken ~= nil then\n";
     s += "\t\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" has his say first; the men wait on it\")\n";
+    s += "\t\t" + g + ".DuelPinStart(id)\n";
     s += "\t\tpcall(function() Script.SetTimer(" + g + ".duelSayDelayMs, function() " + g + ".DuelSay(id) end) end)\n";
     s += "\telse\n";
     s += "\t\t" + g + ".Token(q)\n";
@@ -13119,6 +13110,56 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s put back on his spot from %.0fm off (read at %.1f %.1f %.1f)%s\", id, q.target, off, tp.x, tp.y, tp.z, ok and \"\" or \", SetWorldPos raised\"))\n";
     s += "\treturn off, true\n";
+    s += "end\n";
+    s += "\n";
+    // And pinned to it from the set-down until his say has him (emit.hpp kDuelPin*; bugs.txt
+    // 25 Nov 2026, the camera facing south): read every tick, put back facing Henry when
+    // more than kDuelPinMetres off, quietly; one line when it lets go says how often and
+    // how far. `seq` is the pin's own number, so a second carry's pin is not run twice.
+    s += g + ".duelPin = {}\n";
+    s += "function " + g + ".DuelPinStart(id)\n";
+    s += "\tlocal seq = ((" + g + ".duelPin[id] or {}).seq or 0) + 1\n";
+    s += "\t" + g + ".duelPin[id] = { seq = seq, since = " + g + ".Now(), n = 0, far = 0 }\n";
+    s += "\t" + g + ".DuelPin(id, seq)\n";
+    s += "end\n";
+    s += "function " + g + ".DuelPin(id, seq)\n";
+    s += "\tlocal q = " + g + ".quests[id]\n";
+    s += "\tlocal pin = " + g + ".duelPin[id]\n";
+    s += "\tif q == nil or pin == nil or pin.seq ~= seq then return end\n";
+    s += "\tlocal f = " + g + ".state.quests[id] or {}\n";
+    s += "\tlocal now = " + g + ".Now()\n";
+    s += "\tlocal why = nil\n";
+    s += "\tif not f.ambushed or f.done then why = \"the duel is over\"\n";
+    s += "\telseif f.loosed or f.cowed then why = \"the men are loosed\"\n";
+    s += "\telseif " + g + ".InDialog() then\n";
+    s += "\t\tif pin.sayAt == nil then pin.sayAt = now end\n";
+    s += "\t\tif (now - pin.sayAt) * 1000 >= " + g + ".duelPinAfterMs then why = \"his say has him\" end\n";
+    s += "\telseif (now - pin.since) * 1000 >= " + g + ".duelPinMaxMs then why = \"its limit\"\n";
+    s += "\tend\n";
+    s += "\tif why ~= nil then\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s pinned to his spot %d times over %.0fs, the furthest %.1fm off; let go (%s)\",\n";
+    s += "\t\t\tid, tostring(q.target), pin.n, now - pin.since, pin.far, why))\n";
+    s += "\t\t" + g + ".duelPin[id] = nil\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal e = nil\n";
+    s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
+    s += "\tlocal spot = " + g + ".DuelSpotOf(id, q)\n";
+    s += "\tif e ~= nil and e.GetWorldPos ~= nil and spot ~= nil then\n";
+    s += "\t\tlocal tp = e:GetWorldPos()\n";
+    s += "\t\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
+    s += "\t\tif off > " + g + ".duelPinMetres then\n";
+    s += "\t\t\tlocal me = " + g + ".Player()\n";
+    s += "\t\t\tlocal to = (me ~= nil and me.GetWorldPos ~= nil) and me:GetWorldPos() or { x = q.fastTravel.x, y = q.fastTravel.y }\n";
+    s += "\t\t\tlocal dx, dy = to.x - spot.x, to.y - spot.y\n";
+    s += "\t\t\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
+    s += "\t\t\tpcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
+    s += "\t\t\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
+    s += "\t\t\tpin.n = pin.n + 1\n";
+    s += "\t\t\tif off > pin.far then pin.far = off end\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tpcall(function() Script.SetTimer(" + g + ".duelPinTickMs, function() " + g + ".DuelPin(id, seq) end) end)\n";
     s += "end\n";
     s += "\n";
     // The man kept within reach once the men are loosed (kDuelLeashMetres): further than
@@ -13390,6 +13431,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tat.z = " + g + ".Ground(at.x, at.y, pp.z)\n";
     s += "\tlocal ok = pcall(function() e:SetWorldPos(at) end)\n";
     s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s set down before Henry at %.1fm, from %.1fm, for his begging%s\", id, q.target, b, d, ok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "\tpcall(" + g + ".DuelCow, id, q, e)\n";
     s += "\tlocal began = " + g + ".Now()\n";
     s += "\tlocal function turn()\n";
     s += "\t\tif " + g + ".InDialog() then return end\n";
@@ -13406,22 +13448,56 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tturn()\n";
     s += "end\n";
     s += "\n";
+    // The beaten man's pose (emit.hpp kDuelCowedInClip; bugs.txt 25 Nov 2026): the
+    // bandit's surrender clips on layer 13, the in clip handed to the loop duelCowedBlend
+    // seconds before its end, or the loop alone where the set has no in clip; nothing
+    // where it has neither (a log says so). Stopped by DuelChoice.
+    s += g + ".duelCowed = {}\n";
+    s += "function " + g + ".DuelCow(id, q, e)\n";
+    s += "\tif e == nil or e.StartAnimation == nil then return end\n";
+    s += "\tlocal layer, blend = " + g + ".duelCowedLayer, " + g + ".duelCowedBlend\n";
+    s += "\tlocal inLen, loopLen = 0, 0\n";
+    s += "\tpcall(function() inLen = e:GetAnimationLength(0, " + g + ".duelCowedInClip) or 0 end)\n";
+    s += "\tpcall(function() loopLen = e:GetAnimationLength(0, " + g + ".duelCowedLoopClip) or 0 end)\n";
+    s += "\tif loopLen <= 0 and inLen <= 0 then\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's set has neither %s nor %s; he is not posed\", id, q.target, " + g + ".duelCowedInClip, " + g + ".duelCowedLoopClip))\n";
+    s += "\t\treturn\n";
+    s += "\tend\n";
+    s += "\tlocal function loop()\n";
+    s += "\t\tif loopLen <= 0 then return end\n";
+    s += "\t\tlocal ok = pcall(function() e:StartAnimation(0, " + g + ".duelCowedLoopClip, layer, blend, 1.0, true) end)\n";
+    s += "\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s holds %s on layer %d%s\", id, q.target, " + g + ".duelCowedLoopClip, layer, ok and \"\" or \", StartAnimation raised\"))\n";
+    s += "\tend\n";
+    s += "\t" + g + ".duelCowed[id] = e\n";
+    s += "\tif inLen <= 0 then loop() return end\n";
+    s += "\tlocal ok = pcall(function() e:StartAnimation(0, " + g + ".duelCowedInClip, layer, 0.3, 1.0, false) end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s cowed: %s (%.1fs) on layer %d, then the loop%s\", id, q.target, " + g + ".duelCowedInClip, inLen, layer, ok and \"\" or \", StartAnimation raised\"))\n";
+    s += "\tlocal wait = math.max(inLen - blend, 0.05)\n";
+    s += "\tpcall(function() Script.SetTimer(math.floor(wait * 1000), loop) end)\n";
+    s += "end\n";
+    s += "\n";
+    s += "function " + g + ".DuelUncow(id, q, why)\n";
+    s += "\tlocal e = " + g + ".duelCowed[id]\n";
+    s += "\tif e == nil then return end\n";
+    s += "\t" + g + ".duelCowed[id] = nil\n";
+    s += "\tlocal ok = pcall(function() e:StopAnimation(0, " + g + ".duelCowedLayer) end)\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s's surrender pose stopped (%s)%s\", id, tostring(q.target), why, ok and \"\" or \", StopAnimation raised\"))\n";
+    s += "end\n";
+    s += "\n";
     // Henry's row off the begging's menu (emit_beg_dialogue's ExitScripts): spare is the
     // plain complete, fired by the row's own port (QuestCommand's `fired`), which pays his
-    // purse over and puts him out of the world (DuelSpared); watch is the `watched` ending
-    // (the row's port; StateQuest), unpaid, and he is gone the same way; kill is the blow
-    // (DuelKill), whose death the graph's own trigger reads as the `dead` ending and the
-    // watch as `killed`.
+    // purse over and puts him out of the world (DuelSpared); kill is the blow (DuelKill),
+    // whose death the graph's own trigger reads as the `dead` ending and the watch as
+    // `killed`.
     s += "function " + g + ".DuelChoice(id, choice)\n";
     s += "\tlocal q = " + g + ".quests[id]\n";
     s += "\tif q == nil then return end\n";
     s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: Henry's word to \" .. tostring(q.target) .. \" on his knees is \" .. tostring(choice))\n";
     s += "\tif choice == \"spare\" then\n";
+    s += "\t\t" + g + ".DuelUncow(id, q, \"spared\")\n";
     s += "\t\t" + g + ".QuestCommand(id, \"complete\", true)\n";
-    s += "\telseif choice == \"watch\" then\n";
-    s += "\t\tpcall(" + g + ".StateQuest, id, \"watched\")\n";
-    s += "\t\t" + g + ".DuelGone(id, q)\n";
     s += "\telseif choice == \"kill\" then\n";
+    s += "\t\t" + g + ".DuelUncow(id, q, \"the blow\")\n";
     s += "\t\t" + g + ".DuelKill(id, q)\n";
     s += "\tend\n";
     s += "end\n";

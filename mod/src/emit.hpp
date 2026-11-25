@@ -170,11 +170,11 @@ std::string emit_taunt_dialogue(const std::string& modid, const Quest& quest);
 // Its text rows (taunt, taunt_reply), for the localization pak.
 std::vector<std::pair<std::string, std::string>> taunt_localization(const std::string& modid, const Quest& quest);
 // A duel's begging (npcdb.hpp has_duel_beg; bugs.txt 24 Nov 2026): the man's plea once his
-// friends are down, forced on Henry by the graph off the cowed token, with Henry's three
-// rows under it -- spare him, march him to the watch, kill him -- and no other way out.
-// The spare and watch rows fire Out ports of the dialogue's own (`spared`, `watched`),
-// which the graph wires as the plain complete and the `watched` ending; every row's
-// ExitScript tells the Lua what was chosen (DuelChoice). The taunt's role speaks it.
+// friends are down, forced on Henry by the graph off the cowed token, with Henry's two
+// rows under it -- spare him, kill him -- and no other way out. The spare row fires an
+// Out port of the dialogue's own (`spared`), which the graph wires as the plain complete;
+// every row's ExitScript tells the Lua what was chosen (DuelChoice). The taunt's role
+// speaks it.
 std::string beg_node(const std::string& quest_id);
 std::string emit_beg_dialogue(const std::string& modid, const Quest& quest);
 std::vector<std::pair<std::string, std::string>> beg_localization(const std::string& modid, const Quest& quest);
@@ -978,6 +978,26 @@ constexpr int kDuelBegDelaySeconds = 2;
 constexpr double kDuelKneelMetres = 1.5;
 constexpr int kDuelKneelFaceMs = 2500;
 constexpr int kDuelKneelFaceTickMs = 100;
+// The beaten man's pose (bugs.txt 25 Nov 2026: "there's a 'cowed' animation state that's
+// used when bandits ask to surrender ... use it for when Paul is beaten"). No state of
+// that name exists in the data; the bandit's surrender is the mercy interrupt
+// (AI/npc/basic/switch/interrupt_mercy.xml), which plays the unstance CrimeSurrender, or
+// the open-world/quest unstance Surrender (Libs/Tables/ai/NPCStateUnstanceDatabase.xml),
+// and neither is reachable from a mod: the interrupt is added by the crime system's
+// Function_callInterrupt_mercy off a combat surrender decision, and a quest's
+// EnableBehavior surrender wants a level-bound SmartEntity asset (behaviors.md 6.2, 8.6).
+// What a mod can do is play the state's own clips (Animations.pak male_combat_v2.dba:
+// combat_surrender_idle_in, then the looping combat_surrender_idle, the pose the bandit
+// holds while Henry decides) with ent:StartAnimation on layer 13, which overrides the body
+// joint for joint and is proven to hold (behaviors.md 8.7); the face and lipsync are on
+// their own layers and go on under it. Started by DuelKneel in the cowed token's tick,
+// after the set-down; the in clip is handed over to the loop kDuelCowedBlend seconds before
+// its end, as the measured chains are; stopped by DuelChoice before Henry's word is acted
+// on, so the blow's death and the spared man's leaving are not played under it.
+constexpr const char* kDuelCowedInClip = "combat_surrender_idle_in";
+constexpr const char* kDuelCowedLoopClip = "combat_surrender_idle";
+constexpr int kDuelCowedLayer = 13;
+constexpr double kDuelCowedBlend = 0.5;
 // The blow Henry's kill row lands (DuelKill): health damage past any man's, dealt by
 // nobody (no attacker id, so it is no crime of Henry's for the watch), and the death is
 // the graph's `dead` ending as a death in the fight is.
@@ -994,6 +1014,20 @@ constexpr int kDuelBlackMaxMs = 20000;
 // while his say is waited on (DuelHold; bugs.txt 23 Nov 2026: at 28 m he was nowhere to
 // be seen): a few paces, not the carry's thirty metres, since nothing of his is near.
 constexpr double kDuelHoldMetres = 8.0;
+// And pinned far closer than that from his set-down until his say has him (DuelPin;
+// bugs.txt 25 Nov 2026: "the cutscene camera is still facing south, not east"): the
+// scheduler, whose goal for him is still his tavern seat whatever the yard link says,
+// warps him metres along his way every second or two, and the dialogue's camera and
+// stand-ins are set up where he is read as it opens -- the 25th's run had him 9.9 m off
+// toward the tavern at that moment, the watch's eight-metre hold not yet owed. So from
+// the set-down he is read every kDuelPinTickMs and put back when more than
+// kDuelPinMetres off, until the dialogue has been seen open for kDuelPinAfterMs (it holds
+// him itself from there), or the men are loosed, or kDuelPinMaxMs have passed; one line
+// says how often, when it lets go.
+constexpr int kDuelPinTickMs = 100;
+constexpr double kDuelPinMetres = 0.5;
+constexpr int kDuelPinAfterMs = 1500;
+constexpr int kDuelPinMaxMs = 45000;
 // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look; bugs.txt
 // 22 Nov 2026). Armour is the quest graph's to read -- I_Soul::CheckEquipment over the five
 // slots the game's own players_appearance_scan.xml asks after (body_chainmail, body_plate,

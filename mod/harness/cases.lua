@@ -5830,34 +5830,41 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         check(f.ambushed == true and #(f.spawned or {}) == 0 and E.find("has his say first", mark), "with a taunt written, nobody made as Henry lands: the men wait on his say")
         check(M.state.quests[id].cowed ~= true, "and nothing to cow him with yet")
         -- The man taken off his spot while his say is waited on (bugs.txt 23 Nov 2026: no
-        -- sign of him in the yard) is put back on it by the watch's next tick, facing Henry.
+        -- sign of him in the yard; 25 Nov: the camera set up where he was read, ten metres
+        -- toward his tavern) is pinned back on it within a tick, facing Henry, quietly.
         local man = E.soul(q.giver)
         local spot = q.fastTravel.holder
         man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
         local holdMark = E.mark()
-        E.advance(2100)
+        E.advance(250)
         local tp = man:GetWorldPos()
-        check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "put back on his spot while the men wait")
-        check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " put back on his spot from 120m off", holdMark), "and said")
+        check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "pinned back on his spot while the men wait")
+        local d = man:GetDirectionVector()
+        check(d.x * (q.fastTravel.x - spot.x) + d.y * (q.fastTravel.y - spot.y) > 0, "facing the landing")
+        check(M.duelPin[id] ~= nil and M.duelPin[id].n >= 1 and M.duelPin[id].far >= 119, "the pin's count kept")
+        check(not E.find("put back on his spot", holdMark) and not E.find("pinned to his spot", holdMark), "and nothing said of it yet")
         check(#(M.state.quests[id].spawned or {}) == 0, "the men still unmade")
         man:SetWorldPos({ x = spot.x + 3, y = spot.y, z = spot.z })
-        holdMark = E.mark()
-        E.advance(2100)
+        E.advance(250)
         tp = man:GetWorldPos()
-        check(math.abs(tp.x - (spot.x + 3)) < 0.01, "a few paces off is his own and left alone")
-        check(not E.find("put back on his spot", holdMark), "nothing said of it")
-        -- Through the say itself (the dialogue open) he is held still, and the watch says
-        -- each tick where he reads, without counting the say down.
-        man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+        check(math.abs(tp.x - spot.x) < 0.01, "a few paces off is too far for the camera: pinned back as well")
+        -- His say open: the pin lets go once the dialogue has had him a moment, in one line
+        -- with its count, and the watch's own hold keeps him through the say, saying each
+        -- tick where he reads, without counting the say down.
         E.dialog.open = true
         holdMark = E.mark()
-        E.advance(4100)
+        E.advance(M.duelPinAfterMs + 300)
+        check(M.duelPin[id] == nil and E.find("pinned to his spot", holdMark) and E.find("the furthest 120.0m off; let go (his say has him)", holdMark),
+              "the pin let go once his say has him, its count said")
+        -- His say up is the cut's end: the screen lit.
+        check(E.postFx["Global_User_Brightness"] == 1 and M.black == false and E.find("BRIDGE screen lit (his say is up)", holdMark), "his say up: the screen lit")
+        man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+        holdMark = E.mark()
+        E.advance(2100)
         tp = man:GetWorldPos()
         check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "held on his spot through the say as well")
         check(E.find("duel: say playing", holdMark) and E.find("read 120.0m from his spot and put back", holdMark), "and where he reads said each tick of it")
         check(#(M.state.quests[id].spawned or {}) == 0 and not E.find("say never came", holdMark), "the say not counted down while it plays")
-        -- His say up is the cut's end: the screen lit.
-        check(E.postFx["Global_User_Brightness"] == 1 and M.black == false and E.find("BRIDGE screen lit (his say is up)", holdMark), "his say up: the screen lit")
         E.dialog.open = false
         man:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z })
         M.DuelTaunted(id)
@@ -5901,19 +5908,17 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         -- The say is asked for a moment after the landing, not in its tick (bugs.txt 23 Nov
         -- 2026: enqueued as the two were set down it played with no model in view).
         check(M.Count(player, q.token) == 0, "no spring token in the landing's tick: the say waits a moment")
-        -- Taken off his spot in the meantime: put back, and the token a second later still,
-        -- never in the tick of the put-back (the 19:23 run: stand-ins where he had been).
-        local deferred = false
-        for _ = 1, 30 do
-            man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
-            E.advance(100)
-            if E.find("say waits a second for the put-back to take", mark) then deferred = true break end
-        end
-        check(deferred and M.Count(player, q.token) == 0, "put back as the say is asked for: the token waits a second more")
-        check(E.find("put back on his spot from 120m off", mark), "and said")
-        E.advance(1100)
+        -- Pinned to his spot from the set-down (bugs.txt 25 Nov 2026): taken off it in the
+        -- meantime he is back within a tick, and the say finds him standing on it.
+        check(M.duelPin[id] ~= nil and M.duelPin[id].n == 0, "the pin set as he is set down")
+        man:SetWorldPos({ x = spot.x + 120, y = spot.y, z = spot.z })
+        E.advance(250)
+        tp = man:GetWorldPos()
+        check(math.abs(tp.x - spot.x) < 0.01 and M.duelPin[id].n == 1, "pinned back within a tick")
+        E.advance(M.duelSayDelayMs)
         check(M.Count(player, q.token) == 1, "the spring token a moment after, for the graph's forced dialogue")
         check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. "'s say asked for, he stands 0.0m from his spot", mark), "and said, with him on his spot")
+        check(not E.find("say waits a second", mark), "the hold's own deferral not owed: the pin had him")
     else
         check(M.Count(player, q.token) == 1, "the spring token for the graph")
         check(E.postFx["Global_User_Brightness"] == 1 and E.find("BRIDGE screen lit (the men are loosed)", mark), "no say: the screen lit as the men are loosed")
@@ -5968,6 +5973,9 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.advance(2100)
     check(M.state.quests[id].cowed ~= true, "one friend standing, the man still fights")
     made[2].alive = false
+    -- The bandit's surrender clips are in the man's set (bugs.txt 25 Nov 2026).
+    E.clipLengths[M.duelCowedInClip] = 1.4
+    E.clipLengths[M.duelCowedLoopClip] = 2.0
     mark = E.mark()
     E.advance(2100)
     f = M.state.quests[id]
@@ -5986,6 +5994,16 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " set down before Henry at 1.5m, from", mark) and E.find("for his begging", mark), "and said")
         local kd = man:GetDirectionVector()
         check(math.abs(kd.x - (hp.x - kp.x) / M.duelKneelMetres) < 0.05 and math.abs(kd.y - (hp.y - kp.y) / M.duelKneelMetres) < 0.05, "facing Henry")
+        -- And in the bandit's surrender pose (bugs.txt 25 Nov 2026): the in clip on layer
+        -- 13 in the token's tick, the loop taking over duelCowedBlend before its end.
+        local first, last = man.anims[#man.anims - 1], man.anims[#man.anims]
+        check(first ~= nil and first.clip == M.duelCowedInClip and first.layer == M.duelCowedLayer and #man.stops == 0,
+              "the surrender's in clip started on layer " .. M.duelCowedLayer .. ": " .. tostring(first and first.clip))
+        check(E.find("BRIDGE quest " .. id .. " duel: " .. q.giver .. " cowed: " .. M.duelCowedInClip .. " (1.4s) on layer " .. M.duelCowedLayer .. ", then the loop", mark), "and said")
+        check(last.clip == M.duelCowedLoopClip and last.layer == M.duelCowedLayer and math.abs(last.blend - M.duelCowedBlend) < 0.01
+              and math.abs((last.at - first.at) - (1400 - M.duelCowedBlend * 1000)) < 20,
+              "the loop started on the same layer " .. tostring(M.duelCowedBlend) .. "s before the in clip's end, blended over that: " .. tostring(last.at - first.at) .. "ms after it")
+        check(E.find(q.giver .. " holds " .. M.duelCowedLoopClip .. " on layer " .. M.duelCowedLayer, mark) and M.duelCowed[id] == man, "and said")
         man:SetWorldPos({ x = ft.x + 10, y = ft.y, z = ft.z })
         E.advance(300)
         local back = man:GetWorldPos()
@@ -6016,12 +6034,14 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     check(E.find("duel spared, his purse (87)", mark) and E.find("gone from the game", mark), "said in the log")
     check(not q.beg or (E.find("Henry's word to " .. q.giver .. " on his knees is spare", mark) and E.find("complete fired by the row's own port; no beat queued", mark)),
           "the row's word said, and no beat queued for the app")
+    check(not q.beg or (man.stops[#man.stops] == M.duelCowedLayer and E.find(q.giver .. "'s surrender pose stopped (spared)", mark) and M.duelCowed[id] == nil),
+          "the surrender pose stopped before he goes")
     check(man:GetWorldPos().z < -500, "the man put out of the world")
     E.advance(2100)
     check(#(M.state.quests[id].spawned or {}) == 0, "the bodies taken away once the duel is done")
-    -- The other two rows of his begging: marched to the watch (the watched ending, unpaid,
-    -- and he is gone), and killed where he kneels (the blow, dealt by nobody; his death is
-    -- the dead ending by the watch's reading).
+    -- The other row of his begging: killed where he kneels (the blow, dealt by nobody; his
+    -- death is the dead ending by the watch's reading). A watch row of the first cut was
+    -- taken out on the 25th; a word the Lua does not know does nothing.
     local function cowAgain()
         M.state.quests[id] = { accepted = true }
         M.duelGoneDone[id] = nil
@@ -6047,21 +6067,19 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     end
     if q.beg then
         mark = cowAgain()
-        man.inventory:CreateItem(E.moneyClass, 100, 500)
-        before = player.inventory:GetMoney()
         M.DuelChoice(id, "watch")
         E.advance(1100)
         f = M.state.quests[id]
-        check(f.done == true and f.how == "watched" and f.gone == true and f.dead ~= true, "marched to the watch: done the watched way, and he is gone: " .. tostring(f.how))
-        check(player.inventory:GetMoney() == before and man.inventory:GetMoney() == 50, "nothing paid, his purse his own")
-        check(man:GetWorldPos().z < -500 and E.find("on his knees is watch", mark) and E.find("gone from the game", mark), "put out of the world, and said")
-        check(string.find(M.QuestFlagLetters(f), "v", 1, true) ~= nil, "the letter v")
-        mark = cowAgain()
+        check(f.done ~= true and f.cowed == true and man.alive == true, "a word the menu no longer has (watch) changes nothing")
+        check(M.duelCowed[id] == man and E.find("holds " .. M.duelCowedLoopClip, mark), "cowed again, he holds the surrender pose still")
         before = player.inventory:GetMoney()
+        local stops = #man.stops
         M.DuelChoice(id, "kill")
         check(man.alive == false and man.dealt ~= nil and man.dealt.health == M.duelKillHealth and man.dealt.attacker == 0 and man.dealt.suppress == false,
               "the blow: health past any man's, dealt by nobody")
         check(E.find("the blow dealt to " .. q.giver .. "; he reads dead", mark), "and said")
+        check(#man.stops == stops + 1 and man.stops[#man.stops] == M.duelCowedLayer and E.find("surrender pose stopped (the blow)", mark) and M.duelCowed[id] == nil,
+              "the pose stopped before the blow, so the death plays")
         E.advance(2100)
         f = M.state.quests[id]
         check(f.done == true and f.dead == true and f.how == "dead", "his death is the dead way: " .. tostring(f.how))
@@ -6107,10 +6125,16 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     E.advance(2100)
     check(M.state.quests[id].cowed ~= true, "not cowed for want of friends")
     man.down = true
+    -- A set without the surrender clips: no pose, and the log says so.
+    E.clipLengths[M.duelCowedInClip] = nil
+    E.clipLengths[M.duelCowedLoopClip] = nil
+    local anims = #man.anims
     mark = E.mark()
     E.advance(2100)
     f = M.state.quests[id]
     check(f.cowed == true and E.find("fought alone and is down; he is cowed", mark), "his own knock-out cows him")
+    check(not q.beg or (#man.anims == anims and M.duelCowed[id] == nil and E.find("set has neither " .. M.duelCowedInClip .. " nor " .. M.duelCowedLoopClip .. "; he is not posed", mark)),
+          "no surrender clips in his set: nothing started, and said")
     man.down = nil
     if not taunted then return end
     -- The taunt that never plays (a forced dialogue the game will not open): the watch
@@ -6141,6 +6165,8 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
     f = M.state.quests[id]
     check(f.loosed == true and #f.spawned == 2 and E.find("say never came; the men are loosed anyway", mark) and E.find("loosed on the watch with 2 made", mark),
           "the watch looses them " .. M.duelTauntSeconds .. " s in, said in the log")
+    E.advance(250)
+    check(M.duelPin[id] == nil and E.find("let go (the men are loosed)", mark), "the pin let go with the men loosed, no say having had him")
     for _, name in ipairs(f.spawned) do
         local e = System.GetEntityByName(name)
         if e ~= nil then e.down = true end
@@ -7234,13 +7260,13 @@ case("Duel: a wall between the landing and the written spot puts the man on a cl
     check(math.abs(tp.x - (ft.x - dx)) < 0.01 and math.abs(tp.y - (ft.y - dy)) < 0.01, "the man set down across the landing from the walled-off spot")
     check(E.find("the spot as written is walled off from the landing", mark) and E.find("set down across the landing at", mark), "and said")
     check(M.duelSpot[id] ~= nil and math.abs(M.duelSpot[id].x - (ft.x - dx)) < 0.01, "the spot taken kept for the hold")
-    -- The hold measures from the spot taken, not the written one.
+    -- The pin and the hold measure from the spot taken, not the written one.
     man:SetWorldPos({ x = ft.x - dx + 120, y = ft.y - dy, z = ft.z })
     local holdMark = E.mark()
     E.advance(2100)
     tp = man:GetWorldPos()
     check(math.abs(tp.x - (ft.x - dx)) < 0.01, "put back on the spot taken")
-    check(E.find("put back on his spot from 120m off (read at", holdMark), "and where he was read said")
+    check((q.sprungToken ~= nil and M.duelPin[id] ~= nil and M.duelPin[id].far >= 119) or E.find("put back on his spot from 120m off (read at", holdMark), "by the pin, or the hold with where he was read said")
     -- Loosed: behind Henry is now the wall's side, so the men come close behind him.
     if q.sprungToken ~= nil then M.DuelTaunted(id) end
     local f = M.state.quests[id]
