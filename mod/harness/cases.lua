@@ -7093,6 +7093,68 @@ end)
 -- taken up (the duel_open global), and the yes under it takes the duel up in the store,
 -- marks it door, and makes the door token its graph opens on; the duel's own accept port
 -- is not fired. Taken up, the offer is gone, and the yes a second time does nothing.
+-- bugs.txt 24 Nov 2026: the top of the man's head over a wall, the dialogue's camera on
+-- the wall, one made man never seen. Nobody is set down the far side of a wall from the
+-- landing: the spot as written is passed over for a clear quarter, a made man's point for
+-- a nearer one, and a man standing where he was made, far from Henry, is put down again.
+case("Duel: a wall between the landing and the written spot puts the man on a clear quarter instead, a walled-off point behind Henry gives way to a nearer one, and a made man who has not stirred is put down again behind Henry, once", function(E, M, check)
+    local id, q = byKind(M, "duel")
+    if id == nil or q.fastTravel == nil or q.fastTravel.holder == nil then check(true, "no duel in this data"); return end
+    local ft, w = q.fastTravel, q.fastTravel.holder
+    local man = E.soul(q.giver)
+    M.npc = man
+    M.QuestCommand(id, "accept")
+    man:SetWorldPos({ x = ft.x + 150, y = ft.y, z = ft.z })
+    player:SetWorldPos({ x = 100, y = 100, z = 0 })
+    E.interior = false
+    E.hour = 20
+    -- A wall across the line from the landing to the written spot, at its midpoint.
+    local dx, dy = w.x - ft.x, w.y - ft.y
+    local mx, my = ft.x + dx / 2, ft.y + dy / 2
+    E.walls = { { mx - dy * 3, my + dx * 3, mx + dy * 3, my - dx * 3 } }
+    local mark = E.mark()
+    M.QuestCommand(id, "fast_travel")
+    E.advance(1100)
+    local tp = man:GetWorldPos()
+    check(math.abs(tp.x - (ft.x - dx)) < 0.01 and math.abs(tp.y - (ft.y - dy)) < 0.01, "the man set down across the landing from the walled-off spot")
+    check(E.find("the spot as written is walled off from the landing", mark) and E.find("set down across the landing at", mark), "and said")
+    check(M.duelSpot[id] ~= nil and math.abs(M.duelSpot[id].x - (ft.x - dx)) < 0.01, "the spot taken kept for the hold")
+    -- The hold measures from the spot taken, not the written one.
+    man:SetWorldPos({ x = ft.x - dx + 120, y = ft.y - dy, z = ft.z })
+    local holdMark = E.mark()
+    E.advance(2100)
+    tp = man:GetWorldPos()
+    check(math.abs(tp.x - (ft.x - dx)) < 0.01, "put back on the spot taken")
+    check(E.find("put back on his spot from 120m off (read at", holdMark), "and where he was read said")
+    -- Loosed: behind Henry is now the wall's side, so the men come close behind him.
+    if q.sprungToken ~= nil then M.DuelTaunted(id) end
+    local f = M.state.quests[id]
+    check(f.loosed == true and #(f.spawned or {}) == 2, "two made")
+    check(E.find("close behind Henry (the point behind him is walled off)", mark), "on the near side of the wall, and said")
+    for k, name in ipairs(f.spawned) do
+        local e = System.GetEntityByName(name)
+        local mp = e:GetWorldPos()
+        check(math.sqrt((mp.x - ft.x) ^ 2 + (mp.y - ft.y) ^ 2) < 2.5, name .. " within a few paces of Henry")
+    end
+    -- A man standing where he was made, far off: put down again behind Henry after the
+    -- stuck seconds, once; his fellow at Henry's back left alone.
+    local stuck = System.GetEntityByName(f.spawned[1])
+    stuck:SetWorldPos({ x = ft.x + 40, y = ft.y, z = ft.z })
+    M.duelMadeAt[id][1] = { x = ft.x + 40, y = ft.y, z = ft.z }
+    local stuckMark = E.mark()
+    E.advance((M.duelStuckSeconds + 1) * 1000)
+    local sp = stuck:GetWorldPos()
+    check(math.sqrt((sp.x - ft.x) ^ 2 + (sp.y - ft.y) ^ 2) < 4, "the stuck man put down again by Henry")
+    check(E.find("has not stirred from where he was made, 40.0m from Henry; put down again", stuckMark), "and said")
+    check(E.find("found by id, standing, at ", stuckMark) and E.find("m from Henry", stuckMark), "each man's place and distance in the grace log")
+    stuck:SetWorldPos({ x = ft.x + 40, y = ft.y, z = ft.z })
+    M.duelMadeAt[id][1] = { x = ft.x + 40, y = ft.y, z = ft.z }
+    stuckMark = E.mark()
+    E.advance(3000)
+    check(not E.find("has not stirred", stuckMark), "and not a second time")
+    E.walls = nil
+end)
+
 case("Door duel: the holder's threaten row offers the duel while it is open, the yes takes it up with a door token, once", function(E, M, check)
     local id, q = byName(M, "In the Stocks")
     if q == nil then check(true, "no In the Stocks in this data"); return end

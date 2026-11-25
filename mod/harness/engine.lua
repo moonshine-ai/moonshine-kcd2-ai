@@ -896,6 +896,25 @@ function Engine.installGlobals()
     Physics = {
         RayWorldIntersection = function(from, dir, maxHits, types, skip1, skip2, hits)
             Engine.rays[#Engine.rays + 1] = { from = from, dir = dir, types = types, skip1 = skip1 }
+            -- A level ray meets a wall a case has stood (Engine.walls: { x1, y1, x2, y2 }
+            -- segments on the flat), as the static world would.
+            if math.abs(dir.z) < 0.5 and (dir.x ~= 0 or dir.y ~= 0) then
+                for _, w in ipairs(Engine.walls or {}) do
+                    local rx, ry = dir.x, dir.y
+                    local sx, sy = w[3] - w[1], w[4] - w[2]
+                    local den = rx * sy - ry * sx
+                    if math.abs(den) > 1e-9 then
+                        local qx, qy = w[1] - from.x, w[2] - from.y
+                        local t = (qx * sy - qy * sx) / den
+                        local u = (qx * ry - qy * rx) / den
+                        if t >= 0 and t <= 1 and u >= 0 and u <= 1 then
+                            if hits ~= nil then hits[1] = { pos = { x = from.x + rx * t, y = from.y + ry * t, z = from.z }, dist = t } end
+                            return 1
+                        end
+                    end
+                end
+                return 0
+            end
             if Engine.floorAt == nil or dir.z >= 0 then return 0 end
             if Engine.floorAt > from.z or Engine.floorAt < from.z + dir.z then return 0 end
             if hits ~= nil then hits[1] = { pos = { x = from.x, y = from.y, z = Engine.floorAt }, dist = from.z - Engine.floorAt } end
@@ -1125,6 +1144,7 @@ function Engine.reset()
     Engine.infoTexts = {}
     Engine.rays = {}
     Engine.floorAt = nil
+    Engine.walls = nil
     Engine.walled = false
     Engine.framed = true
     Engine.framedAsked = {}

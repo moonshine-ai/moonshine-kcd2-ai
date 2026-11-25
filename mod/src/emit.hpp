@@ -961,6 +961,19 @@ constexpr double kLookFopCharisma = 0.7;
 // run cowed the man eight seconds in with both his friends on their feet), and a man
 // never seen standing is not a man beaten.
 constexpr int kDuelStandSeconds = 15;
+// The yard's walls (bugs.txt 24 Nov 2026): the top of the man's head showed over something
+// as Henry landed, the forced dialogue's camera looked at a wall, and one made man never
+// came -- the written spot and a spawn point can be the far side of a wall from the
+// landing. Before anyone is set down a ray is cast at kDuelEyeMetres between the landing
+// and the point, and a point with a static hit on the way is passed over for the next:
+// the holder's spot is tried as written, then the same distance from the landing on the
+// other three quarters; a man's point behind Henry is tried where written, then nearer,
+// then at Henry's flanks. A made man still standing kDuelStuckSeconds after the loosing,
+// further than kDuelStuckMetres from Henry and not two metres from where he was made, is
+// taken for stuck and put down again on a clear point behind Henry, once.
+constexpr double kDuelEyeMetres = 1.5;
+constexpr int kDuelStuckSeconds = 12;
+constexpr double kDuelStuckMetres = 6.0;
 // A pray is prayed when the player soul's praying context -- the game's own "Player
 // praying" script context, set while Henry kneels at a shrine and cleared when the prayer
 // ends (measured on the Windows laptop: false, true 8.6 s after the shrine's Pray prompt is used, false

@@ -12700,6 +12700,56 @@ std::string emit_conversation_lua(const std::string& modid,
     s += g + ".duelSayDelayMs = " + std::to_string(kDuelSayDelayMs) + "\n";
     s += g + ".duelHoldMetres = " + health_text(kDuelHoldMetres) + "\n";
     s += g + ".duelStandSeconds = " + std::to_string(kDuelStandSeconds) + "\n";
+    s += g + ".duelEyeMetres = " + health_text(kDuelEyeMetres) + "\n";
+    s += g + ".duelStuckSeconds = " + std::to_string(kDuelStuckSeconds) + "\n";
+    s += g + ".duelStuckMetres = " + health_text(kDuelStuckMetres) + "\n";
+    // The spot each duel's man was in fact set down on (DuelPlace: the written one, or a
+    // clear quarter), and where each made man was made (DuelLoose; the stuck check).
+    s += g + ".duelSpot = {}\n";
+    s += g + ".duelMadeAt = {}\n";
+    s += g + ".duelReplaced = {}\n";
+    // Nothing solid between two points at eye height: a ray from one to the other against
+    // the static world and the terrain, with Henry left out of it. An engine without the
+    // ray says clear.
+    s += "function " + g + ".Clear(a, b)\n";
+    s += "\tlocal hit = false\n";
+    s += "\tpcall(function()\n";
+    s += "\t\tlocal p = " + g + ".Player()\n";
+    s += "\t\tlocal hits = {}\n";
+    s += "\t\tlocal from = { x = a.x, y = a.y, z = a.z + " + g + ".duelEyeMetres }\n";
+    s += "\t\tlocal dir = { x = b.x - a.x, y = b.y - a.y, z = b.z - a.z }\n";
+    s += "\t\tlocal n = Physics.RayWorldIntersection(from, dir, 1, ent_static + ent_terrain, p and p.id or nil, nil, hits)\n";
+    s += "\t\thit = type(n) == \"number\" and n > 0\n";
+    s += "\tend)\n";
+    s += "\treturn not hit\n";
+    s += "end\n";
+    // The man's spot for the duel: the written one when nothing stands between it and the
+    // landing, else the same distance out on the landing's other quarters, the first
+    // clear; the floor under it from Ground. Kept per duel for the hold and the watch.
+    s += "function " + g + ".DuelPlace(id, q, to)\n";
+    s += "\tlocal ft = q.fastTravel\n";
+    s += "\tif ft == nil or ft.holder == nil then return nil end\n";
+    s += "\tlocal w = ft.holder\n";
+    s += "\tlocal dx, dy = w.x - to.x, w.y - to.y\n";
+    s += "\tlocal tries = {\n";
+    s += "\t\t{ \"as written\", w.x, w.y }, { \"across the landing\", to.x - dx, to.y - dy },\n";
+    s += "\t\t{ \"to the landing's left\", to.x - dy, to.y + dx }, { \"to the landing's right\", to.x + dy, to.y - dx } }\n";
+    s += "\tfor k, t in ipairs(tries) do\n";
+    s += "\t\tlocal spot = { x = t[2], y = t[3], z = " + g + ".Ground(t[2], t[3], w.z) }\n";
+    s += "\t\tif " + g + ".Clear(to, spot) then\n";
+    s += "\t\t\tif k > 1 then " + g + ".Log(string.format(\"BRIDGE quest %s duel: the spot as written is walled off from the landing; %s set down %s at %.1f %.1f %.1f\", id, tostring(q.target), t[1], spot.x, spot.y, spot.z)) end\n";
+    s += "\t\t\t" + g + ".duelSpot[id] = spot\n";
+    s += "\t\t\treturn spot\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\t" + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: no clear quarter round the landing; the spot as written\")\n";
+    s += "\tlocal spot = { x = w.x, y = w.y, z = " + g + ".Ground(w.x, w.y, w.z) }\n";
+    s += "\t" + g + ".duelSpot[id] = spot\n";
+    s += "\treturn spot\n";
+    s += "end\n";
+    s += "function " + g + ".DuelSpotOf(id, q)\n";
+    s += "\treturn " + g + ".duelSpot[id] or (q.fastTravel and q.fastTravel.holder) or nil\n";
+    s += "end\n";
     // When each duel landed and was loosed (Now, this session; a reload starts the clocks
     // again), and which made men have been seen on their feet.
     s += g + ".duelLandedAt = {}\n";
@@ -12721,7 +12771,9 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal dead = false\n";
     s += "\tpcall(function() dead = e.actor:IsDead() == true end)\n";
     s += "\tif dead then " + g + ".Log(\"BRIDGE quest \" .. id .. \" duel: \" .. q.target .. \" is dead\") return end\n";
-    // Him on his spot, facing the landing; Henry turned to him.
+    // Him on his spot -- the written one, or a clear quarter (DuelPlace) -- facing the
+    // landing; Henry turned to him.
+    s += "\tspot = " + g + ".DuelPlace(id, q, to) or spot\n";
     s += "\tlocal dx, dy = to.x - spot.x, to.y - spot.y\n";
     s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
     s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
@@ -12786,7 +12838,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal e = nil\n";
     s += "\tpcall(function() e = System.GetEntityByName(q.target) end)\n";
     s += "\tif e == nil or e.GetWorldPos == nil then return nil end\n";
-    s += "\tlocal spot = ft.holder\n";
+    s += "\tlocal spot = " + g + ".DuelSpotOf(id, q)\n";
     s += "\tlocal tp = e:GetWorldPos()\n";
     s += "\tlocal off = math.sqrt((tp.x - spot.x) ^ 2 + (tp.y - spot.y) ^ 2)\n";
     s += "\tif off <= " + g + ".duelHoldMetres then return off, false end\n";
@@ -12797,7 +12849,7 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
     s += "\tlocal ok = pcall(function() e:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z }) end)\n";
     s += "\tpcall(function() e:SetDirectionVector({ x = dx / n, y = dy / n, z = 0 }) end)\n";
-    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s put back on his spot from %.0fm off%s\", id, q.target, off, ok and \"\" or \", SetWorldPos raised\"))\n";
+    s += "\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s put back on his spot from %.0fm off (read at %.1f %.1f %.1f)%s\", id, q.target, off, tp.x, tp.y, tp.z, ok and \"\" or \", SetWorldPos raised\"))\n";
     s += "\treturn off, true\n";
     s += "end\n";
     s += "\n";
@@ -12811,6 +12863,26 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tpcall(" + g + ".DuelLoose, id, q, me, \"taunt\")\n";
     s += "end\n";
     s += "\n";
+    // A made man's point: behind Henry on the line from the man through him, a pace to the
+    // side, where nothing stands between Henry and it; else nearer on the same line, else
+    // at Henry's flank on that side, else as written (bugs.txt 24 Nov 2026: the second man
+    // "never appeared"). Back: x, y, the floor, and which was taken, for the log.
+    s += "function " + g + ".DuelBehind(id, to, bx, by, side, k)\n";
+    s += "\tlocal sx, sy = -by, bx\n";
+    s += "\tlocal b = " + g + ".duelBehindMetres\n";
+    s += "\tlocal tries = {\n";
+    s += "\t\t{ \"behind Henry\", to.x + bx * b + sx * side, to.y + by * b + sy * side },\n";
+    s += "\t\t{ \"close behind Henry\", to.x + bx * b * 0.5 + sx * side * 0.5, to.y + by * b * 0.5 + sy * side * 0.5 },\n";
+    s += "\t\t{ \"at Henry's flank\", to.x + sx * side * b, to.y + sy * side * b } }\n";
+    s += "\tfor i, t in ipairs(tries) do\n";
+    s += "\t\tlocal z = " + g + ".Ground(t[2], t[3], to.z)\n";
+    s += "\t\tif " + g + ".Clear(to, { x = t[2], y = t[3], z = z }) then\n";
+    s += "\t\t\treturn t[2], t[3], z, t[1] .. (i > 1 and \" (the point behind him is walled off)\" or \"\")\n";
+    s += "\t\tend\n";
+    s += "\tend\n";
+    s += "\tlocal t = tries[1]\n";
+    s += "\treturn t[2], t[3], " + g + ".Ground(t[2], t[3], to.z), \"behind Henry (no clear point found)\"\n";
+    s += "end\n";
     // The two made behind Henry, on along the line from the man through him, a pace to
     // either side of it, facing his back, and the brawl loosed (the sprung token, where
     // the graph waits on one). Once only.
@@ -12832,12 +12904,10 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tlocal n = math.max(math.sqrt(dx * dx + dy * dy), 0.01)\n";
     s += "\tlocal bx, by = dx / n, dy / n\n";
     s += "\tlocal sx, sy = -by, bx\n";
-    s += "\tlocal names, ids = {}, {}\n";
+    s += "\tlocal names, ids, madeAt = {}, {}, {}\n";
     s += "\tfor k, guid in ipairs(q.spawn or {}) do\n";
     s += "\t\tlocal side = (k % 2 == 1) and 1 or -1\n";
-    s += "\t\tlocal x = to.x + bx * " + g + ".duelBehindMetres + sx * side\n";
-    s += "\t\tlocal y = to.y + by * " + g + ".duelBehindMetres + sy * side\n";
-    s += "\t\tlocal z = " + g + ".Ground(x, y, to.z)\n";
+    s += "\t\tlocal x, y, z, how = " + g + ".DuelBehind(id, to, bx, by, side, k)\n";
     s += "\t\tlocal name = \"mn_duel_\" .. id .. \"_\" .. k\n";
     s += "\t\tlocal made = nil\n";
     s += "\t\tlocal okSpawn, err = pcall(function()\n";
@@ -12854,17 +12924,20 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\t\t\tpcall(function() bound = made:GetName() or name end)\n";
     s += "\t\t\tnames[#names + 1] = bound\n";
     s += "\t\t\tids[#names] = made.id\n";
+    s += "\t\t\tmadeAt[#names] = { x = x, y = y, z = z }\n";
     // Facing Henry's back, armed, sword out.
     s += "\t\t\tpcall(function() made:SetDirectionVector({ x = -bx, y = -by, z = 0 }) end)\n";
     s += "\t\t\tpcall(function() made.actor:EquipWeaponPreset(" + g + ".duelSword) end)\n";
     s += "\t\t\tpcall(function() made.human:DrawWeapon() end)\n";
-    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s made at %.1f %.1f %.1f behind Henry (id %s%s)\", id, name, x, y, z,\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s made at %.1f %.1f %.1f %s (id %s%s)\", id, name, x, y, z, how,\n";
     s += "\t\t\t\ttostring(made.id), bound ~= name and (\", named \" .. tostring(bound)) or \"\"))\n";
     s += "\t\tend\n";
     s += "\tend\n";
     s += "\tf.spawned = names\n";
     s += "\tf.loosed = true\n";
     s += "\t" + g + ".duelIds[id] = ids\n";
+    s += "\t" + g + ".duelMadeAt[id] = madeAt\n";
+    s += "\t" + g + ".duelReplaced[id] = {}\n";
     s += "\t" + g + ".state.quests[id] = f\n";
     s += "\t" + g + ".duelLoosedAt[id] = " + g + ".Now()\n";
     s += "\t" + g + ".duelStood[id] = {}\n";
@@ -12951,11 +13024,31 @@ std::string emit_conversation_lua(const std::string& modid,
     s += "\tfor k, name in ipairs(f.spawned or {}) do\n";
     s += "\t\tlocal down, e, dead, how = " + g + ".DuelDown(name, (" + g + ".duelIds[id] or {})[k])\n";
     s += "\t\tif not down then stood[k] = true end\n";
+    s += "\t\tlocal mp = nil\n";
+    s += "\t\tif e ~= nil then pcall(function() mp = e:GetWorldPos() end) end\n";
+    s += "\t\tlocal gap = mp ~= nil and math.sqrt((mp.x - pp.x) ^ 2 + (mp.y - pp.y) ^ 2) or nil\n";
     s += "\t\tif grace then\n";
     s += "\t\t\tlocal health = nil\n";
     s += "\t\t\tif e ~= nil then pcall(function() health = e.actor:GetHealth() end) end\n";
-    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s found by %s, %s%s\", id, name, how,\n";
-    s += "\t\t\t\tdead and \"dead\" or down and \"down\" or \"standing\", health ~= nil and (\", health \" .. tostring(health)) or \"\"))\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s found by %s, %s%s%s\", id, name, how,\n";
+    s += "\t\t\t\tdead and \"dead\" or down and \"down\" or \"standing\", health ~= nil and (\", health \" .. tostring(health)) or \"\",\n";
+    s += "\t\t\t\tmp ~= nil and string.format(\", at %.1f %.1f %.1f, %.1fm from Henry\", mp.x, mp.y, mp.z, gap) or \"\"))\n";
+    s += "\t\tend\n";
+    // A man standing where he was made, far from Henry, this long after the loosing, is
+    // stuck (bugs.txt 24 Nov 2026): put down again on a clear point behind Henry, once.
+    s += "\t\tlocal was = (" + g + ".duelMadeAt[id] or {})[k]\n";
+    s += "\t\tlocal replaced = " + g + ".duelReplaced[id] or {}\n";
+    s += "\t\t" + g + ".duelReplaced[id] = replaced\n";
+    s += "\t\tif not down and e ~= nil and mp ~= nil and was ~= nil and not replaced[k] and now - loosed >= " + g + ".duelStuckSeconds\n";
+    s += "\t\t\t\tand gap > " + g + ".duelStuckMetres and math.sqrt((mp.x - was.x) ^ 2 + (mp.y - was.y) ^ 2) < 2 then\n";
+    s += "\t\t\treplaced[k] = true\n";
+    s += "\t\t\tlocal me = " + g + ".Player()\n";
+    s += "\t\t\tlocal d = me ~= nil and me:GetDirectionVector() or { x = 0, y = 1 }\n";
+    s += "\t\t\tlocal dn = math.max(math.sqrt(d.x * d.x + d.y * d.y), 0.01)\n";
+    s += "\t\t\tlocal x, y, z, how2 = " + g + ".DuelBehind(id, pp, -d.x / dn, -d.y / dn, (k % 2 == 1) and 1 or -1, k)\n";
+    s += "\t\t\tlocal ok = pcall(function() e:SetWorldPos({ x = x, y = y, z = z }) end)\n";
+    s += "\t\t\t" + g + ".Log(string.format(\"BRIDGE quest %s duel: %s has not stirred from where he was made, %.1fm from Henry; put down again %s at %.1f %.1f %.1f%s\",\n";
+    s += "\t\t\t\tid, name, gap, how2, x, y, z, ok and \"\" or \", SetWorldPos raised\"))\n";
     s += "\t\tend\n";
     // Down for the count only once seen standing, or once the grace is out.
     s += "\t\tif not down or (grace and not stood[k]) then standing = standing + 1 end\n";
