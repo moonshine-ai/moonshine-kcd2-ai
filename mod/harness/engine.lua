@@ -877,6 +877,34 @@ function Engine.installGlobals()
         AddCCommand = function(name, body, help) Engine.commands[name] = { body = body, help = help } end,
         GetViewport = function() return 0, 0, 3840, 1600 end,
         GetTerrainElevation = function() return 0 end,
+        -- The camera, for the frame check and /mark: at Henry's eyes looking where he
+        -- faces unless a case has set Engine.camera = { pos = , dir = }.
+        GetViewCameraPos = function()
+            if Engine.camera and Engine.camera.pos then return Engine.camera.pos end
+            if player then local p = player:GetWorldPos(); return { x = p.x, y = p.y, z = p.z + 1.6 } end
+            return { x = 0, y = 0, z = 0 }
+        end,
+        GetViewCameraDir = function()
+            if Engine.camera and Engine.camera.dir then return Engine.camera.dir end
+            if player then return player:GetDirectionVector() end
+            return { x = 0, y = 1, z = 0 }
+        end,
+        GetViewCameraFov = function() return 0.9 end,
+        -- A point on the screen, in hundredths of its width and height: the game's
+        -- ProjectToScreen. Here a flat projection on the camera's axes, so a point ahead is
+        -- near the middle and one behind is off the screen (negative depth puts it out).
+        ProjectToScreen = function(p)
+            local cam, dir = System.GetViewCameraPos(), System.GetViewCameraDir()
+            local dx, dy = p.x - cam.x, p.y - cam.y
+            local n = math.sqrt(dir.x * dir.x + dir.y * dir.y)
+            if n < 1e-6 then return { x = 50, y = 50, z = 1 } end
+            local fx, fy = dir.x / n, dir.y / n
+            local ahead = dx * fx + dy * fy
+            local right = dx * fy - dy * fx
+            if ahead <= 0.01 then return { x = -1, y = -1, z = ahead } end
+            return { x = 50 + 50 * right / ahead, y = 50 - 50 * (p.z - cam.z) / ahead, z = ahead }
+        end,
+        IsPointIndoors = function() return Engine.indoors == true end,
         -- The post-process parameters (Global_User_Brightness is the yard's cut): what was
         -- last set, by name, since the game's GetPostProcessFxParam reads nil for them.
         SetPostProcessFxParam = function(name, value)
@@ -1132,6 +1160,8 @@ function Engine.boot(modPath, opts)
     end
     Engine.installGlobals()
     Engine.modDir = string.match(modPath, "^(.*)[/\\][^/\\]*$") or "."
+    -- Kept for the hot-reload case, which loads the file a second time.
+    Engine.modPath = modPath
     local chunk, err = loadfile(modPath)
     if chunk == nil then error("the mod did not parse: " .. tostring(err)) end
     chunk()

@@ -1045,6 +1045,21 @@ constexpr int kDuelPinTickMs = 100;
 constexpr double kDuelPinMetres = 0.5;
 constexpr int kDuelPinAfterMs = 1500;
 constexpr int kDuelPinMaxMs = 45000;
+// The frame check (verification-plan.md B1, 25 Nov 2026): when a staged dialogue is up,
+// every participant's head is projected through the camera and the log says who is in
+// the picture, who is out of its frame and who is behind something, with the camera's
+// bearing as a compass word. Read once when the dialogue has been seen open (the duel's
+// pin letting go) and again kFrameAgainMs later, since the camera cuts between the
+// speakers and the second shot is Henry's, which is where the men must be seen at his
+// back. The eye height is kFollowEyeMetres. The duel's rounds of 21-25 Nov were all about
+// what this line says, and none of them could read it.
+constexpr int kFrameAgainMs = 4000;
+// /mark <label> at the game's console (verification-plan.md A5): Henry's spot and facing,
+// the camera, indoors or not, the ground, the hour and the souls within kMarkRadiusMetres
+// (the nearest kMarkNearCount), in one log line to be copied into a quest's fields, so a
+// place is set by standing on it rather than by typing coordinates read off a probe.
+constexpr double kMarkRadiusMetres = 20.0;
+constexpr int kMarkNearCount = 5;
 // Henry's look, for a holder whose first excuse is cut to it (npcdb.hpp has_look; bugs.txt
 // 22 Nov 2026). Armour is the quest graph's to read -- I_Soul::CheckEquipment over the five
 // slots the game's own players_appearance_scan.xml asks after (body_chainmail, body_plate,

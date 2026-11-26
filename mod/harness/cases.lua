@@ -376,7 +376,8 @@ case("Directives: an unknown quest id is logged, not raised, and said on the scr
     check(E.find("BRIDGE quest unknown id=nosuchquest"), "logged")
     -- An app and a mod from different deals (notes.md, 5 Oct 2026): the player is told
     -- why nothing happened, naming the id and the cure.
-    local said = E.infoTexts[#E.infoTexts] or ""
+    -- The words are joined with no-break spaces for the HUD (HudWords); read as plain here.
+    local said = (E.infoTexts[#E.infoTexts] or ""):gsub("\194\160", " ")
     check(said:find("does not know this errand (nosuchquest)", 1, true) ~= nil, "said on screen: " .. said)
     check(said:find("build_mod.sh", 1, true) ~= nil, "names the cure")
 end)
@@ -3407,7 +3408,8 @@ case("Console: /quests and /goto typed at the game's console go to the app", fun
     check(E.commands["/enable"] ~= nil and E.commands["/disable"] ~= nil, "and the two switches")
     check(E.commands["/enable"].body == "Moonshine.Console_enable(%%)", "the switch's body hands the words on: " .. tostring(E.commands["/enable"].body))
     check(E.commands["/goto"].body == "Moonshine.Console_goto(%%)", "the body hands the words on: " .. tostring(E.commands["/goto"].body))
-    check(M.ConsoleRegister() == 5 and E.find("BRIDGE console registered 5 of 5 commands"), "registering again says so")
+    check(E.commands["/mark"] ~= nil and E.commands["/frame"] ~= nil, "and the two the mod answers itself")
+    check(M.ConsoleRegister() == 7 and E.find("BRIDGE console registered 7 of 7 commands"), "registering again says so")
     local mark = E.mark()
     E.console("/quests")
     check(E.find("BRIDGE console line /quests", mark), "a bare /quests goes over as typed")
@@ -3442,6 +3444,111 @@ case("Console: /quests and /goto typed at the game's console go to the app", fun
     check(E.find("[Moonshine] /help is answered once a save is loaded", mark), "told to load a save first")
     check(not E.find("BRIDGE console line", mark), "and nothing sent")
     player.soul = soul
+end)
+
+-- The compass as the game draws it, skewed from the level's axes: +x+y is north, +x-y east.
+case("HUD: words are joined with no-break spaces so the info text does not put @ on each", function(E, M, check)
+    local nb = "\194\160"
+    check(M.HudWords("Not yet. This is to be done at noon.") == "Not" .. nb .. "yet." .. nb .. "This" .. nb .. "is" .. nb .. "to" .. nb .. "be" .. nb .. "done" .. nb .. "at" .. nb .. "noon.",
+        "every space is a no-break space")
+    check(M.HudWords("one") == "one", "a single word is left alone")
+    E.infoTexts = {}
+    M.Hud("camera looking east -- Kunz: hidden", 6)
+    check(#E.infoTexts == 1 and E.infoTexts[1] == M.HudWords("camera looking east -- Kunz: hidden"), "Hud sends the joined words")
+    E.infoTexts = {}
+    M.SpotHint("hud_case", "You have no cup to leave here.")
+    check(#E.infoTexts == 1 and not E.infoTexts[1]:find(" ", 1, true), "the spot hint has no plain space in it")
+end)
+
+case("Compass: the level's axes read as the game's compass", function(E, M, check)
+    local deg, word = M.Compass(1, 1)
+    check(math.abs(deg) < 0.01 and word == "north", "+x+y is north: " .. tostring(deg) .. " " .. tostring(word))
+    deg, word = M.Compass(1, -1)
+    check(math.abs(deg - 90) < 0.01 and word == "east", "+x-y is east")
+    deg, word = M.Compass(-1, -1)
+    check(math.abs(deg - 180) < 0.01 and word == "south", "-x-y is south")
+    deg, word = M.Compass(-1, 1)
+    check(math.abs(deg - 270) < 0.01 and word == "west", "-x+y is west")
+    deg, word = M.Compass(1, 0)
+    check(math.abs(deg - 45) < 0.01 and word == "north-east", "+x alone is north-east")
+    deg, word = M.Compass(0, -1)
+    check(math.abs(deg - 135) < 0.01 and word == "south-east", "-y alone is south-east")
+    local _, nowhere = M.Compass(0, 0)
+    check(nowhere == "nowhere", "no direction has no word")
+end)
+
+-- /mark and /frame at the console: answered by the mod itself, app or no app
+-- (verification-plan.md A5). The mark is Henry's spot and facing with the camera, the
+-- ground, the hour and the souls near him; the frame is who the camera has in its picture.
+case("Console: /mark reads Henry's spot and /frame reads the camera, with nobody in the app's loop", function(E, M, check)
+    E.appUp = false
+    player:SetWorldPos({ x = 100, y = 200, z = 10 })
+    player:SetDirectionVector({ x = 1, y = 1, z = 0 })
+    local near = E.soul("kkut_man_51", { pos = { x = 103, y = 203, z = 10 } })
+    local far = E.soul("kkut_woman_45", { pos = { x = 100, y = 190, z = 10 } })
+    E.soul("kkut_man_999", { pos = { x = 150, y = 250, z = 10 } })
+    local mark = E.mark()
+    E.console("/mark yard")
+    local line = E.find("BRIDGE mark yard at 100.00,200.00,10.00 facing north (0 deg", mark)
+    check(line ~= nil, "the spot and the facing, on the game's compass: " .. tostring(E.lines[#E.lines]))
+    check(string.find(line, "cam at", 1, true) == nil and string.find(line, "cam 100.00,200.00,11.60 looking north", 1, true), "the camera read")
+    check(string.find(line, " outdoors", 1, true) and string.find(line, "ground 0.00", 1, true), "indoors or not, and the ground")
+    check(string.find(line, "near: kkut_man_51 (" .. M.soulNames["kkut_man_51"] .. ") 4.2m north, kkut_woman_45 (" .. M.soulNames["kkut_woman_45"] .. ") 10.0m south-east", 1, true),
+          "the souls within reach, nearest first, with the mod's names and their bearings: " .. line)
+    check(not string.find(line, "kkut_man_999", 1, true), "the one beyond reach left out")
+    check(E.find("BRIDGE mark yard spot 100.00,200.00,10.00", mark), "and the spot alone, for copying")
+    check(string.find(E.infoTexts[#E.infoTexts] or "", M.HudWords("mark yard: 100.0,200.0,10.0 facing north"), 1, true), "the short form on the HUD")
+    check(not E.find("BRIDGE console line", mark), "nothing went to the app")
+    -- /frame with names: in frame ahead, out of frame behind, hidden behind a wall; the
+    -- nearest souls when nobody is named.
+    mark = E.mark()
+    E.console("/frame kkut_man_51 kkut_woman_45 nobody_here")
+    line = E.find("BRIDGE frame console: cam at 100.0,200.0,11.6 looking north;", mark)
+    check(line ~= nil, "the frame line: " .. tostring(E.lines[#E.lines]))
+    check(string.find(line, M.soulNames["kkut_man_51"] .. " in frame at 50%,", 1, true), "the man ahead is in frame, in the middle: " .. line)
+    check(string.find(line, M.soulNames["kkut_woman_45"] .. " out of frame, ", 1, true) and string.find(line, "to the south-east", 1, true), "the woman behind is out of frame, and where she is")
+    check(string.find(line, "nobody_here not loaded", 1, true), "a name the world has no entity for")
+    E.walled = true
+    mark = E.mark()
+    E.console("/frame kkut_man_51")
+    line = E.find("BRIDGE frame console:", mark)
+    check(line ~= nil and string.find(line, M.soulNames["kkut_man_51"] .. " hidden, ", 1, true), "a wall between the camera and his head: hidden")
+    E.walled = false
+    mark = E.mark()
+    E.console("/frame")
+    line = E.find("BRIDGE frame console:", mark)
+    check(line ~= nil and string.find(line, M.soulNames["kkut_man_51"], 1, true) and string.find(line, M.soulNames["kkut_woman_45"], 1, true) and not string.find(line, "kkut_man_999", 1, true),
+          "nobody named: the souls within reach")
+    E.appUp = true
+    near.pos = nil; far.pos = nil
+end)
+
+-- Hot reload (verification-plan.md A1): the emitted file loaded a second time into a game
+-- that has it, from a loose copy, replaces the functions and the constants and keeps the
+-- state -- the store, the hook count, whoever the duel has made -- and does not install
+-- again.
+case("Hot reload: the file loaded again keeps the state and replaces the functions", function(E, M, check)
+    check(M.hotGen == 1 or M.hotGen == 2, "the first load is generation one (or a case before reloaded): " .. tostring(M.hotGen))
+    local gen = M.hotGen
+    M.Soul("kkut_man_51").met = 3
+    M.hooked = 7
+    M.duelMade["q1"] = true
+    M.Compass = function() return -1, "overwritten" end
+    M.duelPinAfterMs = 99
+    local mark = E.mark()
+    local chunk = assert(loadfile(E.modPath))
+    chunk()
+    check(M.hotGen == gen + 1, "the generation counted")
+    check(E.find("BRIDGE hot lua generation " .. (gen + 1) .. " loaded", mark), "and said in the log")
+    check(not E.find("script loaded,", mark) and not E.find("conversation option ready", mark), "no second install")
+    check(M.state.souls["kkut_man_51"].met == 3, "the store kept")
+    check(M.hooked == 7, "the hook count kept")
+    check(M.duelMade["q1"] == true, "the duel's made men kept")
+    local _, word = M.Compass(1, 1)
+    check(word == "north", "a function replaced")
+    check(M.duelPinAfterMs ~= 99, "a constant replaced")
+    check(E.find("BRIDGE console registered 7 of 7 commands", mark), "the console commands registered again")
+    M.duelMade["q1"] = nil
 end)
 
 -- Arming again while the chain lives is a no-op; after the clock is seen to have gone
@@ -5890,6 +5997,15 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         E.advance(M.duelPinAfterMs + 300)
         check(M.duelPin[id] ~= nil and M.duelPin[id].sayHeld == true and E.find("pinned to his spot", holdMark) and E.find("the furthest 120.0m off; let go (his say has him)", holdMark),
               "the pin let go of him once his say has him, its count said; the loop runs on for the men")
+        -- And the picture read: the man and his men through the camera, once as the say
+        -- has the screen and again when it has cut to Henry (verification-plan.md B1).
+        local frameLine = E.find("BRIDGE frame duel say " .. id .. ":", holdMark)
+        check(frameLine ~= nil and string.find(frameLine, "cam at", 1, true) and string.find(frameLine, "looking", 1, true), "the frame read as his say has the screen: " .. tostring(frameLine))
+        check(string.find(frameLine, (M.soulNames[q.giver] or q.giver) .. " ", 1, true), "the man named in it")
+        for _, name in ipairs(f.spawned or {}) do
+            check(string.find(frameLine, name .. " ", 1, true), "and " .. name)
+        end
+        check(not E.find("BRIDGE frame duel say " .. id .. " again:", holdMark), "the second reading waits for the cut")
         -- The men held through the say as well.
         menHeld("during the say")
         -- His say up is the cut's end: the screen lit.
@@ -5901,6 +6017,9 @@ case("Duel: the carry is to the fight -- no clock wound, the man set down facing
         check(math.abs(tp.x - spot.x) < 0.01 and math.abs(tp.y - spot.y) < 0.01, "held on his spot through the say as well")
         check(E.find("duel: say playing", holdMark) and E.find("read 120.0m from his spot and put back", holdMark), "and where he reads said each tick of it")
         check(not E.find("say never came", holdMark), "the say not counted down while it plays")
+        -- The second reading, kFrameAgainMs after the first.
+        E.advance(M.frameAgainMs)
+        check(E.find("BRIDGE frame duel say " .. id .. " again:", holdMark), "the frame read again once the camera has cut")
         E.dialog.open = false
         man:SetWorldPos({ x = spot.x, y = spot.y, z = spot.z })
         local looseMark = E.mark()
